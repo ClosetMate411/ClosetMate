@@ -12,7 +12,7 @@ from fastapi import FastAPI, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image
-from rembg import remove
+from rembg import remove, new_session
 
 # Configuration
 STORAGE_PATH = os.getenv("STORAGE_PATH", "./storage")
@@ -23,6 +23,9 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 # Create storage directories
 Path(f"{STORAGE_PATH}/original").mkdir(parents=True, exist_ok=True)
 Path(f"{STORAGE_PATH}/processed").mkdir(parents=True, exist_ok=True)
+
+# Cache u2net session at startup - model loads once, stays in memory
+SESSION = new_session("u2net")
 
 app = FastAPI(
     title="ClosetMate Image Processing Service",
@@ -82,9 +85,9 @@ async def process_image(image: UploadFile = File(...)):
         with open(original_path, "wb") as f:
             f.write(content)
         
-        # Process - remove background
+        # Process - remove background using cached session
         input_image = Image.open(io.BytesIO(content))
-        output_image = remove(input_image)
+        output_image = remove(input_image, session=SESSION)
         
         # Save processed
         processed_path = Path(f"{STORAGE_PATH}/processed/{processed_filename}")
