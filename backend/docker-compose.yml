@@ -1,0 +1,85 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: closetmate-db
+    environment:
+      POSTGRES_USER: closetmate
+      POSTGRES_PASSWORD: ***REMOVED***
+      POSTGRES_DB: closetmate_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U closetmate -d closetmate_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Image Processing Service (Port 3002)
+  image-processing:
+    build:
+      context: ./image_processing_service
+      dockerfile: Dockerfile
+    container_name: closetmate-image-processing
+    ports:
+      - "3002:3002"
+    environment:
+      - STORAGE_PATH=/app/storage
+      - BASE_URL=http://localhost:3002
+    volumes:
+      - image_storage:/app/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Wardrobe Service (Port 3001)
+  wardrobe:
+    build:
+      context: .
+      dockerfile: wardrobe_service/Dockerfile
+    container_name: closetmate-wardrobe
+    ports:
+      - "3001:3001"
+    environment:
+      - DATABASE_URL=postgresql://closetmate:***REMOVED***@postgres:5432/closetmate_db
+      - IMAGE_SERVICE_URL=http://image-processing:3002
+    depends_on:
+      postgres:
+        condition: service_healthy
+      image-processing:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # API Gateway (Port 3000)
+  api-gateway:
+    build:
+      context: ./api_gateway
+      dockerfile: Dockerfile
+    container_name: closetmate-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - WARDROBE_SERVICE_URL=http://wardrobe:3001
+      - IMAGE_SERVICE_URL=http://image-processing:3002
+    depends_on:
+      wardrobe:
+        condition: service_healthy
+      image-processing:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres_data:
+  image_storage:
