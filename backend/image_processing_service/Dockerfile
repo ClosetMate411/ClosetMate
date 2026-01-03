@@ -11,8 +11,8 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download rembg model
-RUN python -c "from rembg import remove; from PIL import Image; remove(Image.new('RGB', (10, 10)))" || true
+# Pre-download u2net model at build time
+RUN python -c "from rembg import new_session; new_session('u2net')" || true
 
 RUN mkdir -p /app/storage/original /app/storage/processed
 
