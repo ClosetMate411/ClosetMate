@@ -1,26 +1,24 @@
 """
-API Gateway - Port 3000
-Routes requests to appropriate microservices
+API Gateway - Standalone for Railway
+Routes requests to microservices
 """
 import os
 from typing import Optional
 
 import httpx
-from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 
-# Service URLs
 WARDROBE_SERVICE_URL = os.getenv("WARDROBE_SERVICE_URL", "http://localhost:3001")
 IMAGE_SERVICE_URL = os.getenv("IMAGE_SERVICE_URL", "http://localhost:3002")
 
 app = FastAPI(
     title="ClosetMate API Gateway",
-    description="Routes requests to appropriate microservices",
+    description="Routes requests to microservices",
     version="1.0.0",
 )
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -31,97 +29,62 @@ app.add_middleware(
 
 
 def create_error_response(code: str, message: str, status_code: int = 400):
-    """Create standardized error response"""
     return JSONResponse(
         status_code=status_code,
-        content={
-            "success": False,
-            "error": {
-                "code": code,
-                "message": message
-            }
-        }
+        content={"success": False, "error": {"code": code, "message": message}}
     )
 
 
 @app.get("/health")
 async def health_check():
-    """Gateway health check"""
     return {"status": "healthy", "service": "api-gateway"}
 
 
 @app.get("/api/health/all")
 async def all_services_health():
-    """Check health of all services"""
     services = {
         "gateway": {"status": "healthy"},
         "wardrobe": {"status": "unknown"},
         "image_processing": {"status": "unknown"}
     }
     
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        # Check wardrobe service
+    async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.get(f"{WARDROBE_SERVICE_URL}/health")
             services["wardrobe"] = response.json()
         except Exception as e:
             services["wardrobe"] = {"status": "unhealthy", "error": str(e)}
         
-        # Check image processing service
         try:
             response = await client.get(f"{IMAGE_SERVICE_URL}/health")
             services["image_processing"] = response.json()
         except Exception as e:
             services["image_processing"] = {"status": "unhealthy", "error": str(e)}
     
-    all_healthy = all(
-        s.get("status") == "healthy" 
-        for s in services.values()
-    )
-    
-    return {
-        "success": True,
-        "all_healthy": all_healthy,
-        "services": services
-    }
+    all_healthy = all(s.get("status") == "healthy" for s in services.values())
+    return {"success": True, "all_healthy": all_healthy, "services": services}
 
 
-# ==================== WARDROBE ROUTES ====================
+# ===== WARDROBE ROUTES =====
 
 @app.get("/api/wardrobe/items")
 async def get_all_items():
-    """Get all clothing items"""
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             response = await client.get(f"{WARDROBE_SERVICE_URL}/items")
-            return JSONResponse(
-                status_code=response.status_code,
-                content=response.json()
-            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
         except httpx.RequestError as e:
-            return create_error_response(
-                "SERVER_ERROR",
-                f"Wardrobe service unavailable: {str(e)}",
-                status_code=503
-            )
+            return create_error_response("SERVER_ERROR", f"Service unavailable: {str(e)}", 503)
 
 
 @app.get("/api/wardrobe/items/{item_id}")
 async def get_item(item_id: str):
-    """Get single clothing item"""
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             response = await client.get(f"{WARDROBE_SERVICE_URL}/items/{item_id}")
-            return JSONResponse(
-                status_code=response.status_code,
-                content=response.json()
-            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
         except httpx.RequestError as e:
-            return create_error_response(
-                "SERVER_ERROR",
-                f"Wardrobe service unavailable: {str(e)}",
-                status_code=503
-            )
+            return create_error_response("SERVER_ERROR", f"Service unavailable: {str(e)}", 503)
 
 
 @app.post("/api/wardrobe/items")
@@ -130,33 +93,16 @@ async def create_item(
     item_name: Optional[str] = Form(default="Untitled"),
     season: Optional[str] = Form(default="Untitled")
 ):
-    """Create new clothing item"""
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=180.0) as client:
         try:
             content = await image.read()
-            files = {
-                "image": (image.filename, content, image.content_type)
-            }
-            data = {
-                "item_name": item_name or "Untitled",
-                "season": season or "Untitled"
-            }
+            files = {"image": (image.filename, content, image.content_type)}
+            data = {"item_name": item_name or "Untitled", "season": season or "Untitled"}
             
-            response = await client.post(
-                f"{WARDROBE_SERVICE_URL}/items",
-                files=files,
-                data=data
-            )
-            return JSONResponse(
-                status_code=response.status_code,
-                content=response.json()
-            )
+            response = await client.post(f"{WARDROBE_SERVICE_URL}/items", files=files, data=data)
+            return JSONResponse(status_code=response.status_code, content=response.json())
         except httpx.RequestError as e:
-            return create_error_response(
-                "SERVER_ERROR",
-                f"Wardrobe service unavailable: {str(e)}",
-                status_code=503
-            )
+            return create_error_response("SERVER_ERROR", f"Service unavailable: {str(e)}", 503)
 
 
 @app.put("/api/wardrobe/items/{item_id}")
@@ -166,8 +112,7 @@ async def update_item(
     item_name: Optional[str] = Form(default=None),
     season: Optional[str] = Form(default=None)
 ):
-    """Update existing clothing item"""
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=180.0) as client:
         try:
             files = {}
             data = {}
@@ -175,10 +120,8 @@ async def update_item(
             if image and image.filename:
                 content = await image.read()
                 files["image"] = (image.filename, content, image.content_type)
-            
             if item_name is not None:
                 data["item_name"] = item_name
-            
             if season is not None:
                 data["season"] = season
             
@@ -187,104 +130,36 @@ async def update_item(
                 files=files if files else None,
                 data=data if data else None
             )
-            return JSONResponse(
-                status_code=response.status_code,
-                content=response.json()
-            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
         except httpx.RequestError as e:
-            return create_error_response(
-                "SERVER_ERROR",
-                f"Wardrobe service unavailable: {str(e)}",
-                status_code=503
-            )
+            return create_error_response("SERVER_ERROR", f"Service unavailable: {str(e)}", 503)
 
 
 @app.delete("/api/wardrobe/items/{item_id}")
 async def delete_item(item_id: str):
-    """Delete clothing item"""
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             response = await client.delete(f"{WARDROBE_SERVICE_URL}/items/{item_id}")
-            return JSONResponse(
-                status_code=response.status_code,
-                content=response.json()
-            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
         except httpx.RequestError as e:
-            return create_error_response(
-                "SERVER_ERROR",
-                f"Wardrobe service unavailable: {str(e)}",
-                status_code=503
-            )
+            return create_error_response("SERVER_ERROR", f"Service unavailable: {str(e)}", 503)
 
 
-# ==================== IMAGE PROCESSING ROUTES ====================
+# ===== IMAGE ROUTES =====
 
 @app.post("/api/images/process")
 async def process_image(image: UploadFile = File(...)):
-    """Process image - background removal"""
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=180.0) as client:
         try:
             content = await image.read()
-            files = {
-                "image": (image.filename, content, image.content_type)
-            }
-            
-            response = await client.post(
-                f"{IMAGE_SERVICE_URL}/images/process",
-                files=files
-            )
-            return JSONResponse(
-                status_code=response.status_code,
-                content=response.json()
-            )
+            files = {"image": (image.filename, content, image.content_type)}
+            response = await client.post(f"{IMAGE_SERVICE_URL}/images/process", files=files)
+            return JSONResponse(status_code=response.status_code, content=response.json())
         except httpx.RequestError as e:
-            return create_error_response(
-                "SERVER_ERROR",
-                f"Image processing service unavailable: {str(e)}",
-                status_code=503
-            )
-
-
-@app.delete("/api/images/{filename}")
-async def delete_image(filename: str, type: str = "both"):
-    """Delete image file(s)"""
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            response = await client.delete(
-                f"{IMAGE_SERVICE_URL}/images/{filename}",
-                params={"type": type}
-            )
-            return JSONResponse(
-                status_code=response.status_code,
-                content=response.json()
-            )
-        except httpx.RequestError as e:
-            return create_error_response(
-                "SERVER_ERROR",
-                f"Image processing service unavailable: {str(e)}",
-                status_code=503
-            )
-
-
-# Proxy for serving images from image service
-@app.get("/api/storage/{path:path}")
-async def proxy_storage(path: str):
-    """Proxy storage requests to image service"""
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            response = await client.get(f"{IMAGE_SERVICE_URL}/storage/{path}")
-            return StreamingResponse(
-                iter([response.content]),
-                media_type=response.headers.get("content-type", "application/octet-stream")
-            )
-        except httpx.RequestError as e:
-            return create_error_response(
-                "SERVER_ERROR",
-                f"Image service unavailable: {str(e)}",
-                status_code=503
-            )
+            return create_error_response("SERVER_ERROR", f"Service unavailable: {str(e)}", 503)
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=3000)
+    port = int(os.getenv("PORT", 3000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
