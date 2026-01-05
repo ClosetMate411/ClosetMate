@@ -1,0 +1,73 @@
+.wardrobe-section {
+  padding: 1.5rem;
+  background-color: #ffffff;
+  max-width: 75rem;
+  width: fit-content;
+  margin: 3rem auto;
+  border-radius: 1rem;
+  box-shadow: 0 0.125rem 0.5rem rgba(15, 23, 42, 0.08);
+}
+
+.wardrobe-container {
+  margin: 0 auto;
+}
+
+.grid-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.grid-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.grid-count {
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.clothing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, 12.5rem);
+  gap: 1.125rem;
+  width: fit-content;
+  max-width: 56rem; /* Max 4 columns */
+  justify-items: center;
+}
+
+.add-item-container {
+  margin-top: 2rem;
+  display: flex;
+  justify-content: center;
+}
+
+@media (max-width: 768px) {
+  .wardrobe-section {
+    padding: 1rem;
+    margin: 1rem auto;
+  }
+
+  .grid-header {
+    margin-bottom: 0.75rem;
+  }
+
+  .grid-title {
+    font-size: 1.25rem;
+  }
+
+  .clothing-grid {
+    grid-template-columns: repeat(auto-fit, 10rem);
+    gap: 0.875rem;
+    width: 100%;
+    justify-items: center;
+  }
+
+  .add-item-container {
+    margin-top: 1.5rem;
+  }
+}
