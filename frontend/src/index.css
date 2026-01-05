@@ -1,0 +1,32 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: radial-gradient(
+    circle at center,
+    #d4e6ff 0%,
+    #e2eeff 40%,
+    #eef4ff 65%,
+    #f8fafc 90%
+  );
+  color: #334155;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.wardrobe-page-wrapper {
+  position: relative;
+  min-height: calc(100vh - 70px); /* Account for Navbar */
+  display: flex;
+  flex-direction: column;
+}
+
