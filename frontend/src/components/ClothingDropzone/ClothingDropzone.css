@@ -1,0 +1,238 @@
+/* Dropzone Wrapper */
+.dropzone-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Dropzone Container in Modal */
+.clothing-dropzone {
+  border: 2px dashed #cbd5e1;
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  background-color: #fafbfc;
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.clothing-dropzone:hover {
+  border-color: #2563eb;
+  background-color: #f8fafc;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.05);
+}
+
+.clothing-dropzone[data-accept] {
+  border-color: #2563eb;
+  background-color: #eff6ff;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+}
+
+.clothing-dropzone[data-reject] {
+  border-color: #dc2626;
+  background-color: #fef2f2;
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.1);
+}
+
+/* Choose File Button */
+.choose-file-button {
+  background-color: #2563eb;
+  margin-top: 0.5rem;
+}
+
+.choose-file-button:hover {
+  background-color: #1d4ed8;
+}
+
+/* Action Buttons */
+.action-buttons {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  justify-content: space-between;
+}
+
+.cancel-button,
+.apply-button {
+  padding: 0.5rem 1.5rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  align-items: center;
+}
+
+.cancel-button {
+  background-color: #f1f5f9;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+}
+
+.cancel-button:hover {
+  background-color: #e2e8f0;
+  border-color: #cbd5e1;
+}
+
+.cancel-button:active {
+  transform: scale(0.98);
+}
+
+.apply-button {
+  background-color: #2563eb;
+  color: #ffffff;
+}
+
+.apply-button:hover {
+  background-color: #1d4ed8;
+}
+
+.apply-button:active {
+  transform: scale(0.98);
+}
+
+.apply-button:disabled {
+  background-color: #cbd5e1;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.apply-button:disabled:hover {
+  background-color: #cbd5e1;
+  transform: none;
+}
+
+/* Uploaded Files List */
+.uploaded-files-list {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 2px solid #e2e8f0;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+/* Custom scrollbar for file list */
+.uploaded-files-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.uploaded-files-list::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.uploaded-files-list::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.uploaded-files-list::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  margin-bottom: 0.625rem;
+  transition: all 0.2s ease;
+}
+
+.file-item:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.file-item:last-child {
+  margin-bottom: 0;
+}
+
+.file-icon {
+  flex-shrink: 0;
+  color: #2563eb;
+}
+
+.file-name {
+  flex: 1;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #2563eb;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: color 0.2s ease, text-decoration 0.2s ease;
+}
+
+.file-name:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.delete-icon-btn {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 0.375rem;
+  border-radius: 0.375rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.delete-icon-btn:hover {
+  background: #fee2e2;
+  color: #dc2626;
+  transform: rotate(90deg);
+}
+
+.delete-icon-btn:active {
+  transform: rotate(90deg) scale(0.9);
+}
+
+@media (max-width: 768px) {
+  .clothing-dropzone {
+    padding: 1rem;
+    min-height: 120px;
+  }
+
+  .file-item {
+    padding: 0.625rem 0.75rem;
+  }
+
+  .file-name {
+    font-size: 0.8125rem;
+  }
+
+  .uploaded-files-list {
+    max-height: 120px;
+  }
+
+  .dropzone-wrapper {
+    gap: 0.75rem;
+  }
+
+  .action-buttons {
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+
+  .cancel-button,
+  .apply-button {
+    padding: 0.5rem 0.875rem;
+    font-size: 0.8125rem;
+  }
+}
+

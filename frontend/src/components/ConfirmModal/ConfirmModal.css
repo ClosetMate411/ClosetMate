@@ -1,0 +1,134 @@
+.confirm-modal-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 0.5rem 1rem;
+}
+
+.confirm-modal-icon {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.confirm-icon-delete {
+  background-color: #fee2e2;
+  color: #dc2626;
+}
+
+.confirm-icon-save {
+  background-color: #d1fae5;
+  color: #10b981;
+}
+
+.confirm-icon-unsaved {
+  background-color: #dbeafe;
+  color: #2563eb;
+}
+
+.confirm-modal-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 0.75rem;
+}
+
+.confirm-modal-message {
+  font-size: 0.9375rem;
+  color: #64748b;
+  line-height: 1.5;
+  margin: 0 0 1.5rem;
+  max-width: 450px;
+}
+
+.confirm-modal-message + .confirm-modal-subtitle {
+  margin-top: -0.75rem;
+}
+
+.confirm-modal-subtitle {
+  font-size: 0.875rem;
+  color: #94a3b8;
+  font-style: italic;
+  line-height: 1.5;
+  margin: 0 0 1.5rem;
+  max-width: 450px;
+}
+
+.confirm-modal-actions {
+  display: flex;
+  justify-content: space-around;
+  width: 100%;
+}
+
+.confirm-btn {
+  padding: 0.625rem 1.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 130px;
+}
+
+.confirm-btn:active {
+  transform: scale(0.98);
+}
+
+.confirm-btn-cancel {
+  background-color: #f1f5f9 !important;
+  color: #334155 !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+.confirm-btn-cancel:hover {
+  background-color: #e2e8f0 !important;
+  border-color: #cbd5e1 !important;
+}
+
+.confirm-btn-delete {
+  background-color: #dc2626 !important;
+  color: #ffffff !important;
+}
+
+.confirm-btn-delete:hover {
+  background-color: #b91c1c !important;
+}
+
+.confirm-btn-save {
+  background-color: #10b981 !important;
+  color: #ffffff !important;
+}
+
+.confirm-btn-save:hover {
+  background-color: #059669 !important;
+}
+
+.confirm-btn-unsaved {
+  background-color: #2563eb !important;
+  color: #ffffff !important;
+}
+
+.confirm-btn-unsaved:hover {
+  background-color: #1d4ed8 !important;
+}
+
+@media (max-width: 768px) {
+  .confirm-modal-actions {
+    flex-direction: column-reverse;
+    gap: 0.5rem;
+  }
+
+  .confirm-btn {
+    width: 100%;
+  }
+}
+
