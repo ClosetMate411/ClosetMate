@@ -1,0 +1,70 @@
+.clothing-card {
+  background: #ffffff;
+  border: 0.0625rem solid #e2e8f0;
+  border-radius: 0.875rem;
+  padding: 0.75rem;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  outline: none;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+
+.clothing-card:hover {
+  transform: translateY(-0.125rem);
+  border-color: #bfdbfe;
+  box-shadow: 0 0.625rem 1.625rem rgba(15, 23, 42, 0.08);
+}
+
+.clothing-card:active {
+  transform: translateY(0);
+}
+
+.clothing-card:focus-visible {
+  outline: 0.1875rem solid rgba(37, 99, 235, 0.35);
+  outline-offset: 0.125rem;
+}
+
+.clothing-thumb {
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: #f1f5f9;
+  border: 0.0625rem solid #e2e8f0;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.clothing-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.clothing-name {
+  margin-top: 0.625rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.clothing-name--muted {
+  color: #64748b;
+}
+
+@media (max-width: 768px) {
+  .clothing-card {
+    padding: 0.625rem;
+  }
+
+  .clothing-name {
+    font-size: 0.875rem;
+    margin-top: 0.5rem;
+  }
+}
+

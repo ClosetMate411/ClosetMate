@@ -1,0 +1,35 @@
+.add-item-button {
+  background-color: #2563eb;
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.add-item-button:hover {
+  background-color: #1d4ed8;
+}
+
+.add-item-button:active {
+  transform: scale(0.98);
+}
+
+.add-item-button .btn-icon {
+  font-size: 1.125rem;
+  line-height: 1;
+}
+
+@media (max-width: 768px) {
+  .add-item-button {
+    font-size: 0.9375rem;
+    padding: 0.625rem 1.25rem;
+  }
+}
+
