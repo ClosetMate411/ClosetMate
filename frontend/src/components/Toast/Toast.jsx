@@ -19,4 +19,3 @@ Toast.propTypes = {
 };
 
 export default memo(Toast);
-

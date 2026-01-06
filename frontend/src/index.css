@@ -25,8 +25,7 @@ body {
 
 .wardrobe-page-wrapper {
   position: relative;
-  min-height: calc(100vh - 70px); /* Account for Navbar */
+  min-height: calc(100vh - 75px); /* Account for new Navbar height */
   display: flex;
   flex-direction: column;
 }
-
