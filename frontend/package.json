@@ -15,11 +15,13 @@
     "@mantine/hooks": "^8.3.10",
     "@tabler/icons-react": "^3.36.0",
     "axios": "^1.13.2",
+    "bcryptjs": "^3.0.3",
     "lucide-react": "^0.562.0",
     "prop-types": "^15.8.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.11.0",
+    "uuid": "^13.0.0",
     "zustand": "^5.0.9"
   },
   "devDependencies": {
