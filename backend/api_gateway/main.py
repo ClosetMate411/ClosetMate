@@ -7,10 +7,9 @@ import os
 from typing import Optional
 
 import httpx
-from fastapi import FastAPI, UploadFile, File, Form, Header, Body, Request
+from fastapi import FastAPI, UploadFile, File, Form, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, EmailStr
 
 # Service URLs
 WARDROBE_SERVICE_URL = os.getenv("WARDROBE_SERVICE_URL", "http://localhost:3001")
@@ -31,32 +30,22 @@ app.add_middleware(
 )
 
 
-# ============== PYDANTIC MODELS ==============
-
-class RegisterRequest(BaseModel):
-    email: str
-    password: str
-    confirm_password: str
-    full_name: str
-
-class LoginRequest(BaseModel):
-    email: str
-    password: str
-
-class ForgotPasswordRequest(BaseModel):
-    email: str
-
-class ResetPasswordRequest(BaseModel):
-    token: str
-    new_password: str
-    confirm_password: str
-
-
 def create_error_response(code: str, message: str, status_code: int = 400):
     return JSONResponse(
         status_code=status_code,
         content={"success": False, "error": {"code": code, "message": message}}
     )
+
+
+async def get_body_data(request: Request) -> dict:
+    """Extract data from JSON or Form body"""
+    content_type = request.headers.get("content-type", "")
+    
+    if "application/json" in content_type:
+        return await request.json()
+    else:
+        form = await request.form()
+        return dict(form)
 
 
 # ============== HEALTH CHECKS ==============
@@ -111,70 +100,103 @@ async def process_image(image: UploadFile = File(...)):
         return create_error_response("SERVICE_UNAVAILABLE", f"Image service unavailable: {str(e)}", 503)
 
 
-# ============== AUTH ROUTES (JSON Body) ==============
+# ============== AUTH ROUTES (JSON or Form) ==============
 
 @app.post("/api/auth/register")
-async def register(body: RegisterRequest):
+async def register(request: Request):
     """Register a new user"""
     try:
+        data = await get_body_data(request)
+        
+        email = data.get("email")
+        password = data.get("password")
+        confirm_password = data.get("confirm_password")
+        full_name = data.get("full_name")
+        
+        if not all([email, password, confirm_password, full_name]):
+            return create_error_response("MISSING_FIELDS", "All fields are required", 400)
+        
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"{WARDROBE_SERVICE_URL}/auth/register",
                 data={
-                    "email": body.email,
-                    "password": body.password,
-                    "confirm_password": body.confirm_password,
-                    "full_name": body.full_name
+                    "email": email,
+                    "password": password,
+                    "confirm_password": confirm_password,
+                    "full_name": full_name
                 }
             )
             return JSONResponse(status_code=response.status_code, content=response.json())
-    except httpx.RequestError as e:
+    except Exception as e:
         return create_error_response("SERVICE_UNAVAILABLE", f"Auth service unavailable: {str(e)}", 503)
 
 
 @app.post("/api/auth/login")
-async def login(body: LoginRequest):
+async def login(request: Request):
     """Login with email and password"""
     try:
+        data = await get_body_data(request)
+        
+        email = data.get("email")
+        password = data.get("password")
+        
+        if not all([email, password]):
+            return create_error_response("MISSING_FIELDS", "Email and password are required", 400)
+        
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"{WARDROBE_SERVICE_URL}/auth/login",
-                data={"email": body.email, "password": body.password}
+                data={"email": email, "password": password}
             )
             return JSONResponse(status_code=response.status_code, content=response.json())
-    except httpx.RequestError as e:
+    except Exception as e:
         return create_error_response("SERVICE_UNAVAILABLE", f"Auth service unavailable: {str(e)}", 503)
 
 
 @app.post("/api/auth/forgot-password")
-async def forgot_password(body: ForgotPasswordRequest):
+async def forgot_password(request: Request):
     """Request password reset"""
     try:
+        data = await get_body_data(request)
+        email = data.get("email")
+        
+        if not email:
+            return create_error_response("MISSING_FIELDS", "Email is required", 400)
+        
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"{WARDROBE_SERVICE_URL}/auth/forgot-password",
-                data={"email": body.email}
+                data={"email": email}
             )
             return JSONResponse(status_code=response.status_code, content=response.json())
-    except httpx.RequestError as e:
+    except Exception as e:
         return create_error_response("SERVICE_UNAVAILABLE", f"Auth service unavailable: {str(e)}", 503)
 
 
 @app.post("/api/auth/reset-password")
-async def reset_password(body: ResetPasswordRequest):
+async def reset_password(request: Request):
     """Reset password with token"""
     try:
+        data = await get_body_data(request)
+        
+        token = data.get("token")
+        new_password = data.get("new_password")
+        confirm_password = data.get("confirm_password")
+        
+        if not all([token, new_password, confirm_password]):
+            return create_error_response("MISSING_FIELDS", "All fields are required", 400)
+        
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"{WARDROBE_SERVICE_URL}/auth/reset-password",
                 data={
-                    "token": body.token,
-                    "new_password": body.new_password,
-                    "confirm_password": body.confirm_password
+                    "token": token,
+                    "new_password": new_password,
+                    "confirm_password": confirm_password
                 }
             )
             return JSONResponse(status_code=response.status_code, content=response.json())
-    except httpx.RequestError as e:
+    except Exception as e:
         return create_error_response("SERVICE_UNAVAILABLE", f"Auth service unavailable: {str(e)}", 503)
 
 
