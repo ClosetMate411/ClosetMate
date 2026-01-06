@@ -1,13 +1,14 @@
 """
 API Gateway - Routes requests to appropriate services
-Full authentication support
+Full authentication support + Image Processing
 """
 import os
-import httpx
-from fastapi import FastAPI, Request, UploadFile, File, Form, Header
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from typing import Optional
+
+import httpx
+from fastapi import FastAPI, Request, UploadFile, File, Form, Header, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
 
 # Service URLs
 WARDROBE_SERVICE_URL = os.getenv("WARDROBE_SERVICE_URL", "http://localhost:3001")
@@ -46,7 +47,7 @@ async def health_check():
 async def health_all():
     """Check health of all services"""
     results = {"gateway": {"status": "healthy"}}
-    
+
     # Check wardrobe service
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -69,6 +70,49 @@ async def health_all():
     )
     
     return {"success": True, "all_healthy": all_healthy, "services": results}
+
+
+# ============== IMAGE PROCESSING ROUTES ==============
+
+@app.post("/api/images/process")
+async def process_image(image: UploadFile = File(...)):
+    """Process image - remove background"""
+    content = await image.read()
+    
+    try:
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            files = {"image": (image.filename, content, image.content_type)}
+            response = await client.post(f"{IMAGE_SERVICE_URL}/images/process", files=files)
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Image service unavailable: {str(e)}", 503)
+
+
+@app.delete("/api/images/{filename}")
+async def delete_image(filename: str, type: str = Query("both")):
+    """Delete processed/original image"""
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.delete(f"{IMAGE_SERVICE_URL}/images/{filename}?type={type}")
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Image service unavailable: {str(e)}", 503)
+
+
+@app.get("/api/storage/{path:path}")
+async def get_storage_file(path: str):
+    """Proxy to image storage"""
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(f"{IMAGE_SERVICE_URL}/storage/{path}")
+            if response.status_code == 200:
+                return StreamingResponse(
+                    iter([response.content]),
+                    media_type=response.headers.get("content-type", "application/octet-stream")
+                )
+            return JSONResponse(status_code=response.status_code, content={"error": "File not found"})
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Image service unavailable: {str(e)}", 503)
 
 
 # ============== AUTH ROUTES ==============
@@ -172,7 +216,7 @@ async def logout(authorization: Optional[str] = Header(None)):
     """Logout user"""
     if not authorization:
         return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
-    
+
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
