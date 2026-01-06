@@ -6,9 +6,9 @@ import os
 from typing import Optional
 
 import httpx
-from fastapi import FastAPI, Request, UploadFile, File, Form, Header, Query
+from fastapi import FastAPI, UploadFile, File, Form, Header
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 
 # Service URLs
 WARDROBE_SERVICE_URL = os.getenv("WARDROBE_SERVICE_URL", "http://localhost:3001")
@@ -88,31 +88,7 @@ async def process_image(image: UploadFile = File(...)):
         return create_error_response("SERVICE_UNAVAILABLE", f"Image service unavailable: {str(e)}", 503)
 
 
-@app.delete("/api/images/{filename}")
-async def delete_image(filename: str, type: str = Query("both")):
-    """Delete processed/original image"""
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.delete(f"{IMAGE_SERVICE_URL}/images/{filename}?type={type}")
-            return JSONResponse(status_code=response.status_code, content=response.json())
-    except httpx.RequestError as e:
-        return create_error_response("SERVICE_UNAVAILABLE", f"Image service unavailable: {str(e)}", 503)
 
-
-@app.get("/api/storage/{path:path}")
-async def get_storage_file(path: str):
-    """Proxy to image storage"""
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(f"{IMAGE_SERVICE_URL}/storage/{path}")
-            if response.status_code == 200:
-                return StreamingResponse(
-                    iter([response.content]),
-                    media_type=response.headers.get("content-type", "application/octet-stream")
-                )
-            return JSONResponse(status_code=response.status_code, content={"error": "File not found"})
-    except httpx.RequestError as e:
-        return create_error_response("SERVICE_UNAVAILABLE", f"Image service unavailable: {str(e)}", 503)
 
 
 # ============== AUTH ROUTES ==============
