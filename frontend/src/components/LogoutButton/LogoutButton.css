@@ -1,0 +1,77 @@
+.floating-logout-btn {
+  position: fixed;
+  bottom: 0.5rem;
+  right: 0.5rem; /* Vertically aligned with wardrobe icon */
+  z-index: 1000;
+  background-color: #ffffff;
+  border: 1px solid #fee2e2;
+  border-radius: 50px;
+  padding: 0.5rem; /* Reduced padding */
+  text-decoration: none;
+  color: #ef4444;
+  box-shadow: 0 4px 15px rgba(239, 68, 68, 0.1);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px; /* Reduced from 48px */
+  min-height: 40px; /* Reduced from 48px */
+}
+
+.logout-content {
+  display: flex;
+  flex-direction: row-reverse; /* Put icon first on the right */
+  align-items: center;
+  gap: 0;
+  transition: gap 0.3s ease;
+}
+
+.logout-text {
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+}
+
+.floating-logout-btn:hover {
+  background-color: #ef4444;
+  color: #ffffff;
+  transform: translateY(-3px);
+  box-shadow: 0 8px 25px rgba(239, 68, 68, 0.2);
+  border-color: #ef4444;
+  padding: 0.5rem 1.15rem; /* Slightly wider padding for full text */
+}
+
+.floating-logout-btn:hover .logout-content {
+  gap: 0.5rem;
+}
+
+.floating-logout-btn:hover .logout-text {
+  opacity: 1;
+  width: 65px; /* Widened to ensure 'Logout' fits perfectly */
+}
+
+.floating-logout-btn svg {
+  transition: transform 0.3s ease;
+}
+
+.floating-logout-btn:hover svg {
+  transform: rotate(90deg);
+}
+
+@media (max-width: 768px) {
+  .floating-logout-btn {
+    bottom: 1.5rem;
+    right: 1.5rem;
+    padding: 0.6rem;
+  }
+  
+  .logout-text {
+    display: none;
+  }
+}

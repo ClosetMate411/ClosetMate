@@ -20,18 +20,21 @@ const useWardrobeStore = create((set, get) => ({
    * Fetch all items from backend
    */
   fetchItems: async () => {
+    // Prevent multiple concurrent fetches or unnecessary re-fetching if we already have items
+    if (get().loading || get().items.length > 0) return;
+    
     set({ loading: true, error: null });
     try {
       const response = await apiService.getAllItems();
       
-      // Handle different response formats and normalize data
+      // Sync with Backend: Look for the 'data' wrapper
       let rawItems = [];
-      if (Array.isArray(response)) {
+      if (response && response.success && Array.isArray(response.data)) {
+        rawItems = response.data;
+      } else if (Array.isArray(response)) {
         rawItems = response;
       } else if (response?.items) {
         rawItems = response.items;
-      } else if (response?.data) {
-        rawItems = response.data;
       }
       
       const normalizedItems = transformItemsForDisplay(rawItems);
@@ -48,18 +51,20 @@ const useWardrobeStore = create((set, get) => ({
    * Add new item to backend
    * @param {File} imageFile - Image file
    * @param {string} itemName - Item name
-   * @param {string} season - Season
+   * @param {string} season - Season (weather)
    */
   addItem: async (imageFile, itemName = 'Untitled', weather = 'Untitled') => {
     set({ loading: true, error: null });
     try {
       const response = await apiService.createItem({
         name: itemName,
-        season: weather, // Backend still expects 'season'
+        season: weather,
         image: imageFile
       });
       
-      const newItem = transformItemsForDisplay([response.data?.data || response.data || response])[0];
+      // Sync with Backend: Response is { success: true, data: { ...item... } }
+      const rawItem = response.data || response;
+      const newItem = transformItemsForDisplay([rawItem])[0];
       
       set((state) => ({
         items: Array.isArray(state.items) ? [...state.items, newItem] : [newItem],
@@ -79,18 +84,22 @@ const useWardrobeStore = create((set, get) => ({
   /**
    * Update existing item
    * @param {string} id - Item ID
-   * @param {Object} updates - Updates object { itemName, season, file }
+   * @param {Object} updates - Updates object { itemName, weather, file }
    */
   updateItem: async (id, updates) => {
     set({ loading: true, error: null });
     try {
       const updatedData = {};
+      // Map frontend field names to backend expected names (Form fields)
       if (updates.itemName !== undefined) updatedData.name = updates.itemName;
       if (updates.weather !== undefined) updatedData.season = updates.weather;
       if (updates.file) updatedData.image = updates.file;
       
       const response = await apiService.updateItem(id, updatedData);
-      const updatedItem = transformItemsForDisplay([response.data?.data || response.data || response])[0];
+      
+      // Sync with Backend: Response is { success: true, data: { ...item... } }
+      const rawItem = response.data || response;
+      const updatedItem = transformItemsForDisplay([rawItem])[0];
       
       set((state) => ({
         items: state.items.map(item => item.id === id ? updatedItem : item),
@@ -121,25 +130,6 @@ const useWardrobeStore = create((set, get) => ({
     } catch (error) {
       set({ error: error.message, loading: false });
       console.error('Failed to delete item:', error);
-      throw error;
-    }
-  },
-  
-  // ==================== Image Processing ====================
-  
-  /**
-   * Process image (background removal, etc.)
-   * @param {File} imageFile - Image file to process
-   */
-  processImage: async (imageFile) => {
-    set({ loading: true, error: null });
-    try {
-      const result = await apiService.processImage(imageFile);
-      set({ loading: false });
-      return result;
-    } catch (error) {
-      set({ error: error.message, loading: false });
-      console.error('Failed to process image:', error);
       throw error;
     }
   },

@@ -11,4 +11,5 @@ export { default as OptionalDetailsForm } from './OptionalDetailsForm/OptionalDe
 export { default as Navbar } from './Navbar/Navbar';
 export { default as Toast } from './Toast/Toast';
 export { default as WardrobeIcon } from './WardrobeIcon/WardrobeIcon';
+export { default as LogoutButton } from './LogoutButton/LogoutButton';
 
