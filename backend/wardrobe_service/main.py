@@ -27,8 +27,8 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localho
 IMAGE_SERVICE_URL = os.getenv("IMAGE_SERVICE_URL", "http://localhost:3002")
 JWT_SECRET = os.getenv("JWT_SECRET", "your-super-secret-key-change-in-production")
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION_HOURS = 24
-PASSWORD_RESET_EXPIRY_HOURS = 1
+JWT_EXPIRATION_HOURS = 1
+PASSWORD_RESET_EXPIRY_MINUTES = 10
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
 
@@ -150,7 +150,7 @@ def validate_full_name(name: str) -> tuple[bool, str]:
         return False, "Name must be at least 2 characters"
     if len(name) > 100:
         return False, "Name must not exceed 100 characters"
-    if not re.match(r'^[a-zA-Z\s]+$', name):
+    if not re.match(r'^[a-zA-ZğüşıöçĞÜŞİÖÇ\s]+$', name):
         return False, "Name must contain only alphabetic characters and spaces"
     
     return True, ""
@@ -440,7 +440,7 @@ async def forgot_password(
             id=str(uuid.uuid4()),
             user_id=user.id,
             token=generate_reset_token(),
-            expires_at=datetime.utcnow() + timedelta(hours=PASSWORD_RESET_EXPIRY_HOURS)
+            expires_at=datetime.utcnow() + timedelta(hours=PASSWORD_RESET_EXPIRY_MINUTES)
         )
         db.add(reset_token)
         db.commit()
