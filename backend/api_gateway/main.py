@@ -1,14 +1,16 @@
 """
 API Gateway - Routes requests to appropriate services
 Full authentication support + Image Processing
+Accepts both JSON and Form data for auth endpoints
 """
 import os
 from typing import Optional
 
 import httpx
-from fastapi import FastAPI, UploadFile, File, Form, Header
+from fastapi import FastAPI, UploadFile, File, Form, Header, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, EmailStr
 
 # Service URLs
 WARDROBE_SERVICE_URL = os.getenv("WARDROBE_SERVICE_URL", "http://localhost:3001")
@@ -27,6 +29,27 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ============== PYDANTIC MODELS ==============
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    confirm_password: str
+    full_name: str
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+    confirm_password: str
 
 
 def create_error_response(code: str, message: str, status_code: int = 400):
@@ -88,28 +111,20 @@ async def process_image(image: UploadFile = File(...)):
         return create_error_response("SERVICE_UNAVAILABLE", f"Image service unavailable: {str(e)}", 503)
 
 
-
-
-
-# ============== AUTH ROUTES ==============
+# ============== AUTH ROUTES (JSON Body) ==============
 
 @app.post("/api/auth/register")
-async def register(
-    email: str = Form(...),
-    password: str = Form(...),
-    confirm_password: str = Form(...),
-    full_name: str = Form(...)
-):
+async def register(body: RegisterRequest):
     """Register a new user"""
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"{WARDROBE_SERVICE_URL}/auth/register",
                 data={
-                    "email": email,
-                    "password": password,
-                    "confirm_password": confirm_password,
-                    "full_name": full_name
+                    "email": body.email,
+                    "password": body.password,
+                    "confirm_password": body.confirm_password,
+                    "full_name": body.full_name
                 }
             )
             return JSONResponse(status_code=response.status_code, content=response.json())
@@ -118,16 +133,13 @@ async def register(
 
 
 @app.post("/api/auth/login")
-async def login(
-    email: str = Form(...),
-    password: str = Form(...)
-):
+async def login(body: LoginRequest):
     """Login with email and password"""
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"{WARDROBE_SERVICE_URL}/auth/login",
-                data={"email": email, "password": password}
+                data={"email": body.email, "password": body.password}
             )
             return JSONResponse(status_code=response.status_code, content=response.json())
     except httpx.RequestError as e:
@@ -135,13 +147,13 @@ async def login(
 
 
 @app.post("/api/auth/forgot-password")
-async def forgot_password(email: str = Form(...)):
+async def forgot_password(body: ForgotPasswordRequest):
     """Request password reset"""
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"{WARDROBE_SERVICE_URL}/auth/forgot-password",
-                data={"email": email}
+                data={"email": body.email}
             )
             return JSONResponse(status_code=response.status_code, content=response.json())
     except httpx.RequestError as e:
@@ -149,20 +161,16 @@ async def forgot_password(email: str = Form(...)):
 
 
 @app.post("/api/auth/reset-password")
-async def reset_password(
-    token: str = Form(...),
-    new_password: str = Form(...),
-    confirm_password: str = Form(...)
-):
+async def reset_password(body: ResetPasswordRequest):
     """Reset password with token"""
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"{WARDROBE_SERVICE_URL}/auth/reset-password",
                 data={
-                    "token": token,
-                    "new_password": new_password,
-                    "confirm_password": confirm_password
+                    "token": body.token,
+                    "new_password": body.new_password,
+                    "confirm_password": body.confirm_password
                 }
             )
             return JSONResponse(status_code=response.status_code, content=response.json())
