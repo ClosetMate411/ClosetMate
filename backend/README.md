@@ -43,7 +43,7 @@ docker-compose down
 docker run -d \
   --name closetmate-db \
   -e POSTGRES_USER=closetmate \
-  -e POSTGRES_PASSWORD=***REMOVED*** \
+  -e POSTGRES_PASSWORD=closetmate123 \
   -e POSTGRES_DB=closetmate_db \
   -p 5432:5432 \
   postgres:15-alpine
@@ -238,7 +238,7 @@ closetmate-backend/
 
 ```bash
 # Database
-DATABASE_URL=postgresql://closetmate:***REMOVED***@localhost:5432/closetmate_db
+DATABASE_URL=postgresql://closetmate:closetmate123@localhost:5432/closetmate_db
 
 # Service URLs
 WARDROBE_SERVICE_URL=http://localhost:3001

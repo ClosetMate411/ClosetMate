@@ -1,23 +1,21 @@
 services:
-  # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
     container_name: closetmate-db
     environment:
-      POSTGRES_USER: closetmate
-      POSTGRES_PASSWORD: ***REMOVED***
-      POSTGRES_DB: closetmate_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U closetmate -d closetmate_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  # Image Processing Service (Port 3002)
   image-processing:
     build:
       context: ./image_processing_service
@@ -36,7 +34,6 @@ services:
       timeout: 5s
       retries: 3
 
-  # Wardrobe Service (Port 3001)
   wardrobe:
     build:
       context: .
@@ -45,7 +42,7 @@ services:
     ports:
       - "3001:3001"
     environment:
-      - DATABASE_URL=postgresql://closetmate:***REMOVED***@postgres:5432/closetmate_db
+      - DATABASE_URL=${DATABASE_URL}
       - IMAGE_SERVICE_URL=http://image-processing:3002
     depends_on:
       postgres:
@@ -58,7 +55,6 @@ services:
       timeout: 5s
       retries: 3
 
-  # API Gateway (Port 3000)
   api-gateway:
     build:
       context: ./api_gateway
