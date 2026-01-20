@@ -8,7 +8,7 @@ import os
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://closetmate:***REMOVED***@localhost:5432/closetmate_db"
+    "postgresql://closetmate:closetmate123@localhost:5432/closetmate_db"
 )
 
 engine = create_engine(DATABASE_URL)
