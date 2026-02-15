@@ -1,11 +1,14 @@
 """
-Wardrobe Service - with Full Authentication System
+Wardrobe Service - with Full Authentication System + Gemini Integration
 Based on requirements: Registration, Login, Password Reset, Logout
++ Triggers AI clothing analysis on upload via Outfit Service
 """
 import os
 import re
 import uuid
 import secrets
+import asyncio
+import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -22,15 +25,22 @@ import jwt
 import bcrypt
 import httpx
 
-# Configuration
+# ============== CONFIGURATION ==============
+
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/closetmate")
 IMAGE_SERVICE_URL = os.getenv("IMAGE_SERVICE_URL", "http://localhost:3002")
+OUTFIT_SERVICE_URL = os.getenv("OUTFIT_SERVICE_URL", "http://localhost:3003")
 JWT_SECRET = os.getenv("JWT_SECRET", "your-super-secret-key-change-in-production")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 1
 PASSWORD_RESET_EXPIRY_MINUTES = 10
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
+
+# Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Database setup
 engine = create_engine(DATABASE_URL)
@@ -99,26 +109,25 @@ Base.metadata.create_all(bind=engine)
 
 # ============== VALIDATION HELPERS ==============
 
+VALID_SEASONS = ["Spring", "Summer", "Fall", "Winter", "Untitled"]
+
+
 def validate_email(email: str) -> tuple[bool, str]:
     """Validate email address according to requirements"""
     if not email or len(email) > 254:
         return False, "Email must not exceed 254 characters"
     
-    # Check for exactly one @ symbol
     if email.count('@') != 1:
         return False, "Email must contain exactly one '@' symbol"
     
     local, domain = email.split('@')
     
-    # Check for characters before @
     if len(local) < 1:
         return False, "Email must have at least one character before '@'"
     
-    # Check domain has at least one dot
     if '.' not in domain:
         return False, "Email domain must contain at least one '.' character"
     
-    # Check allowed characters
     pattern = r'^[a-zA-Z0-9._\-]+@[a-zA-Z0-9._\-]+$'
     if not re.match(pattern, email):
         return False, "Email contains invalid characters"
@@ -181,6 +190,7 @@ def create_token(user_id: str, email: str) -> str:
     payload = {
         "user_id": user_id,
         "email": email,
+        "iat": datetime.utcnow(),
         "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -220,12 +230,69 @@ def create_error_response(code: str, message: str, status_code: int = 400, field
     return JSONResponse(status_code=status_code, content=content)
 
 
+# ============== ITEM SERIALIZATION HELPER ==============
+
+def serialize_item(item: ClothingItem) -> dict:
+    """Serialize a ClothingItem to dict - single source of truth"""
+    return {
+        "id": item.id,
+        "item_name": item.item_name,
+        "season": item.season,
+        "image_url": item.image_url,
+        "original_image_url": item.original_image_url,
+        "file_name": item.file_name,
+        "file_size": item.file_size,
+        "created_at": item.created_at.isoformat() + "Z" if item.created_at else None,
+        "updated_at": item.updated_at.isoformat() + "Z" if item.updated_at else None,
+    }
+
+
+# ============== OUTFIT SERVICE INTEGRATION ==============
+
+async def trigger_clothing_analysis(item_id: str, user_id: str, image_url: str):
+    """
+    Fire-and-forget call to the outfit service to analyze the clothing item.
+    Non-blocking - if analysis fails, the item is still saved successfully.
+    The user can manually re-trigger analysis later via /reanalyze.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            await client.post(
+                f"{OUTFIT_SERVICE_URL}/analyze",
+                data={
+                    "item_id": item_id,
+                    "user_id": user_id,
+                    "image_url": image_url,
+                    "x_api_key": INTERNAL_API_KEY,
+                }
+            )
+            logger.info(f"Clothing analysis triggered for item {item_id}")
+    except Exception as e:
+        logger.warning(f"Failed to trigger clothing analysis for item {item_id}: {e}")
+
+
+async def cleanup_clothing_attributes(item_id: str, token: str):
+    """
+    Notify outfit service to delete attributes when a clothing item is deleted.
+    Non-blocking cleanup.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.delete(
+                f"{OUTFIT_SERVICE_URL}/analyze/{item_id}",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            logger.info(f"Clothing attributes cleanup triggered for item {item_id}")
+    except Exception as e:
+        logger.warning(f"Failed to cleanup attributes for item {item_id}: {e}")
+
+
 # ============== APP ==============
 
 app = FastAPI(
     title="ClosetMate Wardrobe Service",
-    description="Wardrobe management with full authentication",
-    version="2.0.0",
+    description="Wardrobe management with full authentication + AI analysis",
+    version="3.0.0",
 )
 
 app.add_middleware(
@@ -262,33 +329,27 @@ async def register(
     """
     errors = []
     
-    # Validate email
     valid, msg = validate_email(email)
     if not valid:
         errors.append({"field": "email", "message": msg})
     
-    # Validate password
     valid, msg = validate_password(password)
     if not valid:
         errors.append({"field": "password", "message": msg})
     
-    # Validate confirm password
     if password != confirm_password:
         errors.append({"field": "confirm_password", "message": "Passwords do not match"})
     
-    # Validate full name
     valid, msg = validate_full_name(full_name)
     if not valid:
         errors.append({"field": "full_name", "message": msg})
     
-    # Return all validation errors
     if errors:
         return JSONResponse(
             status_code=400,
             content={"success": False, "errors": errors}
         )
     
-    # Check if email exists
     existing_user = db.query(User).filter(User.email == email.lower()).first()
     if existing_user:
         return JSONResponse(
@@ -303,7 +364,6 @@ async def register(
             }
         )
     
-    # Create user
     user = User(
         id=str(uuid.uuid4()),
         email=email.lower(),
@@ -315,7 +375,6 @@ async def register(
     db.commit()
     db.refresh(user)
     
-    # Generate token
     token = create_token(user.id, user.email)
     
     return {
@@ -343,7 +402,6 @@ async def login(
     """
     email = email.lower()
     
-    # Find user
     user = db.query(User).filter(User.email == email).first()
     
     if not user:
@@ -353,7 +411,6 @@ async def login(
             401
         )
     
-    # Check if account is locked
     if user.lockout_until and user.lockout_until > datetime.utcnow():
         remaining = (user.lockout_until - datetime.utcnow()).seconds // 60
         return create_error_response(
@@ -362,18 +419,14 @@ async def login(
             403
         )
     
-    # Reset lockout if expired
     if user.lockout_until and user.lockout_until <= datetime.utcnow():
         user.failed_login_attempts = 0
         user.lockout_until = None
         db.commit()
     
-    # Verify password
     if not verify_password(password, user.password_hash):
-        # Increment failed attempts
         user.failed_login_attempts += 1
         
-        # Lock account if max attempts reached
         if user.failed_login_attempts >= MAX_FAILED_ATTEMPTS:
             user.lockout_until = datetime.utcnow() + timedelta(minutes=LOCKOUT_MINUTES)
             db.commit()
@@ -391,13 +444,11 @@ async def login(
             401
         )
     
-    # Successful login
     user.failed_login_attempts = 0
     user.lockout_until = None
     user.last_login = datetime.utcnow()
     db.commit()
     
-    # Generate token
     token = create_token(user.id, user.email)
     
     return {
@@ -418,35 +469,31 @@ async def forgot_password(
 ):
     """
     Request password reset
-    - Generates reset token valid for 1 hour
+    - Generates reset token valid for 10 minutes
     - Returns same message regardless of email existence (security)
     """
     email = email.lower()
     
-    # Same message for security (prevent email enumeration)
     response_message = "If an account exists with that email address, you will receive a password reset link shortly."
     
     user = db.query(User).filter(User.email == email).first()
     
     if user:
-        # Invalidate old tokens
         db.query(PasswordResetToken).filter(
             PasswordResetToken.user_id == user.id,
             PasswordResetToken.used == False
         ).update({"used": True})
         
-        # Create new reset token
         reset_token = PasswordResetToken(
             id=str(uuid.uuid4()),
             user_id=user.id,
             token=generate_reset_token(),
-            expires_at=datetime.utcnow() + timedelta(hours=PASSWORD_RESET_EXPIRY_MINUTES)
+            expires_at=datetime.utcnow() + timedelta(minutes=PASSWORD_RESET_EXPIRY_MINUTES)
         )
         db.add(reset_token)
         db.commit()
         
         # TODO: Send email with reset link
-        # In production, integrate with email service (SendGrid, SES, etc.)
         # reset_link = f"https://closetmate.org.tr/reset-password?token={reset_token.token}"
     
     return {
@@ -464,10 +511,9 @@ async def reset_password(
 ):
     """
     Reset password with valid token
-    - Token must be valid and not expired (1 hour)
+    - Token must be valid and not expired (10 minutes)
     - Password must meet requirements
     """
-    # Find token
     reset_token = db.query(PasswordResetToken).filter(
         PasswordResetToken.token == token,
         PasswordResetToken.used == False
@@ -480,7 +526,6 @@ async def reset_password(
             400
         )
     
-    # Check if expired
     if reset_token.expires_at < datetime.utcnow():
         reset_token.used = True
         db.commit()
@@ -490,20 +535,16 @@ async def reset_password(
             400
         )
     
-    # Validate new password
     valid, msg = validate_password(new_password)
     if not valid:
         return create_error_response("INVALID_PASSWORD", msg, 400, "new_password")
     
-    # Validate confirm password
     if new_password != confirm_password:
         return create_error_response("PASSWORD_MISMATCH", "Passwords do not match", 400, "confirm_password")
     
-    # Update password
     user = db.query(User).filter(User.id == reset_token.user_id).first()
     user.password_hash = hash_password(new_password)
     
-    # Mark token as used
     reset_token.used = True
     
     db.commit()
@@ -553,20 +594,7 @@ async def get_items(
     items = db.query(ClothingItem).filter(ClothingItem.user_id == current_user.id).all()
     return {
         "success": True,
-        "data": [
-            {
-                "id": item.id,
-                "item_name": item.item_name,
-                "season": item.season,
-                "image_url": item.image_url,
-                "original_image_url": item.original_image_url,
-                "file_name": item.file_name,
-                "file_size": item.file_size,
-                "created_at": item.created_at.isoformat() + "Z" if item.created_at else None,
-                "updated_at": item.updated_at.isoformat() + "Z" if item.updated_at else None,
-            }
-            for item in items
-        ]
+        "data": [serialize_item(item) for item in items]
     }
 
 
@@ -585,20 +613,7 @@ async def get_item(
     if not item:
         return create_error_response("ITEM_NOT_FOUND", "Item not found", 404)
     
-    return {
-        "success": True,
-        "data": {
-            "id": item.id,
-            "item_name": item.item_name,
-            "season": item.season,
-            "image_url": item.image_url,
-            "original_image_url": item.original_image_url,
-            "file_name": item.file_name,
-            "file_size": item.file_size,
-            "created_at": item.created_at.isoformat() + "Z" if item.created_at else None,
-            "updated_at": item.updated_at.isoformat() + "Z" if item.updated_at else None,
-        }
-    }
+    return {"success": True, "data": serialize_item(item)}
 
 
 @app.post("/items")
@@ -609,10 +624,9 @@ async def create_item(
     season: str = Form("Untitled"),
     db: Session = Depends(get_db)
 ):
-    """Create a new clothing item with background removal"""
+    """Create a new clothing item with background removal + AI analysis"""
     # Validate season
-    valid_seasons = ["Spring", "Summer", "Fall", "Winter", "Untitled"]
-    if season not in valid_seasons:
+    if season not in VALID_SEASONS:
         season = "Untitled"
     
     # Read image content
@@ -651,20 +665,16 @@ async def create_item(
     db.commit()
     db.refresh(item)
     
-    return {
-        "success": True,
-        "data": {
-            "id": item.id,
-            "item_name": item.item_name,
-            "season": item.season,
-            "image_url": item.image_url,
-            "original_image_url": item.original_image_url,
-            "file_name": item.file_name,
-            "file_size": item.file_size,
-            "created_at": item.created_at.isoformat() + "Z" if item.created_at else None,
-            "updated_at": item.updated_at.isoformat() + "Z" if item.updated_at else None,
-        }
-    }
+    # >>> GEMINI INTEGRATION: Trigger async AI analysis (fire-and-forget)
+    asyncio.create_task(
+        trigger_clothing_analysis(
+            item_id=item.id,
+            user_id=current_user.id,
+            image_url=item.image_url,
+        )
+    )
+    
+    return {"success": True, "data": serialize_item(item)}
 
 
 @app.put("/items/{item_id}")
@@ -690,11 +700,11 @@ async def update_item(
         item.item_name = item_name
     
     if season is not None:
-        valid_seasons = ["Spring", "Summer", "Fall", "Winter", "Untitled"]
-        if season in valid_seasons:
+        if season in VALID_SEASONS:
             item.season = season
     
     # Process new image if provided
+    image_updated = False
     if image:
         content = await image.read()
         try:
@@ -709,33 +719,32 @@ async def update_item(
                         item.original_image_url = image_data["data"]["original_url"]
                         item.file_name = image_data["data"]["file_name"]
                         item.file_size = image_data["data"]["file_size"]
-        except httpx.RequestError:
-            pass  # Keep old image if processing fails
+                        image_updated = True
+        except httpx.RequestError as e:
+            logger.warning(f"Image processing failed during update for item {item_id}: {e}")
     
     item.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(item)
     
-    return {
-        "success": True,
-        "data": {
-            "id": item.id,
-            "item_name": item.item_name,
-            "season": item.season,
-            "image_url": item.image_url,
-            "original_image_url": item.original_image_url,
-            "file_name": item.file_name,
-            "file_size": item.file_size,
-            "created_at": item.created_at.isoformat() + "Z" if item.created_at else None,
-            "updated_at": item.updated_at.isoformat() + "Z" if item.updated_at else None,
-        }
-    }
+    # >>> GEMINI INTEGRATION: Re-analyze if image was updated
+    if image_updated:
+        asyncio.create_task(
+            trigger_clothing_analysis(
+                item_id=item.id,
+                user_id=current_user.id,
+                image_url=item.image_url,
+            )
+        )
+    
+    return {"success": True, "data": serialize_item(item)}
 
 
 @app.delete("/items/{item_id}")
 async def delete_item(
     item_id: str,
     current_user: User = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ):
     """Delete a clothing item"""
@@ -752,8 +761,16 @@ async def delete_item(
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 await client.delete(f"{IMAGE_SERVICE_URL}/images/{item.file_name}?type=both")
-        except:
-            pass  # Continue even if image deletion fails
+        except Exception as e:
+            logger.warning(f"Failed to delete image files for item {item_id}: {e}")
+    
+    # >>> GEMINI INTEGRATION: Cleanup clothing attributes in outfit service
+    asyncio.create_task(
+        cleanup_clothing_attributes(
+            item_id=item_id,
+            token=credentials.credentials,
+        )
+    )
     
     db.delete(item)
     db.commit()

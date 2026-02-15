@@ -1,0 +1,110 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: closetmate-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  image-processing:
+    build:
+      context: ./image_processing_service
+      dockerfile: Dockerfile
+    container_name: closetmate-image-processing
+    ports:
+      - "3002:3002"
+    environment:
+      - STORAGE_PATH=/app/storage
+      - BASE_URL=http://localhost:3002
+    volumes:
+      - image_storage:/app/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  wardrobe:
+    build:
+      context: .
+      dockerfile: wardrobe_service/Dockerfile
+    container_name: closetmate-wardrobe
+    ports:
+      - "3001:3001"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - IMAGE_SERVICE_URL=http://image-processing:3002
+      - OUTFIT_SERVICE_URL=http://outfit:3003
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      image-processing:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  outfit:
+    build:
+      context: ./outfit_service
+      dockerfile: Dockerfile
+    container_name: closetmate-outfit
+    ports:
+      - "3003:3003"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
+      - JWT_SECRET=${JWT_SECRET}
+      - WARDROBE_SERVICE_URL=http://wardrobe:3001
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  api-gateway:
+    build:
+      context: ./api_gateway
+      dockerfile: Dockerfile
+    container_name: closetmate-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - WARDROBE_SERVICE_URL=http://wardrobe:3001
+      - IMAGE_SERVICE_URL=http://image-processing:3002
+      - OUTFIT_SERVICE_URL=http://outfit:3003
+    depends_on:
+      wardrobe:
+        condition: service_healthy
+      image-processing:
+        condition: service_healthy
+      outfit:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres_data:
+  image_storage:
