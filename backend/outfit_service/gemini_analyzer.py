@@ -219,8 +219,8 @@ class GeminiClothingAnalyzer:
                 "data": base64.b64encode(image_bytes).decode("utf-8")
             }
 
-            # Call Gemini with the image and analysis prompt
-            response = self.model.generate_content(
+            # Call Gemini with the image and analysis prompt (async to not block event loop)
+            response = await self.model.generate_content_async(
                 [CLOTHING_ANALYSIS_PROMPT, image_part]
             )
 
@@ -293,7 +293,7 @@ class GeminiClothingAnalyzer:
         )
 
         try:
-            response = self.outfit_model.generate_content(prompt)
+            response = await self.outfit_model.generate_content_async(prompt)
             result = json.loads(response.text)
             validated = self._validate_outfits(result, wardrobe_items)
             logger.info(f"Generated {len(validated['outfits'])} outfit combinations")

@@ -392,6 +392,40 @@ async def reanalyze_clothing_item(
     return {"success": True, "data": clothing_attr.to_dict(), "reanalyzed": True}
 
 
+@app.delete("/analyze/{item_id}")
+async def delete_clothing_attributes(
+    item_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """Delete analyzed attributes for a clothing item (called when item is deleted)"""
+    deleted = db.query(ClothingAttribute).filter(
+        ClothingAttribute.item_id == item_id,
+        ClothingAttribute.user_id == user_id
+    ).delete()
+    db.commit()
+
+    # Also remove this item from any saved outfits
+    outfit_items = db.query(OutfitItem).filter(OutfitItem.item_id == item_id).all()
+    orphaned_outfit_ids = {oi.outfit_id for oi in outfit_items}
+    for oi in outfit_items:
+        db.delete(oi)
+    db.commit()
+
+    # Delete outfits that now have fewer than 2 items
+    for outfit_id in orphaned_outfit_ids:
+        remaining = db.query(OutfitItem).filter(OutfitItem.outfit_id == outfit_id).count()
+        if remaining < 2:
+            db.query(Outfit).filter(Outfit.id == outfit_id).delete()
+    db.commit()
+
+    return {
+        "success": True,
+        "message": f"Attributes deleted for item {item_id}",
+        "attributes_deleted": deleted
+    }
+
+
 # ============== OUTFIT GENERATION ==============
 
 @app.post("/outfits/generate")
