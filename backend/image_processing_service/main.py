@@ -1,36 +1,40 @@
 """
-Image Processing Service - Standalone for Railway
-Handles image uploads and background removal using rembg
+Image Processing Service - Railway Compatible
+Returns base64 encoded images - no persistent storage required
 """
 import os
 import uuid
 import io
+import base64
+import logging
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, UploadFile, File, Query
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image
 from rembg import remove, new_session
 
-# Configuration
-STORAGE_PATH = os.getenv("STORAGE_PATH", "./storage")
-BASE_URL = os.getenv("BASE_URL", "http://localhost:3002")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
-# Create storage directories
-Path(f"{STORAGE_PATH}/original").mkdir(parents=True, exist_ok=True)
-Path(f"{STORAGE_PATH}/processed").mkdir(parents=True, exist_ok=True)
-
-# Cache u2net session at startup - model loads once, stays in memory
-SESSION = new_session("u2net")
+# Load model at startup - Railway keeps container alive so this runs once
+logger.info("Loading u2net model...")
+try:
+    SESSION = new_session("u2net")
+    logger.info("u2net model loaded successfully")
+except Exception as e:
+    logger.error(f"Failed to load u2net model: {e}")
+    SESSION = None
 
 app = FastAPI(
     title="ClosetMate Image Processing Service",
     description="Handles image uploads and background removal",
-    version="1.0.0",
+    version="2.0.0",
 )
 
 app.add_middleware(
@@ -60,83 +64,68 @@ def validate_image_file(file: UploadFile) -> Optional[str]:
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "image-processing"}
+    return {
+        "status": "healthy",
+        "service": "image-processing",
+        "model_loaded": SESSION is not None
+    }
 
 
 @app.post("/images/process")
 async def process_image(image: UploadFile = File(...)):
+    if SESSION is None:
+        return create_error_response(
+            "MODEL_NOT_LOADED",
+            "Background removal model failed to load. Check service logs.",
+            503
+        )
+
     error = validate_image_file(image)
     if error:
         return create_error_response("INVALID_FILE_TYPE", error)
-    
+
     content = await image.read()
-    
+
     if len(content) > MAX_FILE_SIZE:
         return create_error_response("FILE_TOO_LARGE", "File exceeds 5MB limit")
-    
+
     try:
         file_id = str(uuid.uuid4())
         original_ext = Path(image.filename).suffix.lower()
-        original_filename = f"{file_id}{original_ext}"
-        processed_filename = f"{file_id}.png"
-        
-        # Save original
-        original_path = Path(f"{STORAGE_PATH}/original/{original_filename}")
-        with open(original_path, "wb") as f:
-            f.write(content)
-        
-        # Process - remove background using cached session
-        input_image = Image.open(io.BytesIO(content))
+
+        logger.info(f"Processing image: {image.filename} ({len(content)} bytes)")
+
+        # Encode original as base64
+        original_b64 = base64.b64encode(content).decode("utf-8")
+        original_mime = "image/png" if original_ext == ".png" else "image/jpeg"
+        original_data_url = f"data:{original_mime};base64,{original_b64}"
+
+        # Remove background
+        input_image = Image.open(io.BytesIO(content)).convert("RGBA")
         output_image = remove(input_image, session=SESSION)
-        
-        # Save processed
-        processed_path = Path(f"{STORAGE_PATH}/processed/{processed_filename}")
-        output_image.save(processed_path, "PNG")
-        
-        processed_size = processed_path.stat().st_size
-        
+
+        # Encode processed as base64
+        processed_buffer = io.BytesIO()
+        output_image.save(processed_buffer, format="PNG")
+        processed_bytes = processed_buffer.getvalue()
+        processed_b64 = base64.b64encode(processed_bytes).decode("utf-8")
+        processed_data_url = f"data:image/png;base64,{processed_b64}"
+
+        logger.info(f"Successfully processed image {file_id}")
+
         return {
             "success": True,
             "data": {
-                "original_url": f"{BASE_URL}/storage/original/{original_filename}",
-                "processed_url": f"{BASE_URL}/storage/processed/{processed_filename}",
-                "file_name": processed_filename,
-                "file_size": processed_size
+                "original_url": original_data_url,
+                "processed_url": processed_data_url,
+                "file_name": f"{file_id}.png",
+                "file_size": len(processed_bytes)
             }
         }
-        
+
     except Exception as e:
+        logger.error(f"Processing failed: {e}", exc_info=True)
         return create_error_response("PROCESSING_FAILED", str(e), 500)
-
-
-@app.delete("/images/{filename}")
-async def delete_image(filename: str, type: str = Query("both")):
-    if type not in ["original", "processed", "both"]:
-        return create_error_response("INVALID_INPUT", "Type must be 'original', 'processed', or 'both'")
-    
-    deleted = []
-    base_name = Path(filename).stem
-    
-    if type in ["original", "both"]:
-        for ext in ALLOWED_EXTENSIONS:
-            path = Path(f"{STORAGE_PATH}/original/{base_name}{ext}")
-            if path.exists():
-                path.unlink()
-                deleted.append(f"original/{base_name}{ext}")
-                break
-    
-    if type in ["processed", "both"]:
-        path = Path(f"{STORAGE_PATH}/processed/{base_name}.png")
-        if path.exists():
-            path.unlink()
-            deleted.append(f"processed/{base_name}.png")
-    
-    return {"success": True, "message": "Image(s) deleted", "deleted": deleted}
-
-
-# Serve static files
-from fastapi.staticfiles import StaticFiles
-app.mount("/storage", StaticFiles(directory=STORAGE_PATH), name="storage")
 
 
 if __name__ == "__main__":
