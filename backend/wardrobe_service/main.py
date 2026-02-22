@@ -256,17 +256,17 @@ async def trigger_clothing_analysis(item_id: str, user_id: str, image_url: str):
     The user can manually re-trigger analysis later via /reanalyze.
     """
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            await client.post(
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
                 f"{OUTFIT_SERVICE_URL}/analyze",
-                data={
+                json={
                     "item_id": item_id,
                     "user_id": user_id,
                     "image_url": image_url,
                     "x_api_key": INTERNAL_API_KEY,
                 }
             )
-            logger.info(f"Clothing analysis triggered for item {item_id}")
+            logger.info(f"Clothing analysis triggered for item {item_id}, status: {resp.status_code}")
     except Exception as e:
         logger.warning(f"Failed to trigger clothing analysis for item {item_id}: {e}")
 

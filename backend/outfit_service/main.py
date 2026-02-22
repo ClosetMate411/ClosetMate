@@ -13,14 +13,16 @@ Endpoints:
 """
 import os
 import uuid
+import base64
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
-from fastapi import FastAPI, Depends, HTTPException, Form, Query
+from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel, Field
 
 from sqlalchemy import (
     create_engine, Column, String, Integer, Text, DateTime,
@@ -228,6 +230,33 @@ def verify_internal_request(api_key: Optional[str]) -> bool:
     return api_key == INTERNAL_API_KEY
 
 
+# ============== REQUEST MODELS ==============
+
+class AnalyzeRequest(BaseModel):
+    item_id: str
+    user_id: str
+    image_url: str
+    x_api_key: Optional[str] = None
+
+class ReanalyzeRequest(BaseModel):
+    image_url: str
+
+class GenerateOutfitsRequest(BaseModel):
+    count: int = 3
+    season: str = "all"
+    occasion: str = "everyday"
+    style: str = "any"
+
+class SaveOutfitRequest(BaseModel):
+    name: str
+    item_ids: List[str]
+    style: Optional[str] = None
+    occasion: Optional[str] = None
+    season: Optional[str] = None
+    cohesion_score: Optional[int] = None
+    reasoning: Optional[str] = None
+
+
 # ============== APP ==============
 
 app = FastAPI(
@@ -256,28 +285,28 @@ async def health_check():
 
 @app.post("/analyze")
 async def analyze_clothing_item(
-    item_id: str = Form(...),
-    user_id: str = Form(...),
-    image_url: str = Form(...),
-    x_api_key: Optional[str] = Form(None),
+    body: AnalyzeRequest,
     db: Session = Depends(get_db)
 ):
     """
     Analyze a clothing item image using Gemini.
     Called internally by the wardrobe service after image upload.
     
-    Flow:
-    1. Wardrobe service uploads image → bg removal → saves item
-    2. Wardrobe service calls this endpoint with the processed image URL
-    3. This service downloads the image, sends to Gemini, stores attributes
+    JSON body:
+    {
+        "item_id": "...",
+        "user_id": "...",
+        "image_url": "data:image/png;base64,...",
+        "x_api_key": "..." (optional)
+    }
     """
     # Verify internal request
-    if not verify_internal_request(x_api_key):
+    if not verify_internal_request(body.x_api_key):
         return create_error_response("UNAUTHORIZED", "Invalid API key", 401)
 
     # Check if already analyzed
     existing = db.query(ClothingAttribute).filter(
-        ClothingAttribute.item_id == item_id
+        ClothingAttribute.item_id == body.item_id
     ).first()
 
     if existing:
@@ -285,7 +314,7 @@ async def analyze_clothing_item(
 
     # Download the processed image (supports both HTTP URLs and data: URLs)
     try:
-        image_bytes, content_type = await fetch_image_bytes(image_url)
+        image_bytes, content_type = await fetch_image_bytes(body.image_url)
     except ValueError as e:
         return create_error_response("IMAGE_FETCH_FAILED", str(e), 502)
     except httpx.RequestError as e:
@@ -295,17 +324,17 @@ async def analyze_clothing_item(
     try:
         attributes = await analyzer.analyze_clothing(image_bytes, content_type)
     except ValueError as e:
-        logger.error(f"Gemini analysis validation failed for item {item_id}: {e}")
+        logger.error(f"Gemini analysis validation failed for item {body.item_id}: {e}")
         return create_error_response("ANALYSIS_FAILED", str(e), 500)
     except Exception as e:
-        logger.error(f"Gemini API error for item {item_id}: {e}")
+        logger.error(f"Gemini API error for item {body.item_id}: {e}")
         return create_error_response("ANALYSIS_FAILED", f"AI analysis failed: {str(e)}", 500)
 
     # Store attributes in database
     clothing_attr = ClothingAttribute(
         id=str(uuid.uuid4()),
-        item_id=item_id,
-        user_id=user_id,
+        item_id=body.item_id,
+        user_id=body.user_id,
         category=attributes["category"],
         subcategory=attributes["subcategory"],
         color_primary=attributes["color_primary"],
@@ -348,7 +377,7 @@ async def get_clothing_attributes(
 @app.post("/analyze/{item_id}/reanalyze")
 async def reanalyze_clothing_item(
     item_id: str,
-    image_url: str = Form(...),
+    body: ReanalyzeRequest,
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
@@ -362,7 +391,7 @@ async def reanalyze_clothing_item(
 
     # Download image (supports both HTTP URLs and data: URLs)
     try:
-        image_bytes, content_type = await fetch_image_bytes(image_url)
+        image_bytes, content_type = await fetch_image_bytes(body.image_url)
     except ValueError as e:
         return create_error_response("IMAGE_FETCH_FAILED", str(e), 502)
     except httpx.RequestError as e:
@@ -438,16 +467,21 @@ async def delete_clothing_attributes(
 
 @app.post("/outfits/generate")
 async def generate_outfits(
-    count: int = Form(3),
-    season: str = Form("all"),
-    occasion: str = Form("everyday"),
-    style: str = Form("any"),
+    body: GenerateOutfitsRequest,
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     """
     Generate outfit combinations using Gemini AI.
     Reads the user's analyzed wardrobe items and creates matching outfits.
+    
+    JSON body:
+    {
+        "count": 3,
+        "season": "all",
+        "occasion": "everyday",
+        "style": "any"
+    }
     """
     # Get all analyzed items for this user
     attributes = db.query(ClothingAttribute).filter(
@@ -465,15 +499,15 @@ async def generate_outfits(
     wardrobe_items = [attr.to_dict() for attr in attributes]
 
     # Validate count
-    count = max(1, min(count, 10))
+    count = max(1, min(body.count, 10))
 
     try:
         result = await analyzer.generate_outfits(
             wardrobe_items=wardrobe_items,
             count=count,
-            season=season,
-            occasion=occasion,
-            style=style,
+            season=body.season,
+            occasion=body.occasion,
+            style=body.style,
         )
     except ValueError as e:
         return create_error_response("GENERATION_FAILED", str(e), 400)
@@ -506,31 +540,35 @@ async def generate_outfits(
 
 @app.post("/outfits/save")
 async def save_outfit(
-    name: str = Form(...),
-    item_ids: str = Form(...),  # Comma-separated item IDs
-    style: str = Form(None),
-    occasion: str = Form(None),
-    season: str = Form(None),
-    cohesion_score: int = Form(None),
-    reasoning: str = Form(None),
+    body: SaveOutfitRequest,
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
-    """Save a generated outfit to the user's collection"""
-    # Parse item IDs
-    item_id_list = [iid.strip() for iid in item_ids.split(",") if iid.strip()]
-
-    if len(item_id_list) < 2:
+    """
+    Save a generated outfit to the user's collection.
+    
+    JSON body:
+    {
+        "name": "My Casual Outfit",
+        "item_ids": ["id1", "id2", "id3"],
+        "style": "casual",
+        "occasion": "everyday",
+        "season": "spring",
+        "cohesion_score": 8,
+        "reasoning": "Great color combination"
+    }
+    """
+    if len(body.item_ids) < 2:
         return create_error_response("INVALID_INPUT", "An outfit must have at least 2 items", 400)
 
     # Verify all items belong to this user
     user_items = db.query(ClothingAttribute).filter(
         ClothingAttribute.user_id == user_id,
-        ClothingAttribute.item_id.in_(item_id_list)
+        ClothingAttribute.item_id.in_(body.item_ids)
     ).all()
 
     valid_ids = {a.item_id for a in user_items}
-    invalid_ids = [iid for iid in item_id_list if iid not in valid_ids]
+    invalid_ids = [iid for iid in body.item_ids if iid not in valid_ids]
 
     if invalid_ids:
         return create_error_response(
@@ -543,18 +581,18 @@ async def save_outfit(
     outfit = Outfit(
         id=str(uuid.uuid4()),
         user_id=user_id,
-        name=name[:100],
-        style=style[:30] if style else None,
-        occasion=occasion[:30] if occasion else None,
-        season=season[:20] if season else None,
-        cohesion_score=max(1, min(10, cohesion_score)) if cohesion_score else None,
-        reasoning=reasoning[:200] if reasoning else None,
+        name=body.name[:100],
+        style=body.style[:30] if body.style else None,
+        occasion=body.occasion[:30] if body.occasion else None,
+        season=body.season[:20] if body.season else None,
+        cohesion_score=max(1, min(10, body.cohesion_score)) if body.cohesion_score else None,
+        reasoning=body.reasoning[:200] if body.reasoning else None,
     )
     db.add(outfit)
     db.flush()
 
     # Add outfit items with order
-    for position, item_id in enumerate(item_id_list):
+    for position, item_id in enumerate(body.item_ids):
         outfit_item = OutfitItem(
             id=str(uuid.uuid4()),
             outfit_id=outfit.id,
