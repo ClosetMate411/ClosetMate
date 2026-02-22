@@ -344,17 +344,18 @@ async def get_item_attributes(item_id: str, authorization: Optional[str] = Heade
 @app.post("/api/outfits/items/{item_id}/reanalyze")
 async def reanalyze_item(
     item_id: str,
+    request: Request,
     authorization: Optional[str] = Header(None),
-    image_url: str = Form(...)
 ):
     """Force re-analysis of a clothing item"""
     if not authorization:
         return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
     try:
+        body = await get_body_data(request)
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 f"{OUTFIT_SERVICE_URL}/analyze/{item_id}/reanalyze",
-                data={"image_url": image_url},
+                json=body,
                 headers={"Authorization": authorization}
             )
             return JSONResponse(status_code=response.status_code, content=response.json())
@@ -364,21 +365,18 @@ async def reanalyze_item(
 
 @app.post("/api/outfits/generate")
 async def generate_outfits(
+    request: Request,
     authorization: Optional[str] = Header(None),
-    count: int = Form(3),
-    season: str = Form("all"),
-    occasion: str = Form("everyday"),
-    style: str = Form("any")
 ):
     """Generate AI-powered outfit combinations"""
     if not authorization:
         return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
     try:
+        body = await get_body_data(request)
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 f"{OUTFIT_SERVICE_URL}/outfits/generate",
-                data={"count": str(count), "season": season,
-                      "occasion": occasion, "style": style},
+                json=body,
                 headers={"Authorization": authorization}
             )
             return JSONResponse(status_code=response.status_code, content=response.json())
@@ -388,35 +386,18 @@ async def generate_outfits(
 
 @app.post("/api/outfits/save")
 async def save_outfit(
+    request: Request,
     authorization: Optional[str] = Header(None),
-    name: str = Form(...),
-    item_ids: str = Form(...),
-    style: str = Form(None),
-    occasion: str = Form(None),
-    season: str = Form(None),
-    cohesion_score: int = Form(None),
-    reasoning: str = Form(None)
 ):
     """Save a generated outfit"""
     if not authorization:
         return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
     try:
-        data = {"name": name, "item_ids": item_ids}
-        if style:
-            data["style"] = style
-        if occasion:
-            data["occasion"] = occasion
-        if season:
-            data["season"] = season
-        if cohesion_score:
-            data["cohesion_score"] = str(cohesion_score)
-        if reasoning:
-            data["reasoning"] = reasoning
-
+        body = await get_body_data(request)
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"{OUTFIT_SERVICE_URL}/outfits/save",
-                data=data,
+                json=body,
                 headers={"Authorization": authorization}
             )
             return JSONResponse(status_code=response.status_code, content=response.json())
