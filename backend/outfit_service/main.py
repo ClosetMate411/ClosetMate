@@ -528,9 +528,9 @@ async def generate_outfits(
             "outfits": enriched_outfits,
             "total_items_analyzed": len(attributes),
             "filters": {
-                "season": season,
-                "occasion": occasion,
-                "style": style,
+                "season": body.season,
+                "occasion": body.occasion,
+                "style": body.style,
             }
         }
     }
