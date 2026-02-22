@@ -12,6 +12,78 @@ import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
+
+def repair_json(text: str) -> str:
+    """
+    Attempt to repair truncated or malformed JSON from Gemini.
+    Handles: unterminated strings, missing closing brackets/braces.
+    """
+    text = text.strip()
+    
+    # Remove markdown code fences if present
+    if text.startswith("```"):
+        lines = text.split("\n")
+        lines = [l for l in lines if not l.strip().startswith("```")]
+        text = "\n".join(lines).strip()
+    
+    # Try parsing as-is first
+    try:
+        json.loads(text)
+        return text
+    except json.JSONDecodeError:
+        pass
+    
+    # Fix unterminated strings: find last unescaped quote situation
+    # Strategy: close any open string, then close brackets/braces
+    in_string = False
+    escaped = False
+    last_good = 0
+    
+    for i, ch in enumerate(text):
+        if escaped:
+            escaped = False
+            continue
+        if ch == '\\':
+            escaped = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+        if not in_string:
+            last_good = i
+    
+    # If we ended inside a string, close it
+    if in_string:
+        text = text + '"'
+    
+    # Count open brackets/braces and close them
+    opens = []
+    in_string = False
+    escaped = False
+    for ch in text:
+        if escaped:
+            escaped = False
+            continue
+        if ch == '\\':
+            escaped = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch in '{[':
+            opens.append(ch)
+        elif ch == '}' and opens and opens[-1] == '{':
+            opens.pop()
+        elif ch == ']' and opens and opens[-1] == '[':
+            opens.pop()
+    
+    # Close in reverse order
+    for bracket in reversed(opens):
+        text += ']' if bracket == '[' else '}'
+    
+    return text
+
 # Configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
@@ -224,8 +296,13 @@ class GeminiClothingAnalyzer:
                 [CLOTHING_ANALYSIS_PROMPT, image_part]
             )
 
-            # Parse response
-            result = json.loads(response.text)
+            # Parse response (with repair if needed)
+            try:
+                result = json.loads(response.text)
+            except json.JSONDecodeError:
+                logger.warning("Clothing analysis JSON parse failed, attempting repair...")
+                repaired = repair_json(response.text)
+                result = json.loads(repaired)
 
             # Validate and sanitize the response
             validated = self._validate_analysis(result)
@@ -250,16 +327,8 @@ class GeminiClothingAnalyzer:
     ) -> dict:
         """
         Generate outfit combinations from the user's wardrobe.
-        
-        Args:
-            wardrobe_items: List of clothing item dicts with their attributes
-            count: Number of outfits to generate (1-10)
-            season: Filter by season
-            occasion: Filter by occasion
-            style: Preferred style
-            
-        Returns:
-            Dict with outfit combinations
+        Uses item_id (wardrobe item ID) as the reference key.
+        Includes retry logic and JSON repair for robustness.
         """
         if len(wardrobe_items) < 2:
             raise ValueError("Need at least 2 items to generate an outfit")
@@ -267,12 +336,11 @@ class GeminiClothingAnalyzer:
         count = max(1, min(count, 10))
 
         # Build the prompt with actual wardrobe data
-        # Only send relevant fields to reduce token usage and noise
+        # Use item_id as the ID field so outfit references map to wardrobe items
         simplified_items = []
         for item in wardrobe_items:
             simplified_items.append({
-                "id": item["id"],
-                "item_name": item.get("item_name", "Untitled"),
+                "id": item.get("item_id", item["id"]),  # Use item_id (wardrobe FK)
                 "category": item.get("category", "unknown"),
                 "subcategory": item.get("subcategory", "unknown"),
                 "color_primary": item.get("color_primary", "unknown"),
@@ -292,19 +360,36 @@ class GeminiClothingAnalyzer:
             count=count,
         )
 
-        try:
-            response = await self.outfit_model.generate_content_async(prompt)
-            result = json.loads(response.text)
-            validated = self._validate_outfits(result, wardrobe_items)
-            logger.info(f"Generated {len(validated['outfits'])} outfit combinations")
-            return validated
+        # Retry up to 2 times on JSON parse failures
+        last_error = None
+        for attempt in range(3):
+            try:
+                response = await self.outfit_model.generate_content_async(prompt)
+                raw_text = response.text
+                
+                # Try direct parse first, then repair
+                try:
+                    result = json.loads(raw_text)
+                except json.JSONDecodeError:
+                    logger.warning(f"Outfit JSON parse failed (attempt {attempt+1}), attempting repair...")
+                    repaired = repair_json(raw_text)
+                    result = json.loads(repaired)
+                
+                # Use item_id for validation
+                valid_ids = {item.get("item_id", item["id"]) for item in wardrobe_items}
+                validated = self._validate_outfits(result, valid_ids)
+                logger.info(f"Generated {len(validated['outfits'])} outfit combinations")
+                return validated
 
-        except json.JSONDecodeError as e:
-            logger.error(f"Gemini returned invalid JSON for outfits: {e}")
-            raise ValueError(f"Failed to parse outfit response: {e}")
-        except Exception as e:
-            logger.error(f"Gemini API error during outfit generation: {e}")
-            raise
+            except (json.JSONDecodeError, ValueError) as e:
+                last_error = e
+                logger.warning(f"Outfit generation attempt {attempt+1} failed: {e}")
+                continue
+            except Exception as e:
+                logger.error(f"Gemini API error during outfit generation: {e}")
+                raise
+
+        raise ValueError(f"Failed to generate outfits after 3 attempts: {last_error}")
 
     # ============== VALIDATION ==============
 
@@ -371,10 +456,8 @@ class GeminiClothingAnalyzer:
 
         return validated
 
-    def _validate_outfits(self, data: dict, wardrobe_items: list[dict]) -> dict:
+    def _validate_outfits(self, data: dict, valid_ids: set) -> dict:
         """Validate outfit generation response - ensure all item IDs exist"""
-        valid_ids = {item["id"] for item in wardrobe_items}
-
         validated_outfits = []
         for outfit in data.get("outfits", []):
             item_ids = outfit.get("item_ids", [])
