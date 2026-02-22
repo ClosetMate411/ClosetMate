@@ -34,6 +34,28 @@ import httpx
 
 from gemini_analyzer import analyzer, VALID_CATEGORIES, VALID_STYLES, VALID_OCCASIONS
 
+
+async def fetch_image_bytes(image_url: str) -> tuple[bytes, str]:
+    """
+    Fetch image bytes from either:
+    - HTTP/HTTPS URL  → httpx GET
+    - data: URL       → base64 decode directly (Railway ephemeral storage workaround)
+    
+    Returns (image_bytes, content_type)
+    """
+    if image_url.startswith("data:"):
+        # data:image/png;base64,<b64data>
+        header, b64data = image_url.split(",", 1)
+        content_type = header.split(";")[0].replace("data:", "")
+        image_bytes = base64.b64decode(b64data)
+        return image_bytes, content_type
+    else:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            img_response = await client.get(image_url)
+            if img_response.status_code != 200:
+                raise ValueError(f"Could not fetch image from {image_url} (status {img_response.status_code})")
+            return img_response.content, img_response.headers.get("content-type", "image/png")
+
 # ============== CONFIGURATION ==============
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/closetmate")
@@ -261,24 +283,13 @@ async def analyze_clothing_item(
     if existing:
         return {"success": True, "data": existing.to_dict(), "cached": True}
 
-    # Download the processed image
+    # Download the processed image (supports both HTTP URLs and data: URLs)
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            img_response = await client.get(image_url)
-            if img_response.status_code != 200:
-                return create_error_response(
-                    "IMAGE_FETCH_FAILED",
-                    f"Could not fetch image from {image_url}",
-                    502
-                )
-            image_bytes = img_response.content
-            content_type = img_response.headers.get("content-type", "image/png")
+        image_bytes, content_type = await fetch_image_bytes(image_url)
+    except ValueError as e:
+        return create_error_response("IMAGE_FETCH_FAILED", str(e), 502)
     except httpx.RequestError as e:
-        return create_error_response(
-            "IMAGE_FETCH_FAILED",
-            f"Image service unreachable: {str(e)}",
-            503
-        )
+        return create_error_response("IMAGE_FETCH_FAILED", f"Image service unreachable: {str(e)}", 503)
 
     # Analyze with Gemini
     try:
@@ -349,14 +360,11 @@ async def reanalyze_clothing_item(
     ).delete()
     db.commit()
 
-    # Download image
+    # Download image (supports both HTTP URLs and data: URLs)
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            img_response = await client.get(image_url)
-            if img_response.status_code != 200:
-                return create_error_response("IMAGE_FETCH_FAILED", "Could not fetch image", 502)
-            image_bytes = img_response.content
-            content_type = img_response.headers.get("content-type", "image/png")
+        image_bytes, content_type = await fetch_image_bytes(image_url)
+    except ValueError as e:
+        return create_error_response("IMAGE_FETCH_FAILED", str(e), 502)
     except httpx.RequestError as e:
         return create_error_response("IMAGE_FETCH_FAILED", str(e), 503)
 
