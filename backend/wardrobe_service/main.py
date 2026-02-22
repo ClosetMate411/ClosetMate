@@ -311,6 +311,38 @@ async def health_check():
     return {"status": "healthy", "service": "wardrobe"}
 
 
+@app.get("/debug/image-service")
+async def debug_image_service():
+    """Debug endpoint to test connectivity to image processing service"""
+    result = {
+        "image_service_url": IMAGE_SERVICE_URL,
+        "outfit_service_url": OUTFIT_SERVICE_URL,
+    }
+    
+    # Test image service health
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{IMAGE_SERVICE_URL}/health")
+            result["image_service_health"] = resp.json()
+            result["image_service_status"] = "reachable"
+            result["image_service_response_time_ms"] = resp.elapsed.total_seconds() * 1000
+    except Exception as e:
+        result["image_service_status"] = "unreachable"
+        result["image_service_error"] = str(e)
+    
+    # Test outfit service health
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{OUTFIT_SERVICE_URL}/health")
+            result["outfit_service_health"] = resp.json()
+            result["outfit_service_status"] = "reachable"
+    except Exception as e:
+        result["outfit_service_status"] = "unreachable"
+        result["outfit_service_error"] = str(e)
+    
+    return result
+
+
 # ============== AUTH ENDPOINTS ==============
 
 @app.post("/auth/register")
@@ -631,22 +663,33 @@ async def create_item(
     
     # Read image content
     content = await image.read()
+    logger.info(f"Create item: received image '{image.filename}' ({len(content)} bytes) from user {current_user.id}")
     
     # Send to image processing service
     try:
-        async with httpx.AsyncClient(timeout=180.0) as client:
+        logger.info(f"Create item: calling image service at {IMAGE_SERVICE_URL}/images/process")
+        async with httpx.AsyncClient(timeout=60.0) as client:
             files = {"image": (image.filename, content, image.content_type)}
             response = await client.post(f"{IMAGE_SERVICE_URL}/images/process", files=files)
+            logger.info(f"Create item: image service responded with status {response.status_code} in {response.elapsed.total_seconds():.2f}s")
             
             if response.status_code != 200:
+                logger.error(f"Create item: image processing failed with status {response.status_code}: {response.text[:200]}")
                 return create_error_response("PROCESSING_FAILED", "Image processing failed", 500)
             
             image_data = response.json()
             
             if not image_data.get("success"):
+                logger.error(f"Create item: image processing returned error: {image_data.get('error', {})}")
                 return create_error_response("PROCESSING_FAILED", image_data.get("error", {}).get("message", "Unknown error"), 500)
             
+            logger.info(f"Create item: image processing successful, file: {image_data['data'].get('file_name')}")
+            
+    except httpx.TimeoutException as e:
+        logger.error(f"Create item: image service TIMEOUT after 60s: {e}")
+        return create_error_response("SERVICE_TIMEOUT", "Image processing timed out. Please try again.", 504)
     except httpx.RequestError as e:
+        logger.error(f"Create item: image service connection error: {e}")
         return create_error_response("SERVICE_UNAVAILABLE", f"Image service unavailable: {str(e)}", 503)
     
     # Create database record
@@ -664,6 +707,7 @@ async def create_item(
     db.add(item)
     db.commit()
     db.refresh(item)
+    logger.info(f"Create item: saved to DB with id {item.id}")
     
     # >>> GEMINI INTEGRATION: Trigger async AI analysis (fire-and-forget)
     asyncio.create_task(
@@ -756,14 +800,6 @@ async def delete_item(
     if not item:
         return create_error_response("ITEM_NOT_FOUND", "Item not found", 404)
     
-    # Delete from image service
-    if item.file_name:
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                await client.delete(f"{IMAGE_SERVICE_URL}/images/{item.file_name}?type=both")
-        except Exception as e:
-            logger.warning(f"Failed to delete image files for item {item_id}: {e}")
-    
     # >>> GEMINI INTEGRATION: Cleanup clothing attributes in outfit service
     asyncio.create_task(
         cleanup_clothing_attributes(
@@ -774,6 +810,7 @@ async def delete_item(
     
     db.delete(item)
     db.commit()
+    logger.info(f"Item {item_id} deleted by user {current_user.id}")
     
     return {"success": True, "message": "Item deleted successfully"}
 
