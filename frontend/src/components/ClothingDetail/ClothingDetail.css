@@ -6,10 +6,10 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1.5rem;
-  background: #ffffff;
+  background: var(--surface);
   border-radius: 1rem;
   padding: 1.5rem;
-  box-shadow: 0 0.125rem 0.5rem rgba(15, 23, 42, 0.08);
+  box-shadow: 0 0.125rem 0.5rem rgba(36, 27, 51, 0.08);
   max-width: 800px;
   margin: 1rem auto;
 }
@@ -26,8 +26,8 @@
   aspect-ratio: 1 / 1;
   border-radius: 0.875rem;
   overflow: hidden;
-  background: #f1f5f9;
-  border: 2px solid #e2e8f0;
+  background: var(--bg-light);
+  border: 2px solid var(--border);
   position: relative;
   transition: all 0.2s ease;
 }
@@ -37,7 +37,7 @@
 }
 
 .detail-image-wrapper.editable:hover {
-  border-color: #cbd5e1;
+  border-color: var(--primary-lighter);
 }
 
 .detail-image-wrapper.editable .detail-image {
@@ -53,7 +53,7 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  color: #64748b;
+  color: var(--text-muted);
   pointer-events: none;
   display: flex;
   align-items: center;
@@ -89,7 +89,7 @@
 .detail-name {
   font-size: 1.5rem;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--primary-dark);
   margin: 0;
   word-wrap: break-word;
 }
@@ -97,7 +97,7 @@
 .detail-weather {
   font-size: 1.125rem;
   font-weight: 500;
-  color: #64748b;
+  color: var(--text-muted);
   margin: 0;
 }
 
@@ -111,7 +111,7 @@
 .edit-weather-label {
   font-size: 0.875rem;
   font-weight: 600;
-  color: #334155;
+  color: var(--text-secondary);
 }
 
 .edit-weather-checkboxes {
@@ -141,52 +141,52 @@
 }
 
 .back-btn {
-  background-color: #f1f5f9;
-  color: #334155;
-  border: 1px solid #e2e8f0;
+  background-color: var(--bg-light);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
 }
 
 .back-btn:hover {
-  background-color: #e2e8f0;
-  border-color: #cbd5e1;
+  background-color: var(--primary-lightest);
+  border-color: var(--primary-lighter);
 }
 
 .edit-btn {
-  background-color: #2563eb;
-  color: #ffffff;
+  background-color: var(--primary);
+  color: var(--surface);
 }
 
 .edit-btn:hover {
-  background-color: #1d4ed8;
+  background-color: var(--primary-dark);
 }
 
 .delete-btn {
-  background-color: #dc2626;
-  color: #ffffff;
+  background-color: var(--accent);
+  color: var(--surface);
 }
 
 .delete-btn:hover {
-  background-color: #b91c1c;
+  background-color: #a02553;
 }
 
 .cancel-btn {
-  background-color: #f1f5f9;
-  color: #334155;
-  border: 1px solid #e2e8f0;
+  background-color: var(--bg-light);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
 }
 
 .cancel-btn:hover {
-  background-color: #e2e8f0;
-  border-color: #cbd5e1;
+  background-color: var(--primary-lightest);
+  border-color: var(--primary-lighter);
 }
 
 .save-btn {
-  background-color: #2563eb;
-  color: #ffffff;
+  background-color: var(--primary);
+  color: var(--surface);
 }
 
 .save-btn:hover {
-  background-color: #1d4ed8;
+  background-color: var(--primary-dark);
 }
 
 @media (max-width: 768px) {

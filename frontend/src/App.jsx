@@ -6,6 +6,7 @@ import useAuthStore from './store/authStore';
 // Lazy load pages for code splitting
 const Home = lazy(() => import('./pages/Home/Home'));
 const Wardrobe = lazy(() => import('./pages/Wardrobe/Wardrobe'));
+const Outfits = lazy(() => import('./pages/Outfits/Outfits'));
 const Login = lazy(() => import('./pages/Auth/Login'));
 const Register = lazy(() => import('./pages/Auth/Register'));
 const Logout = lazy(() => import('./pages/Auth/Logout'));
@@ -79,6 +80,11 @@ function App() {
           <Route path="/wardrobe" element={
             <ProtectedRoute>
               <Wardrobe />
+            </ProtectedRoute>
+          } />
+          <Route path="/outfits" element={
+            <ProtectedRoute>
+              <Outfits />
             </ProtectedRoute>
           } />
 

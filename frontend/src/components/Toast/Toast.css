@@ -22,11 +22,11 @@
 }
 
 .toast-success {
-  background-color: #10b981;
+  background-color: var(--primary);
 }
 
 .toast-error {
-  background-color: #ef4444;
+  background-color: var(--accent);
 }
 
 .toast-message {

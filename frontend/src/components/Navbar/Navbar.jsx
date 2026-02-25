@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { Link } from 'react-router-dom';
-import logo from '../../assets/Logo.png';
+import logo from '../../assets/ClosetMate_Logo.svg';
 import { WardrobeIcon } from '../';
 import './Navbar.css';
 
@@ -69,15 +69,15 @@ const Navbar = () => {
             </div>
           </div>
 
-          <div className="drawer-link disabled">
+          <Link to="/outfits" className="drawer-link" onClick={toggleDrawer}>
             <div className="drawer-icon-cell">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>
             </div>
             <div className="drawer-text">
-              <span className="link-title">Recommendation <span className="badge">Soon</span></span>
-              <span className="link-desc">AI Stylist suggestions</span>
+              <span className="link-title">Outfits</span>
+              <span className="link-desc">AI-generated combinations</span>
             </div>
-          </div>
+          </Link>
         </div>
 
         <div className="drawer-footer">

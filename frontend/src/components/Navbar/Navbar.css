@@ -1,7 +1,7 @@
 nav {
   height: 4rem;
-  background-color: #ffffff;
-  border-bottom: 0.0625rem solid #e2e8f0;
+  background-color: var(--surface);
+  border-bottom: 0.0625rem solid var(--border);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -15,17 +15,17 @@ nav {
   text-decoration: none;
 }
 .nav-logo img {
-  height: 10rem;
+  height: 4.5rem;
   width: auto;
   object-fit: contain;
-  margin-left: -2.5rem;
+  margin-left: -0.5rem;
 }
 .nav-icon {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   cursor: pointer;
-  color: #475569;
+  color: var(--text-muted);
   transition: color 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   text-decoration: none;
   background: none;
@@ -35,9 +35,9 @@ nav {
 }
 
 .nav-icon:hover {
-  color: #2563eb;
+  color: var(--primary);
   transform: scale(1.1);
-  background-color: #f8fafc; /* Subtle background on hover */
+  background-color: var(--bg-light); /* Subtle background on hover */
 }
 
 /* Fancy Right-Side Drawer */
@@ -47,7 +47,7 @@ nav {
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(15, 23, 42, 0.4);
+  background: var(--overlay);
   backdrop-filter: blur(4px);
   z-index: 1001;
   opacity: 0;
@@ -69,7 +69,7 @@ nav {
   background: rgba(255, 255, 255, 0.98); /* Slightly more opaque */
   backdrop-filter: blur(20px);
   z-index: 1002;
-  box-shadow: -10px 0 50px rgba(0, 0, 0, 0.1);
+  box-shadow: -10px 0 50px rgba(36, 27, 51, 0.1);
   transform: translateX(100%); /* Start off-screen */
   transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); /* Smooth spring-like slide */
   display: flex;
@@ -89,24 +89,24 @@ nav {
   align-items: center;
   margin-bottom: 2.5rem;
   padding-bottom: 1.5rem;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--border);
 }
 
 .drawer-header h2 {
   font-size: 1.4rem;
   font-weight: 800;
-  color: #1e293b;
+  color: var(--primary-dark);
   margin: 0;
 }
 
 .close-btn {
-  background: #f8fafc;
+  background: var(--bg-light);
   border: none;
   width: 36px;
   height: 36px;
   border-radius: 10px;
   font-size: 1.5rem;
-  color: #64748b;
+  color: var(--text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -115,8 +115,8 @@ nav {
 }
 
 .close-btn:hover {
-  background: #fee2e2;
-  color: #ef4444;
+  background: var(--accent-light);
+  color: var(--accent);
 }
 
 .drawer-content {
@@ -131,7 +131,7 @@ nav {
   gap: 1.25rem;
   padding: 1rem 1.25rem;
   text-decoration: none;
-  color: #475569;
+  color: var(--text-muted);
   border-radius: 16px;
   transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s ease;
   background: transparent; /* Start transparent for cleaner look */
@@ -139,21 +139,21 @@ nav {
 }
 
 .drawer-link:hover:not(.disabled) {
-  background: #f1f5f9;
+  background: var(--primary-lightest);
   transform: translateX(-4px);
-  border-color: #e2e8f0;
+  border-color: var(--primary-lighter);
 }
 
 .drawer-icon-cell {
   width: 44px;
   height: 44px;
-  background: #fff;
+  background: var(--surface);
   border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
-  color: #3b82f6;
+  color: var(--primary);
   flex-shrink: 0;
 }
 
@@ -165,12 +165,12 @@ nav {
 .link-title {
   font-size: 1rem;
   font-weight: 700;
-  color: #1e293b;
+  color: var(--text-primary);
 }
 
 .link-desc {
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: var(--text-light);
 }
 
 
@@ -183,8 +183,8 @@ nav {
 
 .badge {
   font-size: 0.6rem;
-  background: #e2e8f0;
-  color: #64748b;
+  background: var(--primary-lighter);
+  color: var(--primary-dark);
   padding: 0.15rem 0.45rem;
   border-radius: 6px;
   margin-left: 0.25rem;
@@ -195,6 +195,6 @@ nav {
   margin-top: auto;
   text-align: center;
   font-size: 0.8rem;
-  color: #cbd5e1;
+  color: var(--text-light);
   padding-top: 2rem;
 }

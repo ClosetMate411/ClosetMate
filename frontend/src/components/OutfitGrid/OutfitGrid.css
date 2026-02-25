@@ -1,0 +1,48 @@
+.outfits-section {
+  width: 100%;
+}
+
+.outfits-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 24px;
+  margin-top: 24px;
+}
+
+.add-outfit-card {
+  background: rgba(255, 255, 255, 0.4);
+  border: 2px dashed rgba(0, 0, 0, 0.1);
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 380px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.add-outfit-card:hover {
+  background: rgba(255, 255, 255, 0.6);
+  border-color: rgba(0, 0, 0, 0.2);
+  transform: scale(1.02);
+}
+
+.add-icon {
+  font-size: 3rem;
+  font-weight: 300;
+  color: #666;
+}
+
+.add-text {
+  font-size: 1.1rem;
+  color: #666;
+  font-weight: 500;
+}
+
+@media (max-width: 600px) {
+  .outfits-grid {
+    grid-template-columns: 1fr;
+  }
+}

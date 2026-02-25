@@ -12,4 +12,7 @@ export { default as Navbar } from './Navbar/Navbar';
 export { default as Toast } from './Toast/Toast';
 export { default as WardrobeIcon } from './WardrobeIcon/WardrobeIcon';
 export { default as LogoutButton } from './LogoutButton/LogoutButton';
+export { default as OutfitGrid } from './OutfitGrid/OutfitGrid';
+export { default as OutfitCard } from './OutfitCard/OutfitCard';
+export { default as OutfitGenerator } from './OutfitGenerator/OutfitGenerator';
 

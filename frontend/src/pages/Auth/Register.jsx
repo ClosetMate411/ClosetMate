@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import useAuthStore from '../../store/authStore';
 import { useToast } from '../../hooks';
-import logo from '../../assets/Logo.png';
+import logo from '../../assets/ClosetMate_Logo.svg';
 import { Toast } from '../../components';
 import './Auth.css';
 

@@ -21,7 +21,9 @@ axiosInstance.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+      // Ensure headers object exists and set Authorization
+      config.headers = config.headers || {};
+      config.headers['Authorization'] = `Bearer ${token}`;
     }
     return config;
   },
@@ -89,37 +91,37 @@ axiosInstance.interceptors.response.use(
 class APIService {
   // --- AUTH ---
   async register(userData) {
-    const f = new FormData();
-    Object.entries(userData).forEach(([key, val]) => {
-      const backendKey = key === 'confirmPassword' ? 'confirm_password' : 
-                         key === 'fullName' ? 'full_name' : key;
-      f.append(backendKey, val);
-    });
-    return axiosInstance.post(API_ENDPOINTS.register, f);
+    const body = {
+      email: userData.email,
+      password: userData.password,
+      confirm_password: userData.confirmPassword,
+      full_name: userData.fullName
+    };
+    return axiosInstance.post(API_ENDPOINTS.register, body);
   }
 
   async login(creds) {
-    const f = new FormData();
-    f.append('email', creds.email);
-    f.append('password', creds.password);
-    return axiosInstance.post(API_ENDPOINTS.login, f);
+    const body = {
+      email: creds.email,
+      password: creds.password
+    };
+    return axiosInstance.post(API_ENDPOINTS.login, body);
   }
 
   async logout() { return axiosInstance.post(API_ENDPOINTS.logout); }
   async getCurrentUser() { return axiosInstance.get(API_ENDPOINTS.me); }
   
   async forgotPassword(email) {
-    const f = new FormData();
-    f.append('email', email);
-    return axiosInstance.post(API_ENDPOINTS.forgotPassword, f);
+    return axiosInstance.post(API_ENDPOINTS.forgotPassword, { email });
   }
 
   async resetPassword(data) {
-    const f = new FormData();
-    f.append('token', data.token);
-    f.append('new_password', data.newPassword);
-    f.append('confirm_password', data.confirmPassword);
-    return axiosInstance.post(API_ENDPOINTS.resetPassword, f);
+    const body = {
+      token: data.token,
+      new_password: data.newPassword,
+      confirm_password: data.confirmPassword
+    };
+    return axiosInstance.post(API_ENDPOINTS.resetPassword, body);
   }
 
   // --- WARDROBE ---
@@ -145,6 +147,43 @@ class APIService {
     const f = new FormData();
     f.append('image', file);
     return axiosInstance.post(API_ENDPOINTS.processImage, f, { headers: {'Content-Type': 'multipart/form-data'} });
+  }
+
+  // --- OUTFITS ---
+  async generateOutfits(params) {
+    return axiosInstance.post(API_ENDPOINTS.generateOutfits, params);
+  }
+
+  async saveOutfit(outfitData) {
+    return axiosInstance.post(API_ENDPOINTS.saveOutfit, outfitData);
+  }
+
+  async getOutfits() {
+    return axiosInstance.get(API_ENDPOINTS.outfits);
+  }
+
+  async getOutfit(id) {
+    return axiosInstance.get(API_ENDPOINTS.outfit(id));
+  }
+
+  async toggleFavoriteOutfit(id) {
+    return axiosInstance.put(API_ENDPOINTS.favoriteOutfit(id), {});
+  }
+
+  async deleteOutfit(id) {
+    return axiosInstance.delete(API_ENDPOINTS.outfit(id));
+  }
+
+  async getWardrobeStats() {
+    return axiosInstance.get(API_ENDPOINTS.wardrobeStats);
+  }
+
+  async getItemAttributes(id) {
+    return axiosInstance.get(API_ENDPOINTS.itemAttributes(id));
+  }
+
+  async reanalyzeItem(id, imageUrl) {
+    return axiosInstance.post(API_ENDPOINTS.reanalyzeItem(id), { image_url: imageUrl });
   }
 }
 
