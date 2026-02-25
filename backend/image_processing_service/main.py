@@ -25,7 +25,7 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 # Load model at startup - Railway keeps container alive so this runs once
 logger.info("Loading u2net model...")
 try:
-    SESSION = new_session("u2net")
+    SESSION = new_session("u2net_cloth_seg")
     logger.info("u2net model loaded successfully")
 except Exception as e:
     logger.error(f"Failed to load u2net model: {e}")
