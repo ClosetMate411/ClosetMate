@@ -217,16 +217,20 @@ CRITICAL RULES:
 5. Respond with ONLY valid JSON - no markdown, no explanation.
 6. Each outfit must have a short creative name and a brief explanation of why it works.
 7. Rate each outfit's cohesion from 1-10.
+8. MANDATORY: You MUST strictly respect all filter parameters below. Do NOT create outfits that violate them.
+9. If the provided items cannot satisfy the filters, return fewer outfits or an empty list — do NOT substitute with non-matching items.
+10. The occasion and style filters are HARD constraints, not suggestions.
 
 USER'S WARDROBE:
 {wardrobe_items}
 
-FILTERS REQUESTED:
-- Season: {season}
-- Occasion: {occasion}
-- Style preference: {style}
+MANDATORY FILTERS — ALL OUTFITS MUST SATISFY THESE:
+- Season: {season} (only use items suitable for this season; "all" means no restriction)
+- Occasion: {occasion} (ALL items in the outfit must be appropriate for this occasion)
+- Style preference: {style} (outfits must match this style; "any" means no restriction)
 
-Generate exactly {count} outfit combinations.
+Generate up to {count} outfit combinations that strictly match the filters above.
+If you cannot generate {count} valid outfits from the available items, return fewer — quality over quantity.
 
 REQUIRED JSON SCHEMA:
 {{
