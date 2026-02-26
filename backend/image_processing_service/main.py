@@ -91,7 +91,7 @@ def is_clothing_shape(image: Image.Image) -> bool:
     return aspect_ratio > 0.85
 
 
-def is_low_contrast(image: Image.Image, threshold: float = 0.20) -> bool:
+def is_low_contrast(image: Image.Image, threshold: float = 0.12) -> bool:
     """
     Low contrast = foreground and background have similar brightness.
     Raised threshold to 0.20 to catch more edge cases like white shoes.
