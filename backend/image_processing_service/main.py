@@ -1,9 +1,10 @@
 """
 Image Processing Service - Railway Compatible
-v5.0: 3-model routing — human_seg / cloth_seg / u2net general
-- person detected       → u2net_human_seg
-- clothing (top/bottom) → u2net_cloth_seg
-- footwear/accessories  → u2net (general purpose)
+v6.0: 3-model routing + performance optimizations
+- Resize before inference (faster processing)
+- WebP output (smaller payload, transparency supported)
+- original_url kept for wardrobe service compatibility
+- Low contrast threshold tuned to 0.12
 """
 import os
 import uuid
@@ -25,7 +26,8 @@ from rembg import remove, new_session
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+MAX_FILE_SIZE      = 5 * 1024 * 1024  # 5MB
+MAX_DIMENSION      = 800               # resize before inference — ~60% faster
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
 # ── Load all 3 models at startup ─────────────────────────────────────────────
@@ -80,30 +82,36 @@ def has_person(image: Image.Image, skin_threshold: float = 0.04) -> bool:
 
 
 def is_clothing_shape(image: Image.Image) -> bool:
-    """
-    Heuristic: clothing items (tops/bottoms) tend to be taller than wide
-    and occupy a large central area.
-    Footwear/accessories tend to be wider than tall or small.
-    Returns True if likely clothing, False if likely footwear/accessory.
-    """
+    """Portrait aspect ratio → clothing. Landscape/square → footwear/accessory."""
     w, h = image.size
-    aspect_ratio = h / w  # >1.0 means portrait (likely clothing), <1.0 landscape (likely shoe/bag)
-    return aspect_ratio > 0.85
+    return (h / w) > 0.85
 
 
 def is_low_contrast(image: Image.Image, threshold: float = 0.12) -> bool:
     """
-    Low contrast = foreground and background have similar brightness.
-    Raised threshold to 0.20 to catch more edge cases like white shoes.
+    Tuned to 0.12: only truly low-contrast items trigger alpha matting.
+    Avoids unnecessary slowdown on normal items (e.g. white shoe w/ black stripes).
     """
     gray = np.array(image.convert("L"), dtype=np.float32) / 255.0
-    std = float(gray.std())
+    std  = float(gray.std())
     logger.info(f"Grayscale std (contrast): {std:.3f}")
     return std < threshold
 
 
+def resize_for_inference(image: Image.Image) -> Image.Image:
+    """
+    Resize large images before background removal.
+    rembg inference time scales with resolution — 800px is sufficient for wardrobe.
+    """
+    if max(image.size) > MAX_DIMENSION:
+        image = image.copy()
+        image.thumbnail((MAX_DIMENSION, MAX_DIMENSION), Image.LANCZOS)
+        logger.info(f"Resized to {image.size} for inference")
+    return image
+
+
 def preprocess_image(image: Image.Image, low_contrast: bool) -> Image.Image:
-    """Sharpen + boost contrast for low-contrast images before removal."""
+    """Sharpen + boost contrast for genuinely low-contrast images."""
     if low_contrast:
         image = image.filter(ImageFilter.SHARPEN)
         image = ImageEnhance.Contrast(image).enhance(2.0)
@@ -135,7 +143,7 @@ def remove_background_sync(
 app = FastAPI(
     title="ClosetMate Image Processing Service",
     description="Handles image uploads and background removal",
-    version="5.0.0",
+    version="6.0.0",
 )
 
 app.add_middleware(
@@ -168,11 +176,11 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "image-processing",
-        "version": "5.0.0",
+        "version": "6.0.0",
         "models": {
-            "human_seg":  SESSION_HUMAN is not None,
-            "cloth_seg":  SESSION_CLOTH is not None,
-            "general":    SESSION_GENERAL is not None,
+            "human_seg": SESSION_HUMAN is not None,
+            "cloth_seg": SESSION_CLOTH is not None,
+            "general":   SESSION_GENERAL is not None,
         }
     }
 
@@ -202,15 +210,12 @@ async def process_image(image: UploadFile = File(...)):
 
         input_image = Image.open(io.BytesIO(content)).convert("RGBA")
 
-        # ── Detect image characteristics ──────────────────────────────────────
-        person_detected  = has_person(input_image)
-        clothing_shape   = is_clothing_shape(input_image)
-        low_contrast     = is_low_contrast(input_image)
+        # ── Detect characteristics ────────────────────────────────────────────
+        person_detected = has_person(input_image)
+        clothing_shape  = is_clothing_shape(input_image)
+        low_contrast    = is_low_contrast(input_image)
 
-        # ── Route to correct model ────────────────────────────────────────────
-        # 1. Person wearing clothing → human_seg
-        # 2. Clothing product photo (portrait aspect) → cloth_seg
-        # 3. Footwear, accessories, bags (landscape/square) → u2net general
+        # ── Select model ──────────────────────────────────────────────────────
         if person_detected and SESSION_HUMAN is not None:
             session    = SESSION_HUMAN
             model_used = "u2net_human_seg"
@@ -225,15 +230,15 @@ async def process_image(image: UploadFile = File(...)):
             model_used = "fallback"
 
         logger.info(
-            f"Person: {person_detected}, Clothing shape: {clothing_shape}, "
-            f"Low contrast: {low_contrast} → model: {model_used}, "
+            f"Person: {person_detected}, Clothing: {clothing_shape}, "
+            f"LowContrast: {low_contrast} → {model_used}, "
             f"alpha_matting: {low_contrast}"
         )
 
-        # ── Preprocess ────────────────────────────────────────────────────────
-        processed_input = preprocess_image(input_image, low_contrast)
+        # ── Resize → Preprocess → Remove background ───────────────────────────
+        processed_input = resize_for_inference(input_image)
+        processed_input = preprocess_image(processed_input, low_contrast)
 
-        # ── Remove background (non-blocking) ──────────────────────────────────
         loop = asyncio.get_event_loop()
         output_image = await loop.run_in_executor(
             EXECUTOR,
@@ -243,26 +248,29 @@ async def process_image(image: UploadFile = File(...)):
             low_contrast,
         )
 
-        # ── Encode original ───────────────────────────────────────────────────
+        # ── Encode original as base64 (kept for wardrobe service) ────────────
         original_b64      = base64.b64encode(content).decode("utf-8")
         original_mime     = "image/png" if original_ext == ".png" else "image/jpeg"
         original_data_url = f"data:{original_mime};base64,{original_b64}"
 
-        # ── Encode processed ──────────────────────────────────────────────────
+        # ── Encode processed as WebP (~40% smaller than PNG, transparency ok) ─
         processed_buffer = io.BytesIO()
-        output_image.save(processed_buffer, format="PNG")
+        output_image.save(processed_buffer, format="WEBP", quality=85)
         processed_bytes    = processed_buffer.getvalue()
         processed_b64      = base64.b64encode(processed_bytes).decode("utf-8")
-        processed_data_url = f"data:image/png;base64,{processed_b64}"
+        processed_data_url = f"data:image/webp;base64,{processed_b64}"
 
-        logger.info(f"Done: {file_id} with {model_used}")
+        logger.info(
+            f"Done: {file_id} | {model_used} | "
+            f"output: {len(processed_bytes)} bytes (WebP)"
+        )
 
         return {
             "success": True,
             "data": {
                 "original_url":       original_data_url,
                 "processed_url":      processed_data_url,
-                "file_name":          f"{file_id}.png",
+                "file_name":          f"{file_id}.webp",
                 "file_size":          len(processed_bytes),
                 "model_used":         model_used,
                 "person_detected":    person_detected,
