@@ -1,6 +1,9 @@
 """
 Image Processing Service - Railway Compatible
-v6.0: 3-model routing + performance optimizations
+v6.2: Simplified 2-model routing + skin removal pipeline
+- Person + clothing → human_seg removes bg, then skin pixels stripped → only garment remains
+- Flat clothing / shoes / accessories → general u2net removes bg → only item remains
+- cloth_seg REMOVED — it's a segmentation model, not a bg remover
 - Resize before inference (faster processing)
 - WebP output (smaller payload, transparency supported)
 - original_url kept for wardrobe service compatibility
@@ -30,7 +33,7 @@ MAX_FILE_SIZE      = 5 * 1024 * 1024  # 5MB
 MAX_DIMENSION      = 800               # resize before inference — ~60% faster
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
-# ── Load all 3 models at startup ─────────────────────────────────────────────
+# ── Load 2 models at startup ─────────────────────────────────────────────
 logger.info("Loading u2net_human_seg model...")
 try:
     SESSION_HUMAN = new_session("u2net_human_seg")
@@ -38,14 +41,6 @@ try:
 except Exception as e:
     logger.error(f"Failed to load u2net_human_seg: {e}")
     SESSION_HUMAN = None
-
-logger.info("Loading u2net_cloth_seg model...")
-try:
-    SESSION_CLOTH = new_session("u2net_cloth_seg")
-    logger.info("u2net_cloth_seg loaded successfully")
-except Exception as e:
-    logger.error(f"Failed to load u2net_cloth_seg: {e}")
-    SESSION_CLOTH = None
 
 logger.info("Loading u2net (general) model...")
 try:
@@ -79,12 +74,6 @@ def has_person(image: Image.Image, skin_threshold: float = 0.04) -> bool:
     skin_ratio = float(skin_mask.sum()) / (arr.shape[0] * arr.shape[1])
     logger.info(f"Skin ratio: {skin_ratio:.3f}")
     return skin_ratio > skin_threshold
-
-
-def is_clothing_shape(image: Image.Image) -> bool:
-    """Portrait aspect ratio → clothing. Landscape/square → footwear/accessory."""
-    w, h = image.size
-    return (h / w) > 0.85
 
 
 def is_low_contrast(image: Image.Image, threshold: float = 0.12) -> bool:
@@ -138,12 +127,40 @@ def remove_background_sync(
     return remove(image, session=session)
 
 
+def remove_skin_pixels(image: Image.Image) -> Image.Image:
+    """
+    After background removal, strip remaining skin-tone pixels to isolate clothing.
+    Works on RGBA images — sets alpha to 0 for skin-colored pixels.
+    """
+    arr = np.array(image, dtype=np.float32)
+    r, g, b, a = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2], arr[:, :, 3]
+
+    # Only process pixels that are already visible (alpha > 0)
+    visible = a > 0
+
+    skin_mask = (
+        visible &
+        (r > 60) & (r < 255) &
+        (g > 40) & (g < 220) &
+        (b > 20) & (b < 195) &
+        (r > g) & (r > b) &
+        (r - g > 10) &
+        (np.abs(r.astype(np.int32) - b.astype(np.int32)) > 10)
+    )
+
+    result = np.array(image)
+    result[skin_mask, 3] = 0  # set alpha to 0 for skin pixels
+
+    logger.info(f"Skin removal: zeroed {int(skin_mask.sum())} skin pixels")
+    return Image.fromarray(result, "RGBA")
+
+
 # ── App ───────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
     title="ClosetMate Image Processing Service",
     description="Handles image uploads and background removal",
-    version="6.0.0",
+    version="6.2.0",
 )
 
 app.add_middleware(
@@ -176,10 +193,9 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "image-processing",
-        "version": "6.0.0",
+        "version": "6.2.0",
         "models": {
             "human_seg": SESSION_HUMAN is not None,
-            "cloth_seg": SESSION_CLOTH is not None,
             "general":   SESSION_GENERAL is not None,
         }
     }
@@ -187,7 +203,7 @@ async def health_check():
 
 @app.post("/images/process")
 async def process_image(image: UploadFile = File(...)):
-    if all(s is None for s in [SESSION_HUMAN, SESSION_CLOTH, SESSION_GENERAL]):
+    if all(s is None for s in [SESSION_HUMAN, SESSION_GENERAL]):
         return create_error_response(
             "MODEL_NOT_LOADED",
             "All background removal models failed to load.",
@@ -212,27 +228,28 @@ async def process_image(image: UploadFile = File(...)):
 
         # ── Detect characteristics ────────────────────────────────────────────
         person_detected = has_person(input_image)
-        clothing_shape  = is_clothing_shape(input_image)
         low_contrast    = is_low_contrast(input_image)
 
         # ── Select model ──────────────────────────────────────────────────────
+        # Two use cases, same goal: isolate the garment with transparent bg.
+        #
+        #   1. Person + clothing → human_seg strips bg → skin removal strips body
+        #      Result: only the garment remains
+        #   2. Flat clothing / shoes / accessories → general u2net strips bg
+        #      Result: only the item remains
         if person_detected and SESSION_HUMAN is not None:
             session    = SESSION_HUMAN
             model_used = "u2net_human_seg"
-        elif clothing_shape and SESSION_CLOTH is not None:
-            session    = SESSION_CLOTH
-            model_used = "u2net_cloth_seg"
         elif SESSION_GENERAL is not None:
             session    = SESSION_GENERAL
             model_used = "u2net_general"
         else:
-            session    = SESSION_HUMAN or SESSION_CLOTH
+            session    = SESSION_HUMAN or SESSION_GENERAL
             model_used = "fallback"
 
         logger.info(
-            f"Person: {person_detected}, Clothing: {clothing_shape}, "
-            f"LowContrast: {low_contrast} → {model_used}, "
-            f"alpha_matting: {low_contrast}"
+            f"Person: {person_detected}, LowContrast: {low_contrast} → "
+            f"{model_used}, alpha_matting: {low_contrast}"
         )
 
         # ── Resize → Preprocess → Remove background ───────────────────────────
@@ -247,6 +264,12 @@ async def process_image(image: UploadFile = File(...)):
             session,
             low_contrast,
         )
+
+        # ── Step 2: Strip skin pixels when person detected ────────────────────
+        # human_seg keeps person+clothes; we only want clothes.
+        # Remove skin-tone pixels to isolate the garment.
+        if person_detected:
+            output_image = remove_skin_pixels(output_image)
 
         # ── Encode original as base64 (kept for wardrobe service) ────────────
         original_b64      = base64.b64encode(content).decode("utf-8")
@@ -274,6 +297,7 @@ async def process_image(image: UploadFile = File(...)):
                 "file_size":          len(processed_bytes),
                 "model_used":         model_used,
                 "person_detected":    person_detected,
+                "skin_removal_used":  person_detected,
                 "alpha_matting_used": low_contrast,
             }
         }
