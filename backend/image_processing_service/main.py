@@ -1,13 +1,12 @@
 """
 Image Processing Service - Railway Compatible
-v6.2: Simplified 2-model routing + skin removal pipeline
-- Person + clothing → human_seg removes bg, then skin pixels stripped → only garment remains
+v6.3: HSV skin detection for all skin tones + 2-model pipeline
+- HSV-based skin detection works across all ethnicities (light → dark skin)
+- Person + clothing → human_seg removes bg, then HSV skin strip → only garment remains
 - Flat clothing / shoes / accessories → general u2net removes bg → only item remains
 - cloth_seg REMOVED — it's a segmentation model, not a bg remover
 - Resize before inference (faster processing)
 - WebP output (smaller payload, transparency supported)
-- original_url kept for wardrobe service compatibility
-- Low contrast threshold tuned to 0.12
 """
 import os
 import uuid
@@ -56,23 +55,48 @@ EXECUTOR = ThreadPoolExecutor(max_workers=2)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def detect_skin_mask(rgb_array: np.ndarray) -> np.ndarray:
+    """
+    HSV-based skin detection that works across ALL skin tones.
+    
+    RGB heuristics fail on dark skin because they rely on r>g>b relationships
+    that don't hold for melanin-rich skin. HSV separates chrominance (hue/sat)
+    from luminance (value), so the same hue range covers light → dark skin.
+    
+    Returns a boolean mask of skin pixels.
+    """
+    from PIL import Image as _Image
+
+    # Convert to HSV (PIL uses H: 0-179, S: 0-255, V: 0-255 via OpenCV convention)
+    # We use PIL's HSV which is H: 0-255, S: 0-255, V: 0-255
+    hsv = np.array(_Image.fromarray(rgb_array.astype(np.uint8)).convert("HSV"), dtype=np.float32)
+    h, s, v = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+
+    # PIL HSV: H is 0-255 (not 0-179 like OpenCV)
+    # Skin hue in PIL scale: ~0-35 (reds/oranges/yellows) and ~230-255 (wraps around red)
+    # Saturation: >15 (avoids grays/whites) and <200 (avoids neon colors)
+    # Value: >20 (covers very dark skin) and <250 (avoids blown-out whites)
+    hue_mask = ((h >= 0) & (h <= 35)) | ((h >= 230) & (h <= 255))
+    sat_mask = (s >= 15) & (s <= 200)
+    val_mask = (v >= 20) & (v <= 250)
+
+    skin = hue_mask & sat_mask & val_mask
+
+    # Secondary RGB check to reduce false positives on brown/tan clothing
+    # Skin always has some red dominance even in dark tones
+    r, g, b = rgb_array[:, :, 0].astype(np.float32), rgb_array[:, :, 1].astype(np.float32), rgb_array[:, :, 2].astype(np.float32)
+    rgb_refine = (r > g - 15) & (r > b - 15)
+
+    return skin & rgb_refine
+
+
 def has_person(image: Image.Image, skin_threshold: float = 0.04) -> bool:
-    """Skin-tone pixel ratio heuristic. >4% → person detected."""
-    rgb = image.convert("RGB")
-    arr = np.array(rgb, dtype=np.float32)
-    r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+    """HSV skin-tone pixel ratio heuristic. >4% → person detected."""
+    rgb = np.array(image.convert("RGB"))
+    skin_mask = detect_skin_mask(rgb)
 
-    skin_mask = (
-        (r > 60) & (r < 255) &
-        (g > 40) & (g < 220) &
-        (b > 20) & (b < 195) &
-        (r > g) & (r > b) &
-        (r - g > 10) &
-        (np.abs(r.astype(np.int32) - b.astype(np.int32)) > 10)
-    )
-
-    skin_ratio = float(skin_mask.sum()) / (arr.shape[0] * arr.shape[1])
-    logger.info(f"Skin ratio: {skin_ratio:.3f}")
+    skin_ratio = float(skin_mask.sum()) / (rgb.shape[0] * rgb.shape[1])
+    logger.info(f"Skin ratio (HSV): {skin_ratio:.3f}")
     return skin_ratio > skin_threshold
 
 
@@ -130,28 +154,19 @@ def remove_background_sync(
 def remove_skin_pixels(image: Image.Image) -> Image.Image:
     """
     After background removal, strip remaining skin-tone pixels to isolate clothing.
-    Works on RGBA images — sets alpha to 0 for skin-colored pixels.
+    Uses HSV-based detection for all skin tones. Works on RGBA — sets alpha=0 for skin.
     """
-    arr = np.array(image, dtype=np.float32)
-    r, g, b, a = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2], arr[:, :, 3]
+    arr = np.array(image)
+    rgb = arr[:, :, :3]
+    alpha = arr[:, :, 3]
 
-    # Only process pixels that are already visible (alpha > 0)
-    visible = a > 0
+    # Only process visible pixels (alpha > 0)
+    skin_mask = detect_skin_mask(rgb) & (alpha > 0)
 
-    skin_mask = (
-        visible &
-        (r > 60) & (r < 255) &
-        (g > 40) & (g < 220) &
-        (b > 20) & (b < 195) &
-        (r > g) & (r > b) &
-        (r - g > 10) &
-        (np.abs(r.astype(np.int32) - b.astype(np.int32)) > 10)
-    )
+    result = arr.copy()
+    result[skin_mask, 3] = 0
 
-    result = np.array(image)
-    result[skin_mask, 3] = 0  # set alpha to 0 for skin pixels
-
-    logger.info(f"Skin removal: zeroed {int(skin_mask.sum())} skin pixels")
+    logger.info(f"Skin removal (HSV): zeroed {int(skin_mask.sum())} skin pixels")
     return Image.fromarray(result, "RGBA")
 
 
@@ -160,7 +175,7 @@ def remove_skin_pixels(image: Image.Image) -> Image.Image:
 app = FastAPI(
     title="ClosetMate Image Processing Service",
     description="Handles image uploads and background removal",
-    version="6.2.0",
+    version="6.3.0",
 )
 
 app.add_middleware(
@@ -193,7 +208,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "image-processing",
-        "version": "6.2.0",
+        "version": "6.3.0",
         "models": {
             "human_seg": SESSION_HUMAN is not None,
             "general":   SESSION_GENERAL is not None,
