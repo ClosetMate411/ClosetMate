@@ -114,6 +114,14 @@ app.add_middleware(
 app.mount("/files", StaticFiles(directory=str(STORAGE_PATH)), name="files")
 
 
+@app.middleware("http")
+async def add_cache_headers(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/files/"):
+        response.headers["Cache-Control"] = "public, max-age=31536000"
+    return response
+
+
 def create_error_response(code: str, message: str, status_code: int = 400):
     return JSONResponse(
         status_code=status_code,

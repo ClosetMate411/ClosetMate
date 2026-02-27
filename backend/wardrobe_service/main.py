@@ -14,6 +14,7 @@ from typing import Optional
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -315,6 +316,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
 # ============== HEALTH ==============
@@ -636,7 +639,9 @@ async def get_items(
     db: Session = Depends(get_db)
 ):
     """Get all clothing items for current user"""
-    items = db.query(ClothingItem).filter(ClothingItem.user_id == current_user.id).all()
+    items = db.query(ClothingItem).filter(
+        ClothingItem.user_id == current_user.id
+    ).order_by(ClothingItem.created_at.desc()).all()
     return {
         "success": True,
         "data": [serialize_item(item) for item in items]
