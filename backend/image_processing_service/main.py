@@ -1,17 +1,17 @@
 """
 Image Processing Service - Railway Compatible
-v6.3: HSV skin detection for all skin tones + 2-model pipeline
-- HSV-based skin detection works across all ethnicities (light → dark skin)
-- Person + clothing → human_seg removes bg, then HSV skin strip → only garment remains
-- Flat clothing / shoes / accessories → general u2net removes bg → only item remains
-- cloth_seg REMOVED — it's a segmentation model, not a bg remover
-- Resize before inference (faster processing)
-- WebP output (smaller payload, transparency supported)
+v7.0: File-based storage replaces base64 data URLs
+- Processed images saved to disk, served via static endpoint
+- No more base64 in JSON responses (~6.7MB → ~50 byte URL)
+- Original image NOT stored (only processed/bg-removed)
+- HSV-based skin detection for all skin tones
+- Person + clothing → human_seg + skin strip → garment only
+- Flat items → u2net general → item only
+- WebP output, resize before inference
 """
 import os
 import uuid
 import io
-import base64
 import logging
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -21,7 +21,8 @@ from typing import Optional
 import numpy as np
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageEnhance, ImageFilter
 from rembg import remove, new_session
 
@@ -31,6 +32,15 @@ logger = logging.getLogger(__name__)
 MAX_FILE_SIZE      = 5 * 1024 * 1024  # 5MB
 MAX_DIMENSION      = 800               # resize before inference — ~60% faster
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+
+# ── Storage config ───────────────────────────────────────────────────────────
+# STORAGE_PATH: where processed images are saved (Railway volume mount)
+# BASE_URL: public URL for constructing download links
+#   Railway: set to https://<your-service>.up.railway.app
+#   Local:   defaults to http://localhost:3002
+STORAGE_PATH = Path(os.getenv("STORAGE_PATH", "/app/storage"))
+STORAGE_PATH.mkdir(parents=True, exist_ok=True)
+BASE_URL = os.getenv("BASE_URL", "http://localhost:3002").rstrip("/")
 
 # ── Load 2 models at startup ─────────────────────────────────────────────
 logger.info("Loading u2net_human_seg model...")
@@ -175,7 +185,7 @@ def remove_skin_pixels(image: Image.Image) -> Image.Image:
 app = FastAPI(
     title="ClosetMate Image Processing Service",
     description="Handles image uploads and background removal",
-    version="6.3.0",
+    version="7.0.0",
 )
 
 app.add_middleware(
@@ -185,6 +195,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Static file serving for processed images ─────────────────────────────────
+app.mount("/files", StaticFiles(directory=str(STORAGE_PATH)), name="files")
 
 
 def create_error_response(code: str, message: str, status_code: int = 400):
@@ -208,7 +221,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "image-processing",
-        "version": "6.3.0",
+        "version": "7.0.0",
         "models": {
             "human_seg": SESSION_HUMAN is not None,
             "general":   SESSION_GENERAL is not None,
@@ -234,8 +247,7 @@ async def process_image(image: UploadFile = File(...)):
         return create_error_response("FILE_TOO_LARGE", "File exceeds 5MB limit")
 
     try:
-        file_id      = str(uuid.uuid4())
-        original_ext = Path(image.filename).suffix.lower()
+        file_id = str(uuid.uuid4())
 
         logger.info(f"Processing: {image.filename} ({len(content)} bytes)")
 
@@ -286,29 +298,29 @@ async def process_image(image: UploadFile = File(...)):
         if person_detected:
             output_image = remove_skin_pixels(output_image)
 
-        # ── Encode original as base64 (kept for wardrobe service) ────────────
-        original_b64      = base64.b64encode(content).decode("utf-8")
-        original_mime     = "image/png" if original_ext == ".png" else "image/jpeg"
-        original_data_url = f"data:{original_mime};base64,{original_b64}"
+        # ── Save processed image to disk (WebP, ~40% smaller than PNG) ─────────
+        file_name = f"{file_id}.webp"
+        file_path = STORAGE_PATH / file_name
 
-        # ── Encode processed as WebP (~40% smaller than PNG, transparency ok) ─
         processed_buffer = io.BytesIO()
         output_image.save(processed_buffer, format="WEBP", quality=85)
-        processed_bytes    = processed_buffer.getvalue()
-        processed_b64      = base64.b64encode(processed_bytes).decode("utf-8")
-        processed_data_url = f"data:image/webp;base64,{processed_b64}"
+        processed_bytes = processed_buffer.getvalue()
+
+        with open(file_path, "wb") as f:
+            f.write(processed_bytes)
+
+        processed_url = f"{BASE_URL}/files/{file_name}"
 
         logger.info(
             f"Done: {file_id} | {model_used} | "
-            f"output: {len(processed_bytes)} bytes (WebP)"
+            f"saved: {file_path} ({len(processed_bytes)} bytes)"
         )
 
         return {
             "success": True,
             "data": {
-                "original_url":       original_data_url,
-                "processed_url":      processed_data_url,
-                "file_name":          f"{file_id}.webp",
+                "processed_url":      processed_url,
+                "file_name":          file_name,
                 "file_size":          len(processed_bytes),
                 "model_used":         model_used,
                 "person_detected":    person_detected,
@@ -320,6 +332,18 @@ async def process_image(image: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Processing failed: {e}", exc_info=True)
         return create_error_response("PROCESSING_FAILED", str(e), 500)
+
+
+@app.delete("/images/{file_name}")
+async def delete_image(file_name: str):
+    """Delete a processed image file from storage."""
+    file_path = STORAGE_PATH / file_name
+    if not file_path.exists():
+        return create_error_response("FILE_NOT_FOUND", "File not found", 404)
+
+    file_path.unlink()
+    logger.info(f"Deleted: {file_path}")
+    return {"success": True, "message": "File deleted"}
 
 
 if __name__ == "__main__":

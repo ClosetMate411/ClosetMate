@@ -287,6 +287,19 @@ async def cleanup_clothing_attributes(item_id: str, token: str):
         logger.warning(f"Failed to cleanup attributes for item {item_id}: {e}")
 
 
+async def cleanup_image_file(file_name: str):
+    """
+    Notify image processing service to delete the stored file.
+    Non-blocking cleanup — fire and forget.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.delete(f"{IMAGE_SERVICE_URL}/images/{file_name}")
+            logger.info(f"Image file cleanup triggered for {file_name}")
+    except Exception as e:
+        logger.warning(f"Failed to cleanup image file {file_name}: {e}")
+
+
 # ============== APP ==============
 
 app = FastAPI(
@@ -699,7 +712,7 @@ async def create_item(
         item_name=item_name,
         season=season,
         image_url=image_data["data"]["processed_url"],
-        original_image_url=image_data["data"]["original_url"],
+        original_image_url=None,  # v7.0: original no longer stored
         file_name=image_data["data"]["file_name"],
         file_size=image_data["data"]["file_size"],
     )
@@ -749,6 +762,7 @@ async def update_item(
     
     # Process new image if provided
     image_updated = False
+    old_file_name = item.file_name  # track for cleanup
     if image:
         content = await image.read()
         try:
@@ -760,10 +774,15 @@ async def update_item(
                     image_data = response.json()
                     if image_data.get("success"):
                         item.image_url = image_data["data"]["processed_url"]
-                        item.original_image_url = image_data["data"]["original_url"]
+                        item.original_image_url = None
                         item.file_name = image_data["data"]["file_name"]
                         item.file_size = image_data["data"]["file_size"]
                         image_updated = True
+                        # Cleanup old image file
+                        if old_file_name:
+                            asyncio.create_task(
+                                cleanup_image_file(old_file_name)
+                            )
         except httpx.RequestError as e:
             logger.warning(f"Image processing failed during update for item {item_id}: {e}")
     
@@ -807,6 +826,12 @@ async def delete_item(
             token=credentials.credentials,
         )
     )
+    
+    # >>> Cleanup image file in image processing service
+    if item.file_name:
+        asyncio.create_task(
+            cleanup_image_file(item.file_name)
+        )
     
     db.delete(item)
     db.commit()
