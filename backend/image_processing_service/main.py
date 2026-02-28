@@ -27,7 +27,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 MAX_FILE_SIZE      = 5 * 1024 * 1024  # 5MB
-MAX_DIMENSION      = 800               # resize before inference — ~60% faster
+MAX_DIMENSION      = 1024              
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
 # ── Storage config ───────────────────────────────────────────────────────────
@@ -36,12 +36,12 @@ STORAGE_PATH.mkdir(parents=True, exist_ok=True)
 BASE_URL = os.getenv("BASE_URL", "http://localhost:3002").rstrip("/")
 
 # ── Load single model at startup ─────────────────────────────────────────────
-logger.info("Loading u2net model...")
+logger.info("Loading bria-rmbg model...")
 try:
-    SESSION = new_session("u2net")
-    logger.info("u2net loaded successfully")
+    SESSION = new_session("bria-rmbg")
+    logger.info("bria-rmbg loaded successfully")
 except Exception as e:
-    logger.error(f"Failed to load u2net: {e}")
+    logger.error(f"Failed to load bria-rmbg: {e}")
     SESSION = None
 
 # Thread pool: rembg inference is CPU-bound
@@ -191,7 +191,7 @@ async def process_image(image: UploadFile = File(...)):
         file_path = STORAGE_PATH / file_name
 
         processed_buffer = io.BytesIO()
-        output_image.save(processed_buffer, format="WEBP", quality=85)
+        output_image.save(processed_buffer, format="WEBP", quality=95)
         processed_bytes = processed_buffer.getvalue()
 
         with open(file_path, "wb") as f:
