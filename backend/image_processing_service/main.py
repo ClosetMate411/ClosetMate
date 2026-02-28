@@ -118,8 +118,14 @@ def preprocess_image(image: Image.Image, difficulty: dict) -> Image.Image:
         # Boost saturation to differentiate subtle hue differences
         image = ImageEnhance.Color(image).enhance(1.5)
 
-        # CLAHE-style local contrast via autocontrast on luminance
-        image = ImageOps.autocontrast(image, cutoff=1)
+        # Autocontrast on RGB only (RGBA not supported)
+        if image.mode == "RGBA":
+            r, g, b, a = image.split()
+            rgb = Image.merge("RGB", (r, g, b))
+            rgb = ImageOps.autocontrast(rgb, cutoff=1)
+            image = Image.merge("RGBA", (*rgb.split(), a))
+        else:
+            image = ImageOps.autocontrast(image, cutoff=1)
 
         logger.info("Similar colors → unsharp mask + saturation + autocontrast")
 
