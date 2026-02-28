@@ -15,47 +15,51 @@ logger = logging.getLogger(__name__)
 
 def repair_json(text: str) -> str:
     """
-    Attempt to repair truncated or malformed JSON from Gemini.
-    Handles: unterminated strings, missing closing brackets/braces,
-    single quotes, trailing commas.
+    Aggressively repair malformed JSON from Gemini.
+    Handles: markdown fences, single quotes, trailing commas, comments,
+    unquoted keys, unterminated strings, missing brackets.
     """
+    import re
+
     text = text.strip()
 
-    # Remove markdown code fences if present
+    # Remove markdown code fences
     if text.startswith("```"):
         lines = text.split("\n")
         lines = [l for l in lines if not l.strip().startswith("```")]
         text = "\n".join(lines).strip()
 
-    # Try parsing as-is first
+    # Try as-is
     try:
         json.loads(text)
         return text
     except json.JSONDecodeError:
         pass
 
-    # Fix single quotes → double quotes (outside of double-quoted strings)
-    import re
-    # Replace trailing commas before } or ]
+    # Remove single-line comments (// ...)
+    text = re.sub(r'//[^\n]*', '', text)
+
+    # Remove trailing commas before } or ]
     text = re.sub(r',\s*([}\]])', r'\1', text)
-    # Replace single-quoted keys/values with double quotes
-    # This is a simplified approach — handles most Gemini outputs
+
+    # Replace single-quoted keys and values with double quotes
     text = re.sub(r"(?<=[{,\[])\s*'([^']+)'\s*:", r' "\1":', text)
     text = re.sub(r":\s*'([^']*)'", r': "\1"', text)
 
+    # Fix unquoted keys: word: → "word":
+    text = re.sub(r'(?<=[{,\n])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r' "\1":', text)
+
+    # Try again
     try:
         json.loads(text)
         return text
     except json.JSONDecodeError:
         pass
-    
-    # Fix unterminated strings: find last unescaped quote situation
-    # Strategy: close any open string, then close brackets/braces
+
+    # Fix unterminated strings
     in_string = False
     escaped = False
-    last_good = 0
-    
-    for i, ch in enumerate(text):
+    for ch in text:
         if escaped:
             escaped = False
             continue
@@ -64,14 +68,10 @@ def repair_json(text: str) -> str:
             continue
         if ch == '"':
             in_string = not in_string
-        if not in_string:
-            last_good = i
-    
-    # If we ended inside a string, close it
     if in_string:
-        text = text + '"'
-    
-    # Count open brackets/braces and close them
+        text += '"'
+
+    # Close open brackets/braces
     opens = []
     in_string = False
     escaped = False
@@ -93,11 +93,10 @@ def repair_json(text: str) -> str:
             opens.pop()
         elif ch == ']' and opens and opens[-1] == '[':
             opens.pop()
-    
-    # Close in reverse order
+
     for bracket in reversed(opens):
         text += ']' if bracket == '[' else '}'
-    
+
     return text
 
 # Configuration
@@ -107,8 +106,8 @@ if not GEMINI_API_KEY:
 
 genai.configure(api_key=GEMINI_API_KEY)
 
-# Use Gemini 2.0 Flash - fast, capable for vision, cost-effective
-MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+# Gemini 2.5 Flash — better JSON compliance, reasoning, same speed/cost tier
+MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 # ============== STRICT SCHEMA DEFINITIONS ==============
 # These mirror the database columns exactly - Gemini must conform to this
@@ -304,38 +303,38 @@ class GeminiClothingAnalyzer:
             ValueError: If Gemini response fails validation
             Exception: If Gemini API call fails
         """
-        try:
-            # Prepare image for Gemini
-            image_part = {
-                "mime_type": mime_type,
-                "data": base64.b64encode(image_bytes).decode("utf-8")
-            }
+        image_part = {
+            "mime_type": mime_type,
+            "data": base64.b64encode(image_bytes).decode("utf-8")
+        }
 
-            # Call Gemini with the image and analysis prompt (async to not block event loop)
-            response = await self.model.generate_content_async(
-                [CLOTHING_ANALYSIS_PROMPT, image_part]
-            )
-
-            # Parse response (with repair if needed)
+        last_error = None
+        for attempt in range(3):
             try:
-                result = json.loads(response.text)
-            except json.JSONDecodeError:
-                logger.warning("Clothing analysis JSON parse failed, attempting repair...")
-                repaired = repair_json(response.text)
-                result = json.loads(repaired)
+                response = await self.model.generate_content_async(
+                    [CLOTHING_ANALYSIS_PROMPT, image_part]
+                )
 
-            # Validate and sanitize the response
-            validated = self._validate_analysis(result)
+                try:
+                    result = json.loads(response.text)
+                except json.JSONDecodeError:
+                    logger.warning(f"Clothing analysis JSON parse failed (attempt {attempt+1}), repairing...")
+                    repaired = repair_json(response.text)
+                    result = json.loads(repaired)
 
-            logger.info(f"Clothing analysis successful: {validated.get('category')}/{validated.get('subcategory')}")
-            return validated
+                validated = self._validate_analysis(result)
+                logger.info(f"Clothing analysis successful: {validated.get('category')}/{validated.get('subcategory')}")
+                return validated
 
-        except json.JSONDecodeError as e:
-            logger.error(f"Gemini returned invalid JSON: {e}")
-            raise ValueError(f"Failed to parse Gemini response: {e}")
-        except Exception as e:
-            logger.error(f"Gemini API error: {e}")
-            raise
+            except json.JSONDecodeError as e:
+                last_error = e
+                logger.warning(f"Clothing analysis attempt {attempt+1}/3 failed: {e}")
+            except Exception as e:
+                logger.error(f"Gemini API error: {e}")
+                raise
+
+        logger.error(f"Gemini returned invalid JSON after 3 attempts: {last_error}")
+        raise ValueError(f"Failed to parse Gemini response after 3 attempts: {last_error}")
 
     async def generate_outfits(
         self,
@@ -380,22 +379,20 @@ class GeminiClothingAnalyzer:
             count=count,
         )
 
-        # Retry up to 2 times on JSON parse failures
+        # Retry until valid JSON (up to 3 attempts)
         last_error = None
         for attempt in range(3):
             try:
                 response = await self.outfit_model.generate_content_async(prompt)
                 raw_text = response.text
-                
-                # Try direct parse first, then repair
+
                 try:
                     result = json.loads(raw_text)
                 except json.JSONDecodeError:
-                    logger.warning(f"Outfit JSON parse failed (attempt {attempt+1}), attempting repair...")
+                    logger.warning(f"Outfit JSON parse failed (attempt {attempt+1}/3), repairing...")
                     repaired = repair_json(raw_text)
                     result = json.loads(repaired)
-                
-                # Use item_id for validation
+
                 valid_ids = {item.get("item_id", item["id"]) for item in wardrobe_items}
                 validated = self._validate_outfits(result, valid_ids)
                 logger.info(f"Generated {len(validated['outfits'])} outfit combinations")
@@ -403,7 +400,7 @@ class GeminiClothingAnalyzer:
 
             except (json.JSONDecodeError, ValueError) as e:
                 last_error = e
-                logger.warning(f"Outfit generation attempt {attempt+1} failed: {e}")
+                logger.warning(f"Outfit generation attempt {attempt+1}/3 failed: {e}")
                 continue
             except Exception as e:
                 logger.error(f"Gemini API error during outfit generation: {e}")

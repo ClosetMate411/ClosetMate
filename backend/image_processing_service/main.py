@@ -139,16 +139,22 @@ def preprocess_image(image: Image.Image, difficulty: dict) -> Image.Image:
 
 
 def remove_background_sync(
-    image: Image.Image,
+    preprocessed: Image.Image,
+    original: Image.Image,
     session,
     difficulty: dict,
 ) -> Image.Image:
-    """Background removal with adaptive strategy and quality gate."""
+    """
+    Background removal with adaptive strategy.
+    Runs model on preprocessed image for better edge detection,
+    then applies the extracted alpha mask to the original image
+    so colors stay clean.
+    """
 
     if difficulty["needs_enhancement"]:
-        # First attempt: alpha matting with relaxed thresholds
+        # Run model on preprocessed image (better edge detection)
         result = remove(
-            image,
+            preprocessed,
             session=session,
             alpha_matting=True,
             alpha_matting_foreground_threshold=230,
@@ -157,21 +163,26 @@ def remove_background_sync(
             post_process_mask=True,
         )
 
-        # Quality gate — check if mask makes sense
-        alpha = np.array(result)[:, :, 3]
-        fg_ratio = float(np.mean(alpha > 128))
+        # Extract alpha mask
+        alpha = result.split()[3]
+        alpha_arr = np.array(alpha)
+        fg_ratio = float(np.mean(alpha_arr > 128))
 
         if fg_ratio < 0.03 or fg_ratio > 0.97:
-            # Mask is nearly empty or nearly full → bad segmentation
             logger.warning(
                 f"Mask quality poor (fg_ratio={fg_ratio:.2f}), "
                 f"retrying without alpha matting"
             )
-            result = remove(image, session=session, post_process_mask=True)
+            result = remove(preprocessed, session=session, post_process_mask=True)
+            alpha = result.split()[3]
 
-        return result
+        # Apply mask to ORIGINAL image (clean colors)
+        original_rgba = original.convert("RGBA")
+        original_rgba.putalpha(alpha)
+        logger.info("Applied mask from preprocessed to original image")
+        return original_rgba
 
-    return remove(image, session=session, post_process_mask=True)
+    return remove(original, session=session, post_process_mask=True)
 
 
 # ── App ───────────────────────────────────────────────────────────────────────
@@ -252,15 +263,16 @@ async def process_image(image: UploadFile = File(...)):
 
         # ── Analyze difficulty & preprocess ───────────────────────────────────
         difficulty = analyze_difficulty(input_image)
-        processed_input = resize_for_inference(input_image)
-        processed_input = preprocess_image(processed_input, difficulty)
+        resized = resize_for_inference(input_image)
+        preprocessed = preprocess_image(resized.copy(), difficulty)
 
         # ── Remove background ─────────────────────────────────────────────────
         loop = asyncio.get_event_loop()
         output_image = await loop.run_in_executor(
             EXECUTOR,
             remove_background_sync,
-            processed_input,
+            preprocessed,
+            resized,
             SESSION,
             difficulty,
         )
