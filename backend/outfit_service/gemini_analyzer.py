@@ -222,30 +222,30 @@ FALLBACK VALUES (use when unsure):
 Respond with ONLY the JSON object. No other text."""
 
 
-OUTFIT_GENERATION_PROMPT = """You are a professional fashion stylist. Based on the user's wardrobe items below, create outfit combinations.
+OUTFIT_GENERATION_PROMPT = """You are a professional fashion stylist. Create outfit combinations from the pre-filtered wardrobe items below.
 
-CRITICAL RULES:
-1. Each outfit MUST use only items from the provided wardrobe - reference them by their exact "id" field.
+IMPORTANT: These items have ALREADY been filtered by occasion, season, and formality on the server side.
+ALL provided items are valid candidates — your job is to combine them into great outfits, NOT to re-filter them.
+
+RULES:
+1. Each outfit MUST use only items from the provided wardrobe — reference them by their exact "id" field.
 2. An outfit should have 2-5 items that work together aesthetically.
-3. Consider color harmony, style consistency, formality matching, and weather/season compatibility.
+3. Consider color harmony, style consistency, and overall cohesion.
 4. Do NOT repeat the same item across outfits unless the user has very few items.
-5. Respond with ONLY valid JSON - no markdown, no explanation.
+5. Respond with ONLY valid JSON — no markdown, no explanation.
 6. Each outfit must have a short creative name and a brief explanation of why it works.
 7. Rate each outfit's cohesion from 1-10.
-8. MANDATORY: You MUST strictly respect all filter parameters below. Do NOT create outfits that violate them.
-9. If the provided items cannot satisfy the filters, return fewer outfits or an empty list — do NOT substitute with non-matching items.
-10. The occasion and style filters are HARD constraints, not suggestions.
+8. You MUST generate at least 1 outfit if 2 or more items are provided. NEVER return an empty list when items are available.
 
-USER'S WARDROBE:
+USER'S WARDROBE (pre-filtered):
 {wardrobe_items}
 
-MANDATORY FILTERS — ALL OUTFITS MUST SATISFY THESE:
-- Season: {season} (only use items suitable for this season; "all" means no restriction)
-- Occasion: {occasion} (ALL items in the outfit must be appropriate for this occasion)
-- Style preference: {style} (outfits must match this style; "any" means no restriction)
+CONTEXT (for naming/reasoning only, do NOT use these to exclude items):
+- Season: {season}
+- Occasion: {occasion}
+- Style preference: {style}
 
-Generate up to {count} outfit combinations that strictly match the filters above.
-If you cannot generate {count} valid outfits from the available items, return fewer — quality over quantity.
+Generate up to {count} outfit combinations. Prioritize quality and variety.
 
 REQUIRED JSON SCHEMA:
 {{
