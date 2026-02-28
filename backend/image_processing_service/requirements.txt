@@ -5,3 +5,6 @@ rembg==2.0.50
 Pillow==10.2.0
 aiofiles==23.2.1
 numpy==1.26.4
+transformers>=4.36.0
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch

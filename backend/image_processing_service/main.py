@@ -1,7 +1,7 @@
 """
 Image Processing Service - Railway Compatible
-v8.0: Single model, maximum simplicity
-- One model: u2net general — handles all cases (flat items, person+clothing)
+v9.0: RMBG-1.4 model upgrade
+- One model: bria-rmbg — near remove.bg quality, clean edges
 - No skin detection, no person routing, no edge case bugs
 - File-based storage with static serving
 - WebP output, resize before inference
@@ -100,7 +100,7 @@ def remove_background_sync(
 app = FastAPI(
     title="ClosetMate Image Processing Service",
     description="Background removal for wardrobe items",
-    version="8.0.0",
+    version="9.0.0",
 )
 
 app.add_middleware(
@@ -143,7 +143,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "image-processing",
-        "version": "8.0.0",
+        "version": "9.0.0",
         "model_loaded": SESSION is not None,
     }
 

@@ -15,17 +15,12 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download all 3 models at build time
+# Pre-download bria-rmbg model at build time
 # Avoids runtime download delays and cold start issues on Railway
 RUN python -c "\
 from rembg import new_session; \
-new_session('u2net'); \
-print('u2net cached'); \
-new_session('u2net_human_seg'); \
-print('u2net_human_seg cached'); \
-new_session('u2net_cloth_seg'); \
-print('u2net_cloth_seg cached'); \
-print('All models cached successfully')"
+new_session('bria-rmbg'); \
+print('bria-rmbg cached successfully')"
 
 COPY main.py .
 
