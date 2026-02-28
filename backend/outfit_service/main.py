@@ -178,6 +178,7 @@ class Outfit(Base):
     cohesion_score = Column(Integer, nullable=True)
     reasoning = Column(Text, nullable=True)
     is_favorite = Column(Boolean, default=False)
+    is_shareable = Column(Boolean, default=False)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -196,6 +197,7 @@ class Outfit(Base):
             "cohesion_score": self.cohesion_score,
             "reasoning": self.reasoning,
             "is_favorite": self.is_favorite,
+            "is_shareable": self.is_shareable,
             "created_at": self.created_at.isoformat() + "Z" if self.created_at else None,
             "updated_at": self.updated_at.isoformat() + "Z" if self.updated_at else None,
         }
@@ -828,6 +830,28 @@ async def get_wardrobe_stats(
             "dominant_style": list(styles.keys())[0] if styles else None,
         }
     }
+
+
+# ============== INTERNAL ENDPOINTS (service-to-service) ==============
+
+@app.put("/outfits/{outfit_id}/shareable")
+async def update_outfit_shareable(
+    outfit_id: str,
+    body: dict,
+    x_api_key: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    """Internal endpoint — update outfit shareable status (called by community_service)"""
+    if not verify_internal_request(x_api_key):
+        return create_error_response("UNAUTHORIZED", "Invalid API key", 401)
+
+    outfit = db.query(Outfit).filter(Outfit.id == outfit_id).first()
+    if not outfit:
+        return create_error_response("OUTFIT_NOT_FOUND", "Outfit not found", 404)
+
+    outfit.is_shareable = body.get("is_shareable", False)
+    db.commit()
+    return {"success": True}
 
 
 if __name__ == "__main__":

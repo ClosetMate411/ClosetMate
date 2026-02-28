@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 WARDROBE_SERVICE_URL = os.getenv("WARDROBE_SERVICE_URL", "http://localhost:3001")
 IMAGE_SERVICE_URL = os.getenv("IMAGE_SERVICE_URL", "http://localhost:3002")
 OUTFIT_SERVICE_URL = os.getenv("OUTFIT_SERVICE_URL", "http://localhost:3003")
+COMMUNITY_SERVICE_URL = os.getenv("COMMUNITY_SERVICE_URL", "http://localhost:3004")
 
 app = FastAPI(
     title="ClosetMate API Gateway",
@@ -483,6 +484,168 @@ async def get_wardrobe_stats(authorization: Optional[str] = Header(None)):
             return JSONResponse(status_code=response.status_code, content=response.json())
     except httpx.RequestError as e:
         return create_error_response("SERVICE_UNAVAILABLE", f"Outfit service unavailable: {str(e)}", 503)
+
+
+# ============== COMMUNITY ROUTES (Protected) ==============
+
+@app.post("/api/community/share")
+async def share_outfit(request: Request, authorization: Optional[str] = Header(None)):
+    """Share an outfit to the community"""
+    if not authorization:
+        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    try:
+        body = await get_body_data(request)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{COMMUNITY_SERVICE_URL}/community/share",
+                json=body,
+                headers={"Authorization": authorization}
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
+
+
+@app.get("/api/community/feed")
+async def get_community_feed(
+    page: int = 1,
+    limit: int = 20,
+    authorization: Optional[str] = Header(None),
+):
+    """Get community feed"""
+    if not authorization:
+        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{COMMUNITY_SERVICE_URL}/community/feed",
+                params={"page": page, "limit": limit},
+                headers={"Authorization": authorization}
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
+
+
+# DELETE comment must come BEFORE /{shared_outfit_id} to avoid path conflict
+@app.delete("/api/community/comments/{comment_id}")
+async def delete_comment(comment_id: str, authorization: Optional[str] = Header(None)):
+    """Delete a comment"""
+    if not authorization:
+        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.delete(
+                f"{COMMUNITY_SERVICE_URL}/community/comments/{comment_id}",
+                headers={"Authorization": authorization}
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
+
+
+@app.delete("/api/community/{shared_outfit_id}")
+async def unshare_outfit(shared_outfit_id: str, authorization: Optional[str] = Header(None)):
+    """Unshare an outfit"""
+    if not authorization:
+        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.delete(
+                f"{COMMUNITY_SERVICE_URL}/community/{shared_outfit_id}",
+                headers={"Authorization": authorization}
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
+
+
+@app.post("/api/community/{shared_outfit_id}/rate")
+async def rate_outfit(
+    shared_outfit_id: str,
+    request: Request,
+    authorization: Optional[str] = Header(None),
+):
+    """Rate a shared outfit"""
+    if not authorization:
+        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    try:
+        body = await get_body_data(request)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{COMMUNITY_SERVICE_URL}/community/{shared_outfit_id}/rate",
+                json=body,
+                headers={"Authorization": authorization}
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
+
+
+@app.post("/api/community/{shared_outfit_id}/react")
+async def react_to_outfit(
+    shared_outfit_id: str,
+    request: Request,
+    authorization: Optional[str] = Header(None),
+):
+    """React with emoji to a shared outfit"""
+    if not authorization:
+        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    try:
+        body = await get_body_data(request)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{COMMUNITY_SERVICE_URL}/community/{shared_outfit_id}/react",
+                json=body,
+                headers={"Authorization": authorization}
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
+
+
+@app.get("/api/community/{shared_outfit_id}/comments")
+async def get_comments(
+    shared_outfit_id: str,
+    page: int = 1,
+    limit: int = 20,
+    authorization: Optional[str] = Header(None),
+):
+    """Get comments for a shared outfit"""
+    if not authorization:
+        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{COMMUNITY_SERVICE_URL}/community/{shared_outfit_id}/comments",
+                params={"page": page, "limit": limit},
+                headers={"Authorization": authorization}
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
+
+
+@app.post("/api/community/{shared_outfit_id}/comments")
+async def add_comment(
+    shared_outfit_id: str,
+    request: Request,
+    authorization: Optional[str] = Header(None),
+):
+    """Add a comment to a shared outfit"""
+    if not authorization:
+        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    try:
+        body = await get_body_data(request)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{COMMUNITY_SERVICE_URL}/community/{shared_outfit_id}/comments",
+                json=body,
+                headers={"Authorization": authorization}
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
 
 
 if __name__ == "__main__":
