@@ -83,7 +83,13 @@ async def fetch_image_bytes(image_url: str) -> tuple[bytes, str]:
             img_response = await client.get(image_url)
             if img_response.status_code != 200:
                 raise ValueError(f"Could not fetch image from {image_url} (status {img_response.status_code})")
-            return img_response.content, img_response.headers.get("content-type", "image/png")
+            content_type = img_response.headers.get("content-type", "")
+            # Static file servers may return wrong MIME for .webp — infer from URL
+            if not content_type.startswith("image/"):
+                ext = image_url.rsplit(".", 1)[-1].lower() if "." in image_url else ""
+                mime_map = {"webp": "image/webp", "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg"}
+                content_type = mime_map.get(ext, "image/png")
+            return img_response.content, content_type
 
 # ============== CONFIGURATION ==============
 
@@ -306,6 +312,7 @@ app.add_middleware(
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "outfit"}
+
 
 
 # ============== CLOTHING ANALYSIS ==============
