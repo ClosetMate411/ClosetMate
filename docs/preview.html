@@ -261,39 +261,6 @@
     border-color: #3b82f6;
   }
 
-  .url-bar {
-    margin-top: 16px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .url-bar input {
-    width: 340px;
-    padding: 8px 14px;
-    border-radius: 8px;
-    border: 1px solid #334155;
-    background: #1e293b;
-    color: #e2e8f0;
-    font-size: 12px;
-    font-family: 'JetBrains Mono', monospace;
-    outline: none;
-  }
-
-  .url-bar input:focus { border-color: #3b82f6; }
-
-  .url-bar button {
-    padding: 8px 14px;
-    border-radius: 8px;
-    border: none;
-    background: #3b82f6;
-    color: #fff;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    font-family: 'Inter', sans-serif;
-  }
-
   .info-text {
     margin-top: 16px;
     font-size: 11px;
@@ -318,7 +285,7 @@
 
 <div class="header">
   <h1>📱 ClosetMate Mobile Preview</h1>
-  <p>Browser-based mobile simulator</p>
+  <p>Browser-based mobile simulator — Expo React Native</p>
 </div>
 
 <div class="phone-container">
@@ -351,12 +318,11 @@
         <div class="loading-spinner"></div>
       </div>
 
-      <!-- App iframe — change src to your deployed Expo web URL -->
+      <!-- App iframe -->
       <iframe
         id="appFrame"
         src="./index.html"
         allow="camera; microphone; geolocation"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
       ></iframe>
 
       <!-- Home indicator -->
@@ -366,11 +332,6 @@
 </div>
 
 <!-- Controls -->
-<div class="url-bar">
-  <input type="text" id="urlInput" placeholder="Expo web URL girin (ör: https://closetmate411.github.io/mobile)" />
-  <button onclick="loadApp()">Aç</button>
-</div>
-
 <div class="controls">
   <button onclick="setDevice('iphone14')" class="active" id="btn-iphone14">iPhone 14</button>
   <button onclick="setDevice('pixel7')" id="btn-pixel7">Pixel 7</button>
@@ -379,8 +340,7 @@
 </div>
 
 <div class="info-text">
-  Expo web build'i deploy edildikten sonra URL'yi yukarıya yapıştırın.<br>
-  Lokal test için: <code style="color:#60a5fa">http://localhost:8081</code>
+  ClosetMate mobil uygulamasinin web preview'i. Cihaz boyutunu degistirmek icin yukardaki butonlari kullanin.
 </div>
 
 <script>
@@ -394,30 +354,20 @@
   updateTime();
   setInterval(updateTime, 30000);
 
-  // Load app
-  function loadApp() {
-    const url = document.getElementById('urlInput').value.trim();
-    if (!url) return;
-    const frame = document.getElementById('appFrame');
-    const loading = document.getElementById('loadingScreen');
-    loading.classList.remove('hidden');
-    frame.src = url;
-    frame.onload = () => {
-      setTimeout(() => loading.classList.add('hidden'), 500);
-    };
-  }
+  // Auto-hide loading when app loads
+  document.getElementById('appFrame').onload = () => {
+    setTimeout(() => document.getElementById('loadingScreen').classList.add('hidden'), 500);
+  };
 
   // Reload
   function reloadApp() {
     const frame = document.getElementById('appFrame');
-    if (frame.src && frame.src !== 'about:blank') {
-      const loading = document.getElementById('loadingScreen');
-      loading.classList.remove('hidden');
-      frame.src = frame.src;
-      frame.onload = () => {
-        setTimeout(() => loading.classList.add('hidden'), 500);
-      };
-    }
+    const loading = document.getElementById('loadingScreen');
+    loading.classList.remove('hidden');
+    frame.src = frame.src;
+    frame.onload = () => {
+      setTimeout(() => loading.classList.add('hidden'), 500);
+    };
   }
 
   // Device presets
@@ -438,11 +388,6 @@
     const btn = document.getElementById('btn-' + id);
     if (btn) btn.classList.add('active');
   }
-
-  // Enter key to load
-  document.getElementById('urlInput').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') loadApp();
-  });
 </script>
 </body>
 </html>
