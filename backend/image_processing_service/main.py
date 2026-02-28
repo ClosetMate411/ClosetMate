@@ -1,10 +1,11 @@
 """
 Image Processing Service - Railway Compatible
-v9.0: RMBG-1.4 model upgrade
-- One model: bria-rmbg — near remove.bg quality, clean edges
-- No skin detection, no person routing, no edge case bugs
-- File-based storage with static serving
-- WebP output, resize before inference
+v10.0: Similar-color background handling
+- Foreground/background color similarity detection (center vs border)
+- Edge-aware preprocessing for same-color clothing+background
+- Adaptive alpha matting with mask quality gate + retry
+- post_process_mask for cleaner edges
+- One model: bria-rmbg, file storage, WebP output
 """
 import os
 import uuid
@@ -20,7 +21,7 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 from rembg import remove, new_session
 
 logging.basicConfig(level=logging.INFO)
@@ -50,16 +51,50 @@ EXECUTOR = ThreadPoolExecutor(max_workers=2)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def is_low_contrast(image: Image.Image, threshold: float = 0.12) -> bool:
-    """Only truly low-contrast items trigger alpha matting."""
+def analyze_difficulty(image: Image.Image) -> dict:
+    """Detect foreground/background color similarity + overall contrast."""
+    arr = np.array(image)[:, :, :3]
+    h, w = arr.shape[:2]
+
+    # Center region = foreground proxy (middle 40%)
+    center = arr[int(h * 0.3):int(h * 0.7), int(w * 0.3):int(w * 0.7)]
+    center_mean = center.reshape(-1, 3).astype(np.float64).mean(axis=0)
+
+    # Border strips = background proxy (outer 10%)
+    margin_h = max(int(h * 0.1), 1)
+    margin_w = max(int(w * 0.1), 1)
+    strips = np.concatenate([
+        arr[:margin_h].reshape(-1, 3),
+        arr[-margin_h:].reshape(-1, 3),
+        arr[:, :margin_w].reshape(-1, 3),
+        arr[:, -margin_w:].reshape(-1, 3),
+    ])
+    border_mean = strips.astype(np.float64).mean(axis=0)
+
+    color_distance = float(np.sqrt(np.sum((center_mean - border_mean) ** 2)))
+
     gray = np.array(image.convert("L"), dtype=np.float32) / 255.0
-    std  = float(gray.std())
-    logger.info(f"Grayscale std (contrast): {std:.3f}")
-    return std < threshold
+    contrast_std = float(gray.std())
+
+    similar_colors = color_distance < 80
+    low_contrast = contrast_std < 0.12
+
+    logger.info(
+        f"Difficulty — color_dist: {color_distance:.1f}, "
+        f"contrast_std: {contrast_std:.3f}, "
+        f"similar_colors: {similar_colors}, low_contrast: {low_contrast}"
+    )
+
+    return {
+        "similar_colors": similar_colors,
+        "low_contrast": low_contrast,
+        "color_distance": color_distance,
+        "needs_enhancement": similar_colors or low_contrast,
+    }
 
 
 def resize_for_inference(image: Image.Image) -> Image.Image:
-    """Resize large images before bg removal — 800px is sufficient for wardrobe."""
+    """Resize large images before bg removal."""
     if max(image.size) > MAX_DIMENSION:
         image = image.copy()
         image.thumbnail((MAX_DIMENSION, MAX_DIMENSION), Image.LANCZOS)
@@ -67,32 +102,70 @@ def resize_for_inference(image: Image.Image) -> Image.Image:
     return image
 
 
-def preprocess_image(image: Image.Image, low_contrast: bool) -> Image.Image:
-    """Sharpen + boost contrast for genuinely low-contrast images."""
-    if low_contrast:
+def preprocess_image(image: Image.Image, difficulty: dict) -> Image.Image:
+    """Edge-aware enhancement based on detected difficulty."""
+    if not difficulty["needs_enhancement"]:
+        return image
+
+    if difficulty["similar_colors"]:
+        # Unsharp mask — amplify subtle edges between garment and background
+        blurred = image.filter(ImageFilter.GaussianBlur(radius=2))
+        arr = np.array(image, dtype=np.float32)
+        blurred_arr = np.array(blurred, dtype=np.float32)
+        sharpened = np.clip(arr + 1.5 * (arr - blurred_arr), 0, 255)
+        image = Image.fromarray(sharpened.astype(np.uint8), mode=image.mode)
+
+        # Boost saturation to differentiate subtle hue differences
+        image = ImageEnhance.Color(image).enhance(1.5)
+
+        # CLAHE-style local contrast via autocontrast on luminance
+        image = ImageOps.autocontrast(image, cutoff=1)
+
+        logger.info("Similar colors → unsharp mask + saturation + autocontrast")
+
+    if difficulty["low_contrast"]:
         image = image.filter(ImageFilter.SHARPEN)
         image = ImageEnhance.Contrast(image).enhance(2.0)
         image = ImageEnhance.Sharpness(image).enhance(2.0)
-        logger.info("Low contrast → applied sharpen + contrast boost")
+        logger.info("Low contrast → sharpen + contrast boost")
+
     return image
 
 
 def remove_background_sync(
     image: Image.Image,
     session,
-    use_alpha_matting: bool
+    difficulty: dict,
 ) -> Image.Image:
-    """CPU-bound background removal."""
-    if use_alpha_matting:
-        return remove(
+    """Background removal with adaptive strategy and quality gate."""
+
+    if difficulty["needs_enhancement"]:
+        # First attempt: alpha matting with relaxed thresholds
+        result = remove(
             image,
             session=session,
             alpha_matting=True,
-            alpha_matting_foreground_threshold=235,
-            alpha_matting_background_threshold=15,
-            alpha_matting_erode_size=10,
+            alpha_matting_foreground_threshold=230,
+            alpha_matting_background_threshold=20,
+            alpha_matting_erode_size=8,
+            post_process_mask=True,
         )
-    return remove(image, session=session)
+
+        # Quality gate — check if mask makes sense
+        alpha = np.array(result)[:, :, 3]
+        fg_ratio = float(np.mean(alpha > 128))
+
+        if fg_ratio < 0.03 or fg_ratio > 0.97:
+            # Mask is nearly empty or nearly full → bad segmentation
+            logger.warning(
+                f"Mask quality poor (fg_ratio={fg_ratio:.2f}), "
+                f"retrying without alpha matting"
+            )
+            result = remove(image, session=session, post_process_mask=True)
+
+        return result
+
+    return remove(image, session=session, post_process_mask=True)
 
 
 # ── App ───────────────────────────────────────────────────────────────────────
@@ -100,7 +173,7 @@ def remove_background_sync(
 app = FastAPI(
     title="ClosetMate Image Processing Service",
     description="Background removal for wardrobe items",
-    version="9.0.0",
+    version="10.0.0",
 )
 
 app.add_middleware(
@@ -143,7 +216,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "image-processing",
-        "version": "9.0.0",
+        "version": "10.0.0",
         "model_loaded": SESSION is not None,
     }
 
@@ -171,10 +244,10 @@ async def process_image(image: UploadFile = File(...)):
 
         input_image = Image.open(io.BytesIO(content)).convert("RGBA")
 
-        # ── Detect & preprocess ───────────────────────────────────────────────
-        low_contrast = is_low_contrast(input_image)
+        # ── Analyze difficulty & preprocess ───────────────────────────────────
+        difficulty = analyze_difficulty(input_image)
         processed_input = resize_for_inference(input_image)
-        processed_input = preprocess_image(processed_input, low_contrast)
+        processed_input = preprocess_image(processed_input, difficulty)
 
         # ── Remove background ─────────────────────────────────────────────────
         loop = asyncio.get_event_loop()
@@ -183,7 +256,7 @@ async def process_image(image: UploadFile = File(...)):
             remove_background_sync,
             processed_input,
             SESSION,
-            low_contrast,
+            difficulty,
         )
 
         # ── Save to disk ──────────────────────────────────────────────────────
