@@ -16,17 +16,33 @@ logger = logging.getLogger(__name__)
 def repair_json(text: str) -> str:
     """
     Attempt to repair truncated or malformed JSON from Gemini.
-    Handles: unterminated strings, missing closing brackets/braces.
+    Handles: unterminated strings, missing closing brackets/braces,
+    single quotes, trailing commas.
     """
     text = text.strip()
-    
+
     # Remove markdown code fences if present
     if text.startswith("```"):
         lines = text.split("\n")
         lines = [l for l in lines if not l.strip().startswith("```")]
         text = "\n".join(lines).strip()
-    
+
     # Try parsing as-is first
+    try:
+        json.loads(text)
+        return text
+    except json.JSONDecodeError:
+        pass
+
+    # Fix single quotes → double quotes (outside of double-quoted strings)
+    import re
+    # Replace trailing commas before } or ]
+    text = re.sub(r',\s*([}\]])', r'\1', text)
+    # Replace single-quoted keys/values with double quotes
+    # This is a simplified approach — handles most Gemini outputs
+    text = re.sub(r"(?<=[{,\[])\s*'([^']+)'\s*:", r' "\1":', text)
+    text = re.sub(r":\s*'([^']*)'", r': "\1"', text)
+
     try:
         json.loads(text)
         return text
@@ -242,7 +258,7 @@ REQUIRED JSON SCHEMA:
       "occasion": "best occasion for this outfit",
       "season": "best season for this outfit",
       "cohesion_score": integer 1-10,
-      "reasoning": "Brief explanation of why these items work together (max 200 chars)"
+      "reasoning": "REQUIRED - 1-2 sentence explanation of why these items work together. NEVER leave empty. (max 200 chars)"
     }}
   ]
 }}
