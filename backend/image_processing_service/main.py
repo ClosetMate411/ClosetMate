@@ -1,11 +1,13 @@
 """
 Image Processing Service - Railway Compatible
-v10.0: Similar-color background handling
-- Foreground/background color similarity detection (center vs border)
-- Edge-aware preprocessing for same-color clothing+background
-- Adaptive alpha matting with mask quality gate + retry
+v11.0: BiRefNet upgrade + pipeline fixes
+- Model: birefnet-general-lite (better edge detection, similar-color resilient)
+- Fix: mask resize to match original full-resolution image
+- Fix: original image preserved (not resized) for final output
+- Softened preprocessing (BiRefNet needs less aggressive enhancement)
+- Relaxed alpha matting thresholds for similar-color cases
 - post_process_mask for cleaner edges
-- One model: bria-rmbg, file storage, WebP output
+- File storage, WebP output
 """
 import os
 import uuid
@@ -28,7 +30,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 MAX_FILE_SIZE      = 5 * 1024 * 1024  # 5MB
-MAX_DIMENSION      = 1024              
+MAX_DIMENSION      = 1024
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
 # ── Storage config ───────────────────────────────────────────────────────────
@@ -36,13 +38,13 @@ STORAGE_PATH = Path(os.getenv("STORAGE_PATH", "/app/storage"))
 STORAGE_PATH.mkdir(parents=True, exist_ok=True)
 BASE_URL = os.getenv("BASE_URL", "http://localhost:3002").rstrip("/")
 
-# ── Load single model at startup ─────────────────────────────────────────────
-logger.info("Loading bria-rmbg model...")
+# ── Load model at startup ────────────────────────────────────────────────────
+logger.info("Loading birefnet-general-lite model...")
 try:
-    SESSION = new_session("bria-rmbg")
-    logger.info("bria-rmbg loaded successfully")
+    SESSION = new_session("birefnet-general-lite")
+    logger.info("birefnet-general-lite loaded successfully")
 except Exception as e:
-    logger.error(f"Failed to load bria-rmbg: {e}")
+    logger.error(f"Failed to load birefnet-general-lite: {e}")
     SESSION = None
 
 # Thread pool: rembg inference is CPU-bound
@@ -103,20 +105,24 @@ def resize_for_inference(image: Image.Image) -> Image.Image:
 
 
 def preprocess_image(image: Image.Image, difficulty: dict) -> Image.Image:
-    """Edge-aware enhancement based on detected difficulty."""
+    """
+    Edge-aware enhancement based on detected difficulty.
+    Softened for BiRefNet — it already has better edge detection,
+    so aggressive enhancement can hurt more than help.
+    """
     if not difficulty["needs_enhancement"]:
         return image
 
     if difficulty["similar_colors"]:
-        # Unsharp mask — amplify subtle edges between garment and background
+        # Mild unsharp mask — amplify subtle edges
         blurred = image.filter(ImageFilter.GaussianBlur(radius=2))
         arr = np.array(image, dtype=np.float32)
         blurred_arr = np.array(blurred, dtype=np.float32)
-        sharpened = np.clip(arr + 1.5 * (arr - blurred_arr), 0, 255)
+        sharpened = np.clip(arr + 1.0 * (arr - blurred_arr), 0, 255)
         image = Image.fromarray(sharpened.astype(np.uint8), mode=image.mode)
 
-        # Boost saturation to differentiate subtle hue differences
-        image = ImageEnhance.Color(image).enhance(1.5)
+        # Light saturation boost for subtle hue differences
+        image = ImageEnhance.Color(image).enhance(1.2)
 
         # Autocontrast on RGB only (RGBA not supported)
         if image.mode == "RGBA":
@@ -127,13 +133,13 @@ def preprocess_image(image: Image.Image, difficulty: dict) -> Image.Image:
         else:
             image = ImageOps.autocontrast(image, cutoff=1)
 
-        logger.info("Similar colors → unsharp mask + saturation + autocontrast")
+        logger.info("Similar colors → mild unsharp + saturation 1.2 + autocontrast")
 
     if difficulty["low_contrast"]:
         image = image.filter(ImageFilter.SHARPEN)
-        image = ImageEnhance.Contrast(image).enhance(2.0)
-        image = ImageEnhance.Sharpness(image).enhance(2.0)
-        logger.info("Low contrast → sharpen + contrast boost")
+        image = ImageEnhance.Contrast(image).enhance(1.5)
+        image = ImageEnhance.Sharpness(image).enhance(1.5)
+        logger.info("Low contrast → sharpen + contrast 1.5")
 
     return image
 
@@ -148,7 +154,8 @@ def remove_background_sync(
     Background removal with adaptive strategy.
     Runs model on preprocessed image for better edge detection,
     then applies the extracted alpha mask to the original image
-    so colors stay clean.
+    so colors stay clean. Handles size mismatch between
+    inference resolution and original full-res image.
     """
 
     if difficulty["needs_enhancement"]:
@@ -157,9 +164,9 @@ def remove_background_sync(
             preprocessed,
             session=session,
             alpha_matting=True,
-            alpha_matting_foreground_threshold=230,
-            alpha_matting_background_threshold=20,
-            alpha_matting_erode_size=8,
+            alpha_matting_foreground_threshold=200,
+            alpha_matting_background_threshold=40,
+            alpha_matting_erode_size=5,
             post_process_mask=True,
         )
 
@@ -176,13 +183,20 @@ def remove_background_sync(
             result = remove(preprocessed, session=session, post_process_mask=True)
             alpha = result.split()[3]
 
-        # Apply mask to ORIGINAL image (clean colors)
+        # Resize mask to match original full-resolution image
+        if alpha.size != original.size:
+            alpha = alpha.resize(original.size, Image.LANCZOS)
+            logger.info(f"Resized mask {result.size} → {original.size}")
+
+        # Apply mask to ORIGINAL image (clean colors, full resolution)
         original_rgba = original.convert("RGBA")
         original_rgba.putalpha(alpha)
         logger.info("Applied mask from preprocessed to original image")
         return original_rgba
 
-    return remove(original, session=session, post_process_mask=True)
+    # Normal case: run directly on original
+    result = remove(original, session=session, post_process_mask=True)
+    return result
 
 
 # ── App ───────────────────────────────────────────────────────────────────────
@@ -190,7 +204,7 @@ def remove_background_sync(
 app = FastAPI(
     title="ClosetMate Image Processing Service",
     description="Background removal for wardrobe items",
-    version="10.0.0",
+    version="11.0.0",
 )
 
 app.add_middleware(
@@ -233,7 +247,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "image-processing",
-        "version": "10.0.0",
+        "version": "11.0.0",
         "model_loaded": SESSION is not None,
     }
 
@@ -261,6 +275,9 @@ async def process_image(image: UploadFile = File(...)):
 
         input_image = Image.open(io.BytesIO(content)).convert("RGBA")
 
+        # ── Preserve full-resolution original ─────────────────────────────────
+        original_full = input_image.copy()
+
         # ── Analyze difficulty & preprocess ───────────────────────────────────
         difficulty = analyze_difficulty(input_image)
         resized = resize_for_inference(input_image)
@@ -272,7 +289,7 @@ async def process_image(image: UploadFile = File(...)):
             EXECUTOR,
             remove_background_sync,
             preprocessed,
-            resized,
+            original_full,      # full-res original, not resized
             SESSION,
             difficulty,
         )
