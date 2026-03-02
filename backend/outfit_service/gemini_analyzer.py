@@ -274,7 +274,8 @@ Optional extras: 0-1 OUTERWEAR, 0-1 BAG, 0-2 ACCESSORY
 SELECTION RULES:
 - Each outfit MUST reference items by their exact "id" field.
 - Consider color harmony, style consistency, and overall cohesion.
-- Avoid repeating the same item across outfits when possible.
+- Items CAN be reused across different outfits (e.g. same shoes in outfit 1 and 3 is fine).
+- Do NOT duplicate the same item within a single outfit.
 - If DRESS items exist in the wardrobe, at least 1 outfit MUST use Option B (DRESS + SHOES).
 - You MUST generate at least 1 outfit if items are sufficient. NEVER return an empty list.
 
@@ -289,7 +290,10 @@ CONTEXT (for naming/reasoning only, do NOT use to exclude items):
 - Occasion: {occasion}
 - Style preference: {style}
 
-Generate up to {count} outfits. Validate each against HARD RULES before output.
+CRITICAL RULE: You MUST generate EXACTLY {count} different outfit combinations.
+Not fewer, not more. If the user requests 5 outfits, return exactly 5.
+Each outfit must use DIFFERENT item combinations - do not repeat the same combination.
+Validate each against HARD RULES before output.
 
 REQUIRED JSON (strict JSON only, no extra text):
 {{
@@ -306,7 +310,7 @@ REQUIRED JSON (strict JSON only, no extra text):
       ],
       "tags": ["casual", "spring"],
       "cohesion_score": 8,
-      "explanation": "1-2 sentences on why these items work together (max 200 chars)"
+      "explanation": "1-2 sentences on why these items work together (max 500 chars)"
     }}
   ]
 }}
@@ -643,7 +647,7 @@ class GeminiClothingAnalyzer:
                 "occasion": tags[1] if len(tags) > 1 else "everyday",
                 "season": tags[2] if len(tags) > 2 else "all",
                 "cohesion_score": max(1, min(10, int(outfit.get("cohesion_score", 5)))),
-                "reasoning": str(outfit.get("explanation", outfit.get("reasoning", "")))[:200],
+                "reasoning": str(outfit.get("explanation", outfit.get("reasoning", "")))[:500],
             })
 
         return {"outfits": validated_outfits}
