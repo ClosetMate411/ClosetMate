@@ -290,9 +290,10 @@ CONTEXT (for naming/reasoning only, do NOT use to exclude items):
 - Occasion: {occasion}
 - Style preference: {style}
 
-CRITICAL RULE: You MUST generate EXACTLY {count} different outfit combinations.
-Not fewer, not more. If the user requests 5 outfits, return exactly 5.
-Each outfit must use DIFFERENT item combinations - do not repeat the same combination.
+CRITICAL COUNT RULE:
+You MUST return a JSON array with EXACTLY {count} outfit objects.
+If you return fewer than {count}, your response will be REJECTED.
+Count the outfits before responding. Each outfit must use DIFFERENT item combinations.
 Validate each against HARD RULES before output.
 
 REQUIRED JSON (strict JSON only, no extra text):
@@ -441,6 +442,8 @@ class GeminiClothingAnalyzer:
                 "Not enough items to form an outfit: need (TOP + BOTTOM + SHOES) or (DRESS + SHOES)"
             )
 
+        valid_ids = {item["id"] for item in wardrobe_items}
+
         prompt = OUTFIT_GENERATION_PROMPT.format(
             wardrobe_items=json.dumps(simplified_items, indent=2),
             occasion=occasion,
@@ -448,7 +451,58 @@ class GeminiClothingAnalyzer:
             count=count,
         )
 
-        # Retry until valid JSON (up to 3 attempts)
+        # ── First pass: generate outfits ──
+        outfits = await self._call_gemini_for_outfits(
+            prompt, valid_ids, items_by_category
+        )
+
+        # ── Retry if Gemini returned fewer than requested ──
+        if len(outfits) < count:
+            remaining = count - len(outfits)
+            existing_combos = [
+                sorted(o["item_ids"]) for o in outfits
+            ]
+            logger.warning(
+                f"Gemini returned {len(outfits)}/{count} outfits, "
+                f"retrying for {remaining} more"
+            )
+
+            retry_prompt = OUTFIT_GENERATION_PROMPT.format(
+                wardrobe_items=json.dumps(simplified_items, indent=2),
+                occasion=occasion,
+                style=style,
+                count=remaining,
+            ) + f"\n\nALREADY GENERATED (do NOT repeat these exact combinations):\n{json.dumps(existing_combos)}"
+
+            extra = await self._call_gemini_for_outfits(
+                retry_prompt, valid_ids, items_by_category
+            )
+
+            # Deduplicate: only add outfits with different item combos
+            for outfit in extra:
+                combo = sorted(outfit["item_ids"])
+                if combo not in existing_combos:
+                    outfits.append(outfit)
+                    existing_combos.append(combo)
+                if len(outfits) >= count:
+                    break
+
+            logger.info(
+                f"After retry: {len(outfits)}/{count} outfits"
+            )
+
+        return {"outfits": outfits[:count]}
+
+    async def _call_gemini_for_outfits(
+        self,
+        prompt: str,
+        valid_ids: set,
+        items_by_category: dict,
+    ) -> list[dict]:
+        """
+        Send prompt to Gemini and return validated outfit list.
+        Retries up to 3 times on JSON parse failures.
+        """
         last_error = None
         for attempt in range(3):
             try:
@@ -462,12 +516,11 @@ class GeminiClothingAnalyzer:
                     repaired = repair_json(raw_text)
                     result = json.loads(repaired)
 
-                valid_ids = {item["id"] for item in wardrobe_items}
                 validated = self._validate_outfits(
                     result, valid_ids, items_by_category
                 )
-                logger.info(f"Generated {len(validated['outfits'])} outfit combinations")
-                return validated
+                logger.info(f"Gemini returned {len(validated['outfits'])} valid outfits")
+                return validated["outfits"]
 
             except (json.JSONDecodeError, ValueError) as e:
                 last_error = e
@@ -477,7 +530,8 @@ class GeminiClothingAnalyzer:
                 logger.error(f"Gemini API error during outfit generation: {e}")
                 raise
 
-        raise ValueError(f"Failed to generate outfits after 3 attempts: {last_error}")
+        logger.error(f"Failed to get valid outfits after 3 attempts: {last_error}")
+        return []
 
     # ============== VALIDATION ==============
 
