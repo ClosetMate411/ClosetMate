@@ -1,5 +1,5 @@
 """
-Outfit Service - AI-powered clothing analysis and outfit generation
+Outfit Service: AI-powered clothing analysis and outfit generation
 Integrates with Gemini for image analysis and outfit recommendations
 
 Endpoints:
@@ -281,6 +281,7 @@ class GenerateOutfitsRequest(BaseModel):
     season: str = "all"
     occasion: str = "everyday"
     style: str = "any"
+    gender: str = "male"  # "male" or "female" — controls outfit hard rules
 
 class SaveOutfitRequest(BaseModel):
     name: str
@@ -580,6 +581,7 @@ async def generate_outfits(
             season=body.season,
             occasion=body.occasion,
             style=body.style,
+            user_gender=body.gender,
         )
     except ValueError as e:
         return create_error_response("GENERATION_FAILED", str(e), 400)
@@ -591,7 +593,13 @@ async def generate_outfits(
     attr_map = {a.item_id: a.to_dict() for a in attributes}
     enriched_outfits = []
     for outfit in result["outfits"]:
+        # Backward-compat flat items list
         outfit["items"] = [attr_map[iid] for iid in outfit["item_ids"] if iid in attr_map]
+        # Enrich required / optional entries with full item data
+        for entry in outfit.get("required", []):
+            entry["item"] = attr_map.get(entry["id"])
+        for entry in outfit.get("optional", []):
+            entry["item"] = attr_map.get(entry["id"])
         enriched_outfits.append(outfit)
 
     return {

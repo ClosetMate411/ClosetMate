@@ -222,42 +222,90 @@ FALLBACK VALUES (use when unsure):
 Respond with ONLY the JSON object. No other text."""
 
 
-OUTFIT_GENERATION_PROMPT = """You are a professional fashion stylist. Create outfit combinations from the pre-filtered wardrobe items below.
+# ============== OUTFIT CATEGORY MAPPING ==============
+# Maps DB analysis categories to the 7 outfit-generation categories
+# used in the hard rules: TOP, BOTTOM, DRESS, SHOES, OUTERWEAR, BAG, ACCESSORY
 
-IMPORTANT: These items have ALREADY been filtered by occasion, season, and formality on the server side.
-ALL provided items are valid candidates — your job is to combine them into great outfits, NOT to re-filter them.
+_DIRECT_CAT_MAP = {
+    "top": "TOP",
+    "bottom": "BOTTOM",
+    "outerwear": "OUTERWEAR",
+    "footwear": "SHOES",
+    "dress": "DRESS",
+}
+_ACTIVEWEAR_TOPS = {"sports-bra", "compression-top", "jersey"}
+_SWIMWEAR_DRESSES = {"bikini", "one-piece"}
+_BAG_SUBCATEGORIES = {"bag", "backpack", "tote", "clutch", "purse", "handbag", "crossbody"}
 
-RULES:
-1. Each outfit MUST use only items from the provided wardrobe — reference them by their exact "id" field.
-2. An outfit should have 2-5 items that work together aesthetically.
-3. Consider color harmony, style consistency, and overall cohesion.
-4. Do NOT repeat the same item across outfits unless the user has very few items.
-5. Respond with ONLY valid JSON — no markdown, no explanation.
-6. Each outfit must have a short creative name and a brief explanation of why it works.
-7. Rate each outfit's cohesion from 1-10.
-8. You MUST generate at least 1 outfit if 2 or more items are provided. NEVER return an empty list when items are available.
 
-USER'S WARDROBE (pre-filtered):
+def map_to_outfit_category(category: str, subcategory: str = "") -> str:
+    """Map a DB analysis category/subcategory to one of the 7 outfit categories."""
+    cat = (category or "").lower()
+    sub = (subcategory or "").lower()
+
+    if cat in _DIRECT_CAT_MAP:
+        return _DIRECT_CAT_MAP[cat]
+    if cat == "accessory":
+        return "BAG" if sub in _BAG_SUBCATEGORIES else "ACCESSORY"
+    if cat == "activewear":
+        return "TOP" if sub in _ACTIVEWEAR_TOPS else "BOTTOM"
+    if cat == "swimwear":
+        return "DRESS" if sub in _SWIMWEAR_DRESSES else "BOTTOM"
+    return "ACCESSORY"  # safe fallback
+
+
+OUTFIT_GENERATION_PROMPT = """You are ClosetMate Outfit Generator, a professional fashion stylist.
+
+Create outfit combinations from the pre-filtered wardrobe items below.
+These items have ALREADY been filtered by occasion, season, and formality — ALL are valid candidates.
+Your job is to combine them into great outfits, NOT to re-filter them.
+
+CATEGORIES: TOP, BOTTOM, DRESS, SHOES, OUTERWEAR, BAG, ACCESSORY
+
+HARD RULES (must NEVER be violated):
+1) Male outfit MUST include exactly: 1 TOP + 1 BOTTOM + 1 SHOES
+   Optional extras: 0-1 OUTERWEAR, 0-1 BAG, 0-2 ACCESSORY
+2) Female outfit MUST be EITHER:
+   A) 1 TOP + 1 BOTTOM + 1 SHOES
+   OR B) 1 DRESS + 1 SHOES
+   Optional extras: 0-1 OUTERWEAR, 0-1 BAG, 0-2 ACCESSORY
+3) BAG / ACCESSORY / OUTERWEAR can NEVER replace missing required items.
+4) Never output an outfit missing a required category.
+
+SELECTION RULES:
+- Each outfit MUST reference items by their exact "id" field.
+- Consider color harmony, style consistency, and overall cohesion.
+- Avoid repeating the same item across outfits when possible.
+- You MUST generate at least 1 outfit if items are sufficient. NEVER return an empty list.
+
+USER GENDER: {user_gender}
+
+WARDROBE ITEMS:
 {wardrobe_items}
 
-CONTEXT (for naming/reasoning only, do NOT use these to exclude items):
+CONTEXT (for naming/reasoning only, do NOT use to exclude items):
 - Season: {season}
 - Occasion: {occasion}
 - Style preference: {style}
 
-Generate up to {count} outfit combinations. Prioritize quality and variety.
+Generate up to {count} outfits. Validate each against HARD RULES before output.
 
-REQUIRED JSON SCHEMA:
+REQUIRED JSON (strict JSON only, no extra text):
 {{
   "outfits": [
     {{
-      "name": "Creative outfit name (max 50 chars)",
-      "item_ids": ["id1", "id2", ...],
-      "style": "overall style of the outfit",
-      "occasion": "best occasion for this outfit",
-      "season": "best season for this outfit",
-      "cohesion_score": integer 1-10,
-      "reasoning": "REQUIRED - 1-2 sentence explanation of why these items work together. NEVER leave empty. (max 200 chars)"
+      "title": "Creative outfit name (max 50 chars)",
+      "required": [
+        {{"id": "item_id_here", "category": "TOP"}},
+        {{"id": "item_id_here", "category": "BOTTOM"}},
+        {{"id": "item_id_here", "category": "SHOES"}}
+      ],
+      "optional": [
+        {{"id": "item_id_here", "category": "OUTERWEAR"}}
+      ],
+      "tags": ["casual", "spring"],
+      "cohesion_score": 8,
+      "explanation": "1-2 sentences on why these items work together (max 200 chars)"
     }}
   ]
 }}
@@ -342,34 +390,57 @@ class GeminiClothingAnalyzer:
         count: int = 3,
         season: str = "all",
         occasion: str = "everyday",
-        style: str = "any"
+        style: str = "any",
+        user_gender: str = "male",
     ) -> dict:
         """
         Generate outfit combinations from the user's wardrobe.
-        Uses item_id (wardrobe item ID) as the reference key.
-        Includes retry logic and JSON repair for robustness.
+        Enforces hard rules: required categories per gender.
         """
         if len(wardrobe_items) < 2:
             raise ValueError("Need at least 2 items to generate an outfit")
 
         count = max(1, min(count, 10))
+        gender_lower = (user_gender or "male").lower()
 
-        # Build the prompt with actual wardrobe data
-        # Use item_id as the ID field so outfit references map to wardrobe items
+        # Build simplified items with mapped outfit categories
         simplified_items = []
+        items_by_category: dict[str, list[dict]] = {}
+
         for item in wardrobe_items:
-            simplified_items.append({
-                "id": item.get("item_id", item["id"]),  # Use item_id (wardrobe FK)
-                "category": item.get("category", "unknown"),
+            item_id = item.get("item_id", item["id"])
+            outfit_cat = map_to_outfit_category(
+                item.get("category", "unknown"),
+                item.get("subcategory", ""),
+            )
+            simplified = {
+                "id": item_id,
+                "category": outfit_cat,
                 "subcategory": item.get("subcategory", "unknown"),
                 "color_primary": item.get("color_primary", "unknown"),
                 "color_secondary": item.get("color_secondary"),
                 "pattern": item.get("pattern", "solid"),
                 "style": item.get("style", "casual"),
                 "formality_level": item.get("formality_level", 2),
-                "weather_suitability": item.get("weather_suitability", ["mild"]),
-                "suitable_occasions": item.get("suitable_occasions", ["everyday"]),
-            })
+            }
+            simplified_items.append(simplified)
+            items_by_category.setdefault(outfit_cat, []).append(simplified)
+
+        # Pre-check: do we have the required categories?
+        available_cats = set(items_by_category.keys())
+        if gender_lower == "male":
+            missing = {"TOP", "BOTTOM", "SHOES"} - available_cats
+            if missing:
+                raise ValueError(
+                    f"Cannot generate male outfits: missing {', '.join(missing)} items in wardrobe"
+                )
+        else:
+            has_tbs = {"TOP", "BOTTOM", "SHOES"}.issubset(available_cats)
+            has_ds = {"DRESS", "SHOES"}.issubset(available_cats)
+            if not has_tbs and not has_ds:
+                raise ValueError(
+                    "Cannot generate female outfits: need (TOP + BOTTOM + SHOES) or (DRESS + SHOES)"
+                )
 
         prompt = OUTFIT_GENERATION_PROMPT.format(
             wardrobe_items=json.dumps(simplified_items, indent=2),
@@ -377,6 +448,7 @@ class GeminiClothingAnalyzer:
             occasion=occasion,
             style=style,
             count=count,
+            user_gender=gender_lower,
         )
 
         # Retry until valid JSON (up to 3 attempts)
@@ -394,7 +466,9 @@ class GeminiClothingAnalyzer:
                     result = json.loads(repaired)
 
                 valid_ids = {item.get("item_id", item["id"]) for item in wardrobe_items}
-                validated = self._validate_outfits(result, valid_ids)
+                validated = self._validate_outfits(
+                    result, valid_ids, gender_lower, items_by_category
+                )
                 logger.info(f"Generated {len(validated['outfits'])} outfit combinations")
                 return validated
 
@@ -473,25 +547,108 @@ class GeminiClothingAnalyzer:
 
         return validated
 
-    def _validate_outfits(self, data: dict, valid_ids: set) -> dict:
-        """Validate outfit generation response - ensure all item IDs exist"""
+    def _validate_outfits(
+        self,
+        data: dict,
+        valid_ids: set,
+        user_gender: str = "male",
+        items_by_category: dict | None = None,
+    ) -> dict:
+        """
+        Validate outfit generation response — enforce HARD RULES per gender.
+        Attempts to repair outfits missing required categories before discarding.
+        """
+        items_by_category = items_by_category or {}
         validated_outfits = []
-        for outfit in data.get("outfits", []):
-            item_ids = outfit.get("item_ids", [])
-            # Filter to only valid item IDs
-            valid_item_ids = [iid for iid in item_ids if iid in valid_ids]
+        used_ids: set[str] = set()  # track used items for repair diversity
 
-            if len(valid_item_ids) < 2:
-                continue  # Skip outfits with fewer than 2 valid items
+        for outfit in data.get("outfits", []):
+            required = outfit.get("required", [])
+            optional = outfit.get("optional", [])
+
+            # ── Fallback: convert old flat item_ids format to required/optional ──
+            if not required and "item_ids" in outfit:
+                for iid in outfit["item_ids"]:
+                    # Try to find the item's category from items_by_category
+                    cat_found = None
+                    for cat, items in items_by_category.items():
+                        if any(it["id"] == iid for it in items):
+                            cat_found = cat
+                            break
+                    if cat_found and cat_found in ("TOP", "BOTTOM", "SHOES", "DRESS"):
+                        required.append({"id": iid, "category": cat_found})
+                    else:
+                        optional.append({"id": iid, "category": cat_found or "ACCESSORY"})
+
+            # ── Filter to valid IDs only ──
+            required = [r for r in required if isinstance(r, dict) and r.get("id") in valid_ids]
+            optional = [o for o in optional if isinstance(o, dict) and o.get("id") in valid_ids]
+
+            # ── Determine required categories ──
+            req_categories = {r.get("category") for r in required}
+
+            if user_gender == "male":
+                needed = {"TOP", "BOTTOM", "SHOES"}
+            else:
+                # Female: DRESS+SHOES or TOP+BOTTOM+SHOES
+                if "DRESS" in req_categories:
+                    needed = {"DRESS", "SHOES"}
+                else:
+                    needed = {"TOP", "BOTTOM", "SHOES"}
+
+            # ── Repair missing required categories ──
+            missing = needed - req_categories
+            if missing:
+                outfit_ids = {r["id"] for r in required} | {o["id"] for o in optional}
+                repaired = True
+                for cat in missing:
+                    # Prefer items not already used in other outfits
+                    candidates = [
+                        it for it in items_by_category.get(cat, [])
+                        if it["id"] not in used_ids and it["id"] not in outfit_ids
+                    ]
+                    if not candidates:
+                        candidates = [
+                            it for it in items_by_category.get(cat, [])
+                            if it["id"] not in outfit_ids
+                        ]
+                    if candidates:
+                        required.append({"id": candidates[0]["id"], "category": cat})
+                    else:
+                        repaired = False
+                        break
+
+                if not repaired:
+                    logger.warning(
+                        f"Discarding outfit — cannot satisfy hard rules: "
+                        f"missing {needed - {r.get('category') for r in required}}"
+                    )
+                    continue
+
+            # ── Final hard-rule check ──
+            final_cats = {r.get("category") for r in required}
+            if not needed.issubset(final_cats):
+                continue
+
+            # ── Build backward-compatible item_ids ──
+            all_ids = [r["id"] for r in required] + [o["id"] for o in optional]
+            used_ids.update(all_ids)
+
+            tags = outfit.get("tags", [])
+            if not isinstance(tags, list):
+                tags = []
 
             validated_outfits.append({
-                "name": str(outfit.get("name", "Unnamed Outfit"))[:50],
-                "item_ids": valid_item_ids,
-                "style": str(outfit.get("style", "casual"))[:30],
-                "occasion": str(outfit.get("occasion", "everyday"))[:30],
-                "season": str(outfit.get("season", "all"))[:20],
+                "name": str(outfit.get("title", outfit.get("name", "Unnamed Outfit")))[:50],
+                "item_ids": all_ids,
+                "required": required,
+                "optional": optional,
+                "tags": tags,
+                "style": tags[0] if tags else "casual",
+                "occasion": tags[1] if len(tags) > 1 else "everyday",
+                "season": tags[2] if len(tags) > 2 else "all",
                 "cohesion_score": max(1, min(10, int(outfit.get("cohesion_score", 5)))),
-                "reasoning": str(outfit.get("reasoning", ""))[:200],
+                "reasoning": str(outfit.get("explanation", outfit.get("reasoning", "")))[:200],
             })
 
         return {"outfits": validated_outfits}
