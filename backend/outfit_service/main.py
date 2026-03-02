@@ -54,16 +54,6 @@ OCCASION_FORMALITY_MAP = {
     "formal-event": [4, 5],
 }
 
-# Maps frontend season values → weather_suitability values in DB
-SEASON_WEATHER_MAP = {
-    "spring": ["mild", "warm", "all-weather"],
-    "summer": ["warm", "hot", "all-weather"],
-    "fall":   ["mild", "cool", "all-weather"],   # frontend sends "fall" not "autumn"
-    "winter": ["cool", "cold", "all-weather"],
-    "all":    None,  # No restriction
-}
-
-
 async def fetch_image_bytes(image_url: str) -> tuple[bytes, str]:
     """
     Fetch image bytes from either:
@@ -124,6 +114,7 @@ class ClothingAttribute(Base):
     user_id = Column(String, nullable=False, index=True)
 
     # Core attributes from Gemini
+    name = Column(String(60), nullable=True)                # AI-generated display name
     category = Column(String(50), nullable=False)          # top, bottom, outerwear, etc.
     subcategory = Column(String(50), nullable=False)        # t-shirt, jeans, blazer, etc.
     color_primary = Column(String(30), nullable=False)
@@ -149,6 +140,7 @@ class ClothingAttribute(Base):
         return {
             "id": self.id,
             "item_id": self.item_id,
+            "name": self.name,
             "category": self.category,
             "subcategory": self.subcategory,
             "color_primary": self.color_primary,
@@ -278,7 +270,6 @@ class ReanalyzeRequest(BaseModel):
 
 class GenerateOutfitsRequest(BaseModel):
     count: int = 3
-    season: str = "all"
     occasion: str = "everyday"
     style: str = "any"
 
@@ -371,6 +362,7 @@ async def analyze_clothing_item(
         id=str(uuid.uuid4()),
         item_id=body.item_id,
         user_id=body.user_id,
+        name=attributes.get("name"),
         category=attributes["category"],
         subcategory=attributes["subcategory"],
         color_primary=attributes["color_primary"],
@@ -444,6 +436,7 @@ async def reanalyze_clothing_item(
         id=str(uuid.uuid4()),
         item_id=item_id,
         user_id=user_id,
+        name=attributes.get("name"),
         category=attributes["category"],
         subcategory=attributes["subcategory"],
         color_primary=attributes["color_primary"],
@@ -514,7 +507,6 @@ async def generate_outfits(
     JSON body:
     {
         "count": 3,
-        "season": "all",
         "occasion": "everyday",
         "style": "any"
     }
@@ -523,28 +515,15 @@ async def generate_outfits(
     query = db.query(ClothingAttribute).filter(
         ClothingAttribute.user_id == user_id
     )
+    attributes = query.all()
 
-    # ── Step 2: Season pre-filter ────────────────────────────────────────────
-    season_lower = (body.season or "all").lower()
-    allowed_weather = SEASON_WEATHER_MAP.get(season_lower)  # None means no restriction
-    if allowed_weather is not None:
-        # Keep items whose weather_suitability overlaps with allowed_weather
-        # SQLAlchemy JSON overlap: filter in Python after fetching (portable across DBs)
-        all_user_items = query.all()
-        attributes = [
-            a for a in all_user_items
-            if any(w in allowed_weather for w in (a.weather_suitability or []))
-        ]
-    else:
-        attributes = query.all()
-
-    # ── Step 3: Occasion → formality pre-filter ──────────────────────────────
+    # ── Step 2: Occasion → formality pre-filter ──────────────────────────────
     occasion_lower = (body.occasion or "everyday").lower()
     allowed_formality = OCCASION_FORMALITY_MAP.get(occasion_lower)  # None means no restriction
     if allowed_formality is not None:
         attributes = [a for a in attributes if a.formality_level in allowed_formality]
 
-    # ── Step 4: Guard — need at least 2 items after filtering ────────────────
+    # ── Step 3: Guard — need at least 2 items after filtering ────────────────
     if len(attributes) < 2:
         # Determine why there aren't enough items for a helpful message
         total_items = db.query(ClothingAttribute).filter(
@@ -559,14 +538,14 @@ async def generate_outfits(
         else:
             detail = (
                 f"Not enough items in your wardrobe match the selected filters "
-                f"(occasion: '{body.occasion}', season: '{body.season}'). "
+                f"(occasion: '{body.occasion}'). "
                 f"Try adding more appropriate clothing or changing the filters."
             )
         return create_error_response("INSUFFICIENT_ITEMS", detail, 400)
 
-    # ── Step 5: Build slim wardrobe payload for Gemini ──────────────────────
+    # ── Step 4: Build slim wardrobe payload for Gemini ──────────────────────
     # Only send fields Gemini needs — avoids bloating the prompt with
-    # analyzed_at, description, weather_suitability etc.
+    # analyzed_at, description etc.
     wardrobe_items = [
         {
             "id": attr.item_id,
@@ -577,6 +556,7 @@ async def generate_outfits(
             "pattern": attr.pattern,
             "style": attr.style,
             "formality_level": attr.formality_level,
+            "weather_suitability": attr.weather_suitability or ["mild"],
         }
         for attr in attributes
     ]
@@ -584,14 +564,13 @@ async def generate_outfits(
 
     logger.info(
         f"Outfit generation: {len(wardrobe_items)} items passed to Gemini "
-        f"(occasion={body.occasion}, season={body.season}, style={body.style})"
+        f"(occasion={body.occasion}, style={body.style})"
     )
 
     try:
         result = await analyzer.generate_outfits(
             wardrobe_items=wardrobe_items,
             count=count,
-            season=body.season,
             occasion=body.occasion,
             style=body.style,
         )
@@ -601,7 +580,7 @@ async def generate_outfits(
         logger.error(f"Outfit generation failed: {e}")
         return create_error_response("GENERATION_FAILED", f"AI outfit generation failed: {str(e)}", 500)
 
-    # ── Step 6: Enrich outfits with full item details ────────────────────────
+    # ── Step 5: Enrich outfits with full item details ────────────────────────
     attr_map = {a.item_id: a.to_dict() for a in attributes}
     enriched_outfits = []
     for outfit in result["outfits"]:
@@ -620,7 +599,6 @@ async def generate_outfits(
             "outfits": enriched_outfits,
             "total_items_analyzed": len(attributes),
             "filters": {
-                "season": body.season,
                 "occasion": body.occasion,
                 "style": body.style,
             }

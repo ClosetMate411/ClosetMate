@@ -204,6 +204,7 @@ REQUIRED JSON SCHEMA:
   "formality_level": integer 1-5 (1=very casual, 5=very formal),
   "weather_suitability": list of one or more from """ + json.dumps(VALID_WEATHER) + """,
   "suitable_occasions": list of one or more from """ + json.dumps(VALID_OCCASIONS) + """,
+  "name": "Short display name combining color + material + subcategory (e.g. 'Black Cotton T-Shirt'), max 40 chars",
   "description": a brief 1-2 sentence factual description of the item (max 150 chars)
 }
 
@@ -257,7 +258,7 @@ def map_to_outfit_category(category: str, subcategory: str = "") -> str:
 OUTFIT_GENERATION_PROMPT = """You are ClosetMate Outfit Generator, a professional fashion stylist.
 
 Create outfit combinations from the pre-filtered wardrobe items below.
-These items have ALREADY been filtered by occasion, season, and formality — ALL are valid candidates.
+These items have ALREADY been filtered by occasion and formality — ALL are valid candidates.
 Your job is to combine them into great outfits, NOT to re-filter them.
 
 CATEGORIES: TOP, BOTTOM, DRESS, SHOES, OUTERWEAR, BAG, ACCESSORY
@@ -280,8 +281,11 @@ SELECTION RULES:
 WARDROBE ITEMS:
 {wardrobe_items}
 
+WEATHER AWARENESS:
+Each item has a weather_suitability field. Do NOT combine incompatible weather items
+in the same outfit (e.g. no winter coat + shorts). Keep weather tags consistent within each outfit.
+
 CONTEXT (for naming/reasoning only, do NOT use to exclude items):
-- Season: {season}
 - Occasion: {occasion}
 - Style preference: {style}
 
@@ -385,7 +389,6 @@ class GeminiClothingAnalyzer:
         self,
         wardrobe_items: list[dict],
         count: int = 3,
-        season: str = "all",
         occasion: str = "everyday",
         style: str = "any",
     ) -> dict:
@@ -417,6 +420,7 @@ class GeminiClothingAnalyzer:
                 "pattern": item.get("pattern", "solid"),
                 "style": item.get("style", "casual"),
                 "formality_level": item.get("formality_level", 2),
+                "weather_suitability": item.get("weather_suitability", ["mild"]),
             }
             simplified_items.append(simplified)
             items_by_category.setdefault(outfit_cat, []).append(simplified)
@@ -435,7 +439,6 @@ class GeminiClothingAnalyzer:
 
         prompt = OUTFIT_GENERATION_PROMPT.format(
             wardrobe_items=json.dumps(simplified_items, indent=2),
-            season=season,
             occasion=occasion,
             style=style,
             count=count,
@@ -530,6 +533,13 @@ class GeminiClothingAnalyzer:
             validated["suitable_occasions"] = [o for o in occasions if o in VALID_OCCASIONS] or ["everyday"]
         else:
             validated["suitable_occasions"] = ["everyday"]
+
+        # Name — AI-generated display name, fallback to "Color Subcategory"
+        name = data.get("name", "")
+        if name:
+            validated["name"] = str(name)[:40]
+        else:
+            validated["name"] = f"{validated['color_primary'].title()} {validated['subcategory'].replace('-', ' ').title()}"[:40]
 
         # Description - truncate and sanitize
         desc = data.get("description", "")

@@ -110,9 +110,6 @@ Base.metadata.create_all(bind=engine)
 
 # ============== VALIDATION HELPERS ==============
 
-VALID_SEASONS = ["Spring", "Summer", "Fall", "Winter", "Untitled"]
-
-
 def validate_email(email: str) -> tuple[bool, str]:
     """Validate email address according to requirements"""
     if not email or len(email) > 254:
@@ -670,15 +667,9 @@ async def get_item(
 async def create_item(
     current_user: User = Depends(get_current_user),
     image: UploadFile = File(...),
-    item_name: str = Form("Untitled"),
-    season: str = Form("Untitled"),
     db: Session = Depends(get_db)
 ):
     """Create a new clothing item with background removal + AI analysis"""
-    # Validate season
-    if season not in VALID_SEASONS:
-        season = "Untitled"
-    
     # Read image content
     content = await image.read()
     logger.info(f"Create item: received image '{image.filename}' ({len(content)} bytes) from user {current_user.id}")
@@ -714,8 +705,8 @@ async def create_item(
     item = ClothingItem(
         id=str(uuid.uuid4()),
         user_id=current_user.id,
-        item_name=item_name,
-        season=season,
+        item_name="Untitled",
+        season="Untitled",
         image_url=image_data["data"]["processed_url"],
         original_image_url=None,  # v7.0: original no longer stored
         file_name=image_data["data"]["file_name"],
@@ -745,7 +736,6 @@ async def update_item(
     current_user: User = Depends(get_current_user),
     image: Optional[UploadFile] = File(None),
     item_name: Optional[str] = Form(None),
-    season: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
     """Update a clothing item"""
@@ -760,10 +750,6 @@ async def update_item(
     # Update fields
     if item_name is not None:
         item.item_name = item_name
-    
-    if season is not None:
-        if season in VALID_SEASONS:
-            item.season = season
     
     # Process new image if provided
     image_updated = False
