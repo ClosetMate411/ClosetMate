@@ -656,7 +656,7 @@ async def save_outfit(
         occasion=body.occasion[:30] if body.occasion else None,
         season=body.season[:20] if body.season else None,
         cohesion_score=max(1, min(10, body.cohesion_score)) if body.cohesion_score else None,
-        reasoning=body.reasoning[:500] if body.reasoning else None,
+        reasoning=body.reasoning[:1000] if body.reasoning else None,
     )
     db.add(outfit)
     db.flush()

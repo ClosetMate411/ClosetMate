@@ -311,7 +311,7 @@ REQUIRED JSON (strict JSON only, no extra text):
       ],
       "tags": ["casual", "spring"],
       "cohesion_score": 8,
-      "explanation": "1-2 sentences on why these items work together (max 500 chars)"
+      "explanation": "1-2 sentences on why these items work together (max 1000 chars)"
     }}
   ]
 }}
@@ -456,15 +456,18 @@ class GeminiClothingAnalyzer:
             prompt, valid_ids, items_by_category
         )
 
-        # ── Retry if Gemini returned fewer than requested ──
-        if len(outfits) < count:
+        # ── Retry up to 2 times if Gemini returned fewer than requested ──
+        for retry in range(2):
+            if len(outfits) >= count:
+                break
+
             remaining = count - len(outfits)
             existing_combos = [
                 sorted(o["item_ids"]) for o in outfits
             ]
             logger.warning(
-                f"Gemini returned {len(outfits)}/{count} outfits, "
-                f"retrying for {remaining} more"
+                f"Retry {retry+1}/2: Gemini returned {len(outfits)}/{count} outfits, "
+                f"requesting {remaining} more"
             )
 
             retry_prompt = OUTFIT_GENERATION_PROMPT.format(
@@ -488,7 +491,7 @@ class GeminiClothingAnalyzer:
                     break
 
             logger.info(
-                f"After retry: {len(outfits)}/{count} outfits"
+                f"After retry {retry+1}/2: {len(outfits)}/{count} outfits"
             )
 
         return {"outfits": outfits[:count]}
@@ -701,7 +704,7 @@ class GeminiClothingAnalyzer:
                 "occasion": tags[1] if len(tags) > 1 else "everyday",
                 "season": tags[2] if len(tags) > 2 else "all",
                 "cohesion_score": max(1, min(10, int(outfit.get("cohesion_score", 5)))),
-                "reasoning": str(outfit.get("explanation", outfit.get("reasoning", "")))[:500],
+                "reasoning": str(outfit.get("explanation", outfit.get("reasoning", "")))[:1000],
             })
 
         return {"outfits": validated_outfits}
