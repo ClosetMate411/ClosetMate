@@ -281,7 +281,6 @@ class GenerateOutfitsRequest(BaseModel):
     season: str = "all"
     occasion: str = "everyday"
     style: str = "any"
-    gender: str = "male"  # "male" or "female" — controls outfit hard rules
 
 class SaveOutfitRequest(BaseModel):
     name: str
@@ -565,8 +564,22 @@ async def generate_outfits(
             )
         return create_error_response("INSUFFICIENT_ITEMS", detail, 400)
 
-    # ── Step 5: Build wardrobe payload for Gemini ────────────────────────────
-    wardrobe_items = [attr.to_dict() for attr in attributes]
+    # ── Step 5: Build slim wardrobe payload for Gemini ──────────────────────
+    # Only send fields Gemini needs — avoids bloating the prompt with
+    # analyzed_at, description, weather_suitability etc.
+    wardrobe_items = [
+        {
+            "id": attr.item_id,
+            "category": attr.category,
+            "subcategory": attr.subcategory,
+            "color_primary": attr.color_primary,
+            "color_secondary": attr.color_secondary,
+            "pattern": attr.pattern,
+            "style": attr.style,
+            "formality_level": attr.formality_level,
+        }
+        for attr in attributes
+    ]
     count = max(1, min(body.count, 10))
 
     logger.info(
@@ -581,7 +594,6 @@ async def generate_outfits(
             season=body.season,
             occasion=body.occasion,
             style=body.style,
-            user_gender=body.gender,
         )
     except ValueError as e:
         return create_error_response("GENERATION_FAILED", str(e), 400)

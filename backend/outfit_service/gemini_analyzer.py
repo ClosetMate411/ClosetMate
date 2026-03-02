@@ -263,22 +263,19 @@ Your job is to combine them into great outfits, NOT to re-filter them.
 CATEGORIES: TOP, BOTTOM, DRESS, SHOES, OUTERWEAR, BAG, ACCESSORY
 
 HARD RULES (must NEVER be violated):
-1) Male outfit MUST include exactly: 1 TOP + 1 BOTTOM + 1 SHOES
-   Optional extras: 0-1 OUTERWEAR, 0-1 BAG, 0-2 ACCESSORY
-2) Female outfit MUST be EITHER:
-   A) 1 TOP + 1 BOTTOM + 1 SHOES
-   OR B) 1 DRESS + 1 SHOES
-   Optional extras: 0-1 OUTERWEAR, 0-1 BAG, 0-2 ACCESSORY
-3) BAG / ACCESSORY / OUTERWEAR can NEVER replace missing required items.
-4) Never output an outfit missing a required category.
+Every outfit MUST be EITHER:
+  A) 1 TOP + 1 BOTTOM + 1 SHOES
+  OR B) 1 DRESS + 1 SHOES
+Optional extras: 0-1 OUTERWEAR, 0-1 BAG, 0-2 ACCESSORY
+- BAG / ACCESSORY / OUTERWEAR can NEVER replace missing required items.
+- Never output an outfit missing a required category.
 
 SELECTION RULES:
 - Each outfit MUST reference items by their exact "id" field.
 - Consider color harmony, style consistency, and overall cohesion.
 - Avoid repeating the same item across outfits when possible.
+- If DRESS items exist in the wardrobe, at least 1 outfit MUST use Option B (DRESS + SHOES).
 - You MUST generate at least 1 outfit if items are sufficient. NEVER return an empty list.
-
-USER GENDER: {user_gender}
 
 WARDROBE ITEMS:
 {wardrobe_items}
@@ -391,24 +388,22 @@ class GeminiClothingAnalyzer:
         season: str = "all",
         occasion: str = "everyday",
         style: str = "any",
-        user_gender: str = "male",
     ) -> dict:
         """
         Generate outfit combinations from the user's wardrobe.
-        Enforces hard rules: required categories per gender.
+        Enforces hard rules: TOP+BOTTOM+SHOES or DRESS+SHOES.
         """
         if len(wardrobe_items) < 2:
             raise ValueError("Need at least 2 items to generate an outfit")
 
         count = max(1, min(count, 10))
-        gender_lower = (user_gender or "male").lower()
 
         # Build simplified items with mapped outfit categories
         simplified_items = []
         items_by_category: dict[str, list[dict]] = {}
 
         for item in wardrobe_items:
-            item_id = item.get("item_id", item["id"])
+            item_id = item["id"]
             outfit_cat = map_to_outfit_category(
                 item.get("category", "unknown"),
                 item.get("subcategory", ""),
@@ -426,21 +421,17 @@ class GeminiClothingAnalyzer:
             simplified_items.append(simplified)
             items_by_category.setdefault(outfit_cat, []).append(simplified)
 
-        # Pre-check: do we have the required categories?
-        available_cats = set(items_by_category.keys())
-        if gender_lower == "male":
-            missing = {"TOP", "BOTTOM", "SHOES"} - available_cats
-            if missing:
-                raise ValueError(
-                    f"Cannot generate male outfits: missing {', '.join(missing)} items in wardrobe"
-                )
-        else:
-            has_tbs = {"TOP", "BOTTOM", "SHOES"}.issubset(available_cats)
-            has_ds = {"DRESS", "SHOES"}.issubset(available_cats)
-            if not has_tbs and not has_ds:
-                raise ValueError(
-                    "Cannot generate female outfits: need (TOP + BOTTOM + SHOES) or (DRESS + SHOES)"
-                )
+        # Pre-check: need TOP+BOTTOM+SHOES (option A) or DRESS+SHOES (option B)
+        has_option_a = all(
+            cat in items_by_category for cat in ("TOP", "BOTTOM", "SHOES")
+        )
+        has_option_b = all(
+            cat in items_by_category for cat in ("DRESS", "SHOES")
+        )
+        if not (has_option_a or has_option_b):
+            raise ValueError(
+                "Not enough items to form an outfit: need (TOP + BOTTOM + SHOES) or (DRESS + SHOES)"
+            )
 
         prompt = OUTFIT_GENERATION_PROMPT.format(
             wardrobe_items=json.dumps(simplified_items, indent=2),
@@ -448,7 +439,6 @@ class GeminiClothingAnalyzer:
             occasion=occasion,
             style=style,
             count=count,
-            user_gender=gender_lower,
         )
 
         # Retry until valid JSON (up to 3 attempts)
@@ -465,9 +455,9 @@ class GeminiClothingAnalyzer:
                     repaired = repair_json(raw_text)
                     result = json.loads(repaired)
 
-                valid_ids = {item.get("item_id", item["id"]) for item in wardrobe_items}
+                valid_ids = {item["id"] for item in wardrobe_items}
                 validated = self._validate_outfits(
-                    result, valid_ids, gender_lower, items_by_category
+                    result, valid_ids, items_by_category
                 )
                 logger.info(f"Generated {len(validated['outfits'])} outfit combinations")
                 return validated
@@ -551,11 +541,11 @@ class GeminiClothingAnalyzer:
         self,
         data: dict,
         valid_ids: set,
-        user_gender: str = "male",
         items_by_category: dict | None = None,
     ) -> dict:
         """
-        Validate outfit generation response — enforce HARD RULES per gender.
+        Validate outfit generation response — enforce HARD RULES.
+        Every outfit must be TOP+BOTTOM+SHOES (option A) or DRESS+SHOES (option B).
         Attempts to repair outfits missing required categories before discarding.
         """
         items_by_category = items_by_category or {}
@@ -569,7 +559,6 @@ class GeminiClothingAnalyzer:
             # ── Fallback: convert old flat item_ids format to required/optional ──
             if not required and "item_ids" in outfit:
                 for iid in outfit["item_ids"]:
-                    # Try to find the item's category from items_by_category
                     cat_found = None
                     for cat, items in items_by_category.items():
                         if any(it["id"] == iid for it in items):
@@ -584,17 +573,13 @@ class GeminiClothingAnalyzer:
             required = [r for r in required if isinstance(r, dict) and r.get("id") in valid_ids]
             optional = [o for o in optional if isinstance(o, dict) and o.get("id") in valid_ids]
 
-            # ── Determine required categories ──
+            # ── Determine required categories (DRESS+SHOES or TOP+BOTTOM+SHOES) ──
             req_categories = {r.get("category") for r in required}
 
-            if user_gender == "male":
-                needed = {"TOP", "BOTTOM", "SHOES"}
+            if "DRESS" in req_categories:
+                needed = {"DRESS", "SHOES"}
             else:
-                # Female: DRESS+SHOES or TOP+BOTTOM+SHOES
-                if "DRESS" in req_categories:
-                    needed = {"DRESS", "SHOES"}
-                else:
-                    needed = {"TOP", "BOTTOM", "SHOES"}
+                needed = {"TOP", "BOTTOM", "SHOES"}
 
             # ── Repair missing required categories ──
             missing = needed - req_categories
