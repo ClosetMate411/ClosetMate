@@ -439,7 +439,7 @@ async def register(
     db.refresh(user)
     
     # Send OTP via Email Service
-    await call_email_service("/otp/send", {
+    otp_result = await call_email_service("/otp/send", {
         "email": user.email,
         "full_name": user.full_name,
         "purpose": "register"
@@ -453,7 +453,8 @@ async def register(
             "user_id": user.id,
             "email": user.email,
             "full_name": user.full_name,
-            "requires_verification": True
+            "requires_verification": True,
+            "otp_expires_in_seconds": otp_result.get("expires_in_seconds", 600)
         }
     }
 
@@ -547,7 +548,8 @@ async def login(
         "data": {
             "email": user.email,
             "full_name": user.full_name,
-            "requires_otp": True
+            "requires_otp": True,
+            "otp_expires_in_seconds": otp_result.get("expires_in_seconds", 600)
         }
     }
 
@@ -702,10 +704,16 @@ async def verify_email(
     result = await call_email_service("/otp/verify", {"email": email, "code": code})
 
     if not result.get("valid"):
-        return create_error_response(
-            "INVALID_CODE",
-            result.get("error", "Invalid or expired verification code. Please request a new one."),
-            400
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": {
+                    "code": "INVALID_CODE",
+                    "message": result.get("error", "Invalid or expired verification code. Please request a new one."),
+                    "can_resend": True
+                }
+            }
         )
 
     # Mark user as verified
@@ -747,10 +755,16 @@ async def verify_login(
     result = await call_email_service("/otp/verify", {"email": email, "code": code})
 
     if not result.get("valid"):
-        return create_error_response(
-            "INVALID_CODE",
-            result.get("error", "Invalid or expired verification code. Please request a new one."),
-            400
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": {
+                    "code": "INVALID_CODE",
+                    "message": result.get("error", "Invalid or expired verification code. Please request a new one."),
+                    "can_resend": True
+                }
+            }
         )
 
     # Issue JWT token
@@ -784,13 +798,19 @@ async def resend_code(
     if not user:
         return {"success": True, "message": success_message}
 
-    await call_email_service("/otp/send", {
+    otp_result = await call_email_service("/otp/send", {
         "email": user.email,
         "full_name": user.full_name,
         "purpose": purpose
     })
 
-    return {"success": True, "message": success_message}
+    return {
+        "success": True,
+        "message": success_message,
+        "data": {
+            "otp_expires_in_seconds": otp_result.get("expires_in_seconds", 600)
+        }
+    }
 
 
 # ============== WARDROBE ENDPOINTS (Protected) ==============

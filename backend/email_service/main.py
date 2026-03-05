@@ -246,7 +246,12 @@ async def send_otp(request: Request, db: Session = Depends(get_db)):
     html = _otp_email_html(full_name, code, purpose)
     sent = _send_email(email, subject, html)
 
-    return {"success": True, "sent": sent}
+    return {
+        "success": True,
+        "sent": sent,
+        "expires_in_seconds": OTP_EXPIRY_MINUTES * 60,
+        "expires_at": otp.expires_at.isoformat() + "Z"
+    }
 
 
 @app.post("/otp/verify")
