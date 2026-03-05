@@ -31,6 +31,7 @@ import httpx
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/closetmate")
 IMAGE_SERVICE_URL = os.getenv("IMAGE_SERVICE_URL", "http://localhost:3002")
 OUTFIT_SERVICE_URL = os.getenv("OUTFIT_SERVICE_URL", "http://localhost:3003")
+EMAIL_SERVICE_URL = os.getenv("EMAIL_SERVICE_URL", "http://localhost:3005")
 JWT_SECRET = os.getenv("JWT_SECRET", "your-super-secret-key-change-in-production")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 1
@@ -245,6 +246,23 @@ def serialize_item(item: ClothingItem) -> dict:
     }
 
 
+# ============== EMAIL SERVICE INTEGRATION ==============
+
+async def call_email_service(endpoint: str, payload: dict) -> dict:
+    """Call Email Service internal API"""
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                f"{EMAIL_SERVICE_URL}{endpoint}",
+                json=payload,
+                headers={"X-API-Key": INTERNAL_API_KEY}
+            )
+            return response.json()
+    except Exception as e:
+        logger.error(f"Email service call failed ({endpoint}): {e}")
+        return {"success": False, "error": str(e)}
+
+
 # ============== OUTFIT SERVICE INTEGRATION ==============
 
 async def trigger_clothing_analysis(item_id: str, user_id: str, image_url: str):
@@ -420,16 +438,22 @@ async def register(
     db.commit()
     db.refresh(user)
     
-    token = create_token(user.id, user.email)
-    
+    # Send OTP via Email Service
+    await call_email_service("/otp/send", {
+        "email": user.email,
+        "full_name": user.full_name,
+        "purpose": "register"
+    })
+
+    # Do NOT return JWT token — user must verify email first
     return {
         "success": True,
-        "message": "Account created successfully! Please check your email to verify your account.",
+        "message": "Account created! Please check your email for a 6-digit verification code.",
         "data": {
             "user_id": user.id,
             "email": user.email,
             "full_name": user.full_name,
-            "token": token
+            "requires_verification": True
         }
     }
 
@@ -493,16 +517,37 @@ async def login(
     user.lockout_until = None
     user.last_login = datetime.utcnow()
     db.commit()
-    
-    token = create_token(user.id, user.email)
-    
+
+    # Send login OTP via Email Service
+    otp_result = await call_email_service("/otp/send", {
+        "email": user.email,
+        "full_name": user.full_name,
+        "purpose": "login"
+    })
+
+    # Graceful degradation: if email service is down, allow verified users through
+    if not otp_result.get("success"):
+        if user.is_verified:
+            token = create_token(user.id, user.email)
+            return {
+                "success": True,
+                "data": {
+                    "user_id": user.id,
+                    "email": user.email,
+                    "full_name": user.full_name,
+                    "token": token
+                }
+            }
+        return create_error_response("SERVICE_UNAVAILABLE", "Email service unavailable. Please try again.", 503)
+
+    # OTP sent — client must now call /auth/verify-login
     return {
         "success": True,
+        "message": "Verification code sent to your email.",
         "data": {
-            "user_id": user.id,
             "email": user.email,
             "full_name": user.full_name,
-            "token": token
+            "requires_otp": True
         }
     }
 
@@ -538,8 +583,12 @@ async def forgot_password(
         db.add(reset_token)
         db.commit()
         
-        # TODO: Send email with reset link
-        # reset_link = f"https://closetmate.org.tr/reset-password?token={reset_token.token}"
+        # Send reset email via Email Service
+        await call_email_service("/email/send-reset", {
+            "email": user.email,
+            "full_name": user.full_name,
+            "reset_token": reset_token.token
+        })
     
     return {
         "success": True,
@@ -626,6 +675,122 @@ async def logout(current_user: User = Depends(get_current_user)):
         "success": True,
         "message": "You have been logged out successfully."
     }
+
+
+# ============== OTP VERIFICATION ENDPOINTS ==============
+
+@app.post("/auth/verify-email")
+async def verify_email(
+    email: str = Form(...),
+    code: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Verify email after registration with 6-digit OTP.
+    On success: marks user as verified + returns JWT token.
+    """
+    email = email.lower()
+    user = db.query(User).filter(User.email == email).first()
+
+    if not user:
+        return create_error_response("INVALID_CODE", "Invalid email or verification code.", 400)
+
+    if user.is_verified:
+        return create_error_response("ALREADY_VERIFIED", "Email is already verified.", 400)
+
+    # Verify OTP via Email Service
+    result = await call_email_service("/otp/verify", {"email": email, "code": code})
+
+    if not result.get("valid"):
+        return create_error_response(
+            "INVALID_CODE",
+            result.get("error", "Invalid or expired verification code. Please request a new one."),
+            400
+        )
+
+    # Mark user as verified
+    user.is_verified = True
+    db.commit()
+
+    # Issue JWT token
+    token = create_token(user.id, user.email)
+
+    return {
+        "success": True,
+        "message": "Email verified successfully!",
+        "data": {
+            "user_id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "token": token
+        }
+    }
+
+
+@app.post("/auth/verify-login")
+async def verify_login(
+    email: str = Form(...),
+    code: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Verify login OTP. Called after successful password check.
+    On success: returns JWT token.
+    """
+    email = email.lower()
+    user = db.query(User).filter(User.email == email).first()
+
+    if not user:
+        return create_error_response("INVALID_CODE", "Invalid email or verification code.", 400)
+
+    # Verify OTP via Email Service
+    result = await call_email_service("/otp/verify", {"email": email, "code": code})
+
+    if not result.get("valid"):
+        return create_error_response(
+            "INVALID_CODE",
+            result.get("error", "Invalid or expired verification code. Please request a new one."),
+            400
+        )
+
+    # Issue JWT token
+    token = create_token(user.id, user.email)
+
+    return {
+        "success": True,
+        "data": {
+            "user_id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "token": token
+        }
+    }
+
+
+@app.post("/auth/resend-code")
+async def resend_code(
+    email: str = Form(...),
+    purpose: str = Form("register"),
+    db: Session = Depends(get_db)
+):
+    """
+    Resend OTP code. Works for both register and login purposes.
+    Returns same message regardless of email existence (security).
+    """
+    email = email.lower()
+    success_message = "If an account exists with that email, a new verification code has been sent."
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        return {"success": True, "message": success_message}
+
+    await call_email_service("/otp/send", {
+        "email": user.email,
+        "full_name": user.full_name,
+        "purpose": purpose
+    })
+
+    return {"success": True, "message": success_message}
 
 
 # ============== WARDROBE ENDPOINTS (Protected) ==============

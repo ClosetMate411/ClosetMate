@@ -215,6 +215,63 @@ async def logout(authorization: Optional[str] = Header(None)):
         return create_error_response("SERVICE_UNAVAILABLE", f"Auth service unavailable: {str(e)}", 503)
 
 
+@app.post("/api/auth/verify-email")
+async def verify_email(request: Request):
+    """Verify email with OTP code (registration)"""
+    try:
+        data = await get_body_data(request)
+        email = data.get("email")
+        code = data.get("code")
+        if not all([email, code]):
+            return create_error_response("MISSING_FIELDS", "Email and verification code are required", 400)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{WARDROBE_SERVICE_URL}/auth/verify-email",
+                data={"email": email, "code": code}
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except Exception as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Auth service unavailable: {str(e)}", 503)
+
+
+@app.post("/api/auth/verify-login")
+async def verify_login(request: Request):
+    """Verify login OTP code"""
+    try:
+        data = await get_body_data(request)
+        email = data.get("email")
+        code = data.get("code")
+        if not all([email, code]):
+            return create_error_response("MISSING_FIELDS", "Email and verification code are required", 400)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{WARDROBE_SERVICE_URL}/auth/verify-login",
+                data={"email": email, "code": code}
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except Exception as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Auth service unavailable: {str(e)}", 503)
+
+
+@app.post("/api/auth/resend-code")
+async def resend_code(request: Request):
+    """Resend OTP verification code"""
+    try:
+        data = await get_body_data(request)
+        email = data.get("email")
+        purpose = data.get("purpose", "register")
+        if not email:
+            return create_error_response("MISSING_FIELDS", "Email is required", 400)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{WARDROBE_SERVICE_URL}/auth/resend-code",
+                data={"email": email, "purpose": purpose}
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except Exception as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Auth service unavailable: {str(e)}", 503)
+
+
 # ============== WARDROBE ROUTES (Protected) ==============
 
 @app.get("/api/wardrobe/items")
