@@ -310,6 +310,8 @@ async def get_item(item_id: str, authorization: Optional[str] = Header(None)):
 async def create_item(
     authorization: Optional[str] = Header(None),
     image: UploadFile = File(...),
+    item_name: Optional[str] = Form(None),
+    season: Optional[str] = Form(None),
 ):
     """Create a new clothing item"""
     if not authorization:
@@ -318,9 +320,15 @@ async def create_item(
     try:
         async with httpx.AsyncClient(timeout=180.0) as client:
             files = {"image": (image.filename, content, image.content_type)}
+            data = {}
+            if item_name is not None:
+                data["item_name"] = item_name
+            if season is not None:
+                data["season"] = season
             response = await client.post(
                 f"{WARDROBE_SERVICE_URL}/items",
                 files=files,
+                data=data,
                 headers={"Authorization": authorization}
             )
             return JSONResponse(status_code=response.status_code, content=response.json())
@@ -334,6 +342,7 @@ async def update_item(
     authorization: Optional[str] = Header(None),
     image: Optional[UploadFile] = File(None),
     item_name: Optional[str] = Form(None),
+    season: Optional[str] = Form(None),
 ):
     """Update a clothing item"""
     if not authorization:
@@ -347,6 +356,8 @@ async def update_item(
                 files["image"] = (image.filename, content, image.content_type)
             if item_name is not None:
                 data["item_name"] = item_name
+            if season is not None:
+                data["season"] = season
 
             response = await client.put(
                 f"{WARDROBE_SERVICE_URL}/items/{item_id}",

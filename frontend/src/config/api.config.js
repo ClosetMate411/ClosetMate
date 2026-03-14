@@ -25,6 +25,9 @@ export const API_ENDPOINTS = {
   me: '/api/auth/me',
   forgotPassword: '/api/auth/forgot-password',
   resetPassword: '/api/auth/reset-password',
+  verifyEmail: '/api/auth/verify-email',
+  verifyLogin: '/api/auth/verify-login',
+  resendCode: '/api/auth/resend-code',
 
   // Wardrobe
   items: '/api/wardrobe/items',

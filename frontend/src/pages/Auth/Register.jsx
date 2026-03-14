@@ -45,9 +45,8 @@ const Register = () => {
     const result = await register(formData);
 
     if (result.success) {
-      const msg = result.message || 'Account created successfully!';
-      navigate('/login', { 
-        state: { message: msg, email: formData.email } 
+      navigate('/verify-otp', {
+        state: { email: formData.email, purpose: 'register' }
       });
     } else {
       // Map multiple errors to fields if available

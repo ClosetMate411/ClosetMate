@@ -399,13 +399,13 @@ async def register(
     valid, msg = validate_password(password)
     if not valid:
         errors.append({"field": "password", "message": msg})
-    
+
     if password != confirm_password:
-        errors.append({"field": "confirm_password", "message": "Passwords do not match"})
-    
+        errors.append({"field": "confirmPassword", "message": "Passwords do not match"})
+
     valid, msg = validate_full_name(full_name)
     if not valid:
-        errors.append({"field": "full_name", "message": msg})
+        errors.append({"field": "fullName", "message": msg})
     
     if errors:
         return JSONResponse(
@@ -419,11 +419,7 @@ async def register(
             status_code=409,
             content={
                 "success": False,
-                "error": {
-                    "code": "EMAIL_EXISTS",
-                    "message": "Please log in or use a different email address.",
-                    "field": "email"
-                }
+                "errors": [{"field": "email", "message": "Please log in or use a different email address."}]
             }
         )
     

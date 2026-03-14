@@ -124,6 +124,18 @@ class APIService {
     return axiosInstance.post(API_ENDPOINTS.resetPassword, body);
   }
 
+  async verifyEmail(email, code) {
+    return axiosInstance.post(API_ENDPOINTS.verifyEmail, { email, code });
+  }
+
+  async verifyLogin(email, code) {
+    return axiosInstance.post(API_ENDPOINTS.verifyLogin, { email, code });
+  }
+
+  async resendCode(email, purpose) {
+    return axiosInstance.post(API_ENDPOINTS.resendCode, { email, purpose });
+  }
+
   // --- WARDROBE ---
   async getAllItems() { return axiosInstance.get(API_ENDPOINTS.items); }
   async createItem(data) {

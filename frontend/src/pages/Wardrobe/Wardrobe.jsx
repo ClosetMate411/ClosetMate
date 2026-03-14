@@ -4,7 +4,6 @@ import {
   ClothingGrid, 
   EmptyWardrobe, 
   ClothingDropzone, 
-  OptionalDetailsForm,
   ConfirmModal,
   Toast,
   LoadingScreen,
@@ -149,12 +148,38 @@ const Wardrobe = () => {
     setRetryCount(0);
   }, []);
 
-  const handleConfirmImage = useCallback(() => {
-    // Just move to details form - don't create item yet
-    // Item will be created when user saves details
-    setUploadState('idle');
-    setOpenModal('details');
-  }, [setOpenModal]);
+  const handleConfirmImage = useCallback(async () => {
+    if (!uploadedFile) return;
+    try {
+      setUploadState('saving');
+      const newItemId = await handlers.handleApply(uploadedFile, '', '');
+      await fetchItems();
+      setUploadState('idle');
+      setUploadedFile(null);
+      setProcessedImageUrl(null);
+      showSuccess('Item saved successfully!');
+      // Fetch AI-generated attributes in background and silently update the item
+      if (newItemId) {
+        apiService.getItemAttributes(newItemId)
+          .then((attrResponse) => {
+            const attrs = attrResponse?.data || attrResponse;
+            if (attrs) {
+              const itemName = attrs.item_name || attrs.name || '';
+              const weather = attrs.season || attrs.weather || '';
+              if (itemName || weather) {
+                handlers.handleSaveEdit(newItemId, { itemName, weather })
+                  .then(() => fetchItems())
+                  .catch(() => {});
+              }
+            }
+          })
+          .catch(() => {});
+      }
+    } catch (error) {
+      showError(error.message || 'Failed to save item');
+      setUploadState('idle');
+    }
+  }, [uploadedFile, handlers, fetchItems, showSuccess, showError]);
 
   // UI interaction handlers
   const handleProcessEditImage = useCallback(async (file, tempEdits) => {
@@ -189,11 +214,10 @@ const Wardrobe = () => {
   }, [selectedItem, showError, showSuccess]);
 
   // Consolidated Confirmation Handlers
-  const handleConfirmAction = useCallback(() => {
+  const handleConfirmAction = useCallback(async () => {
     const isEditMode = !!(selectedItem && selectedItem.id);
     
     if (isEditMode) {
-      // In Edit Mode, update the selectedItem state to reflect the new image
       setSelectedItem(prev => ({
         ...prev,
         image: processedImageUrl,
@@ -204,10 +228,9 @@ const Wardrobe = () => {
       setUploadedFile(null);
       setProcessedImageUrl(null);
     } else {
-      setUploadState('idle');
-      setOpenModal('details');
+      await handleConfirmImage();
     }
-  }, [selectedItem, processedImageUrl, uploadedFile, setOpenModal]);
+  }, [selectedItem, processedImageUrl, uploadedFile, handleConfirmImage]);
 
   const handleCancelAction = useCallback(() => {
     setUploadState('idle');
@@ -289,54 +312,6 @@ const Wardrobe = () => {
     });
   }, [modal, currentSelectedItem, handlers, showSuccess, showError, fetchItems]);
 
-  // Override handlers to use unified modal
-  const handleSaveDetails = useCallback(async (details) => {
-    try {
-      // Create item with the uploaded file and details
-      if (uploadedFile) {
-        setOpenModal(null); // Close modal immediately as requested
-        setUploadState('saving');
-        await handlers.handleApply(uploadedFile, details?.itemName || '', details?.weather || '');
-        await fetchItems(); // Wait for items to refresh list and be visible
-        setUploadState('idle');
-        setUploadedFile(null);
-        setProcessedImageUrl(null);
-        showSuccess('Item saved successfully!');
-      } else {
-        // If no uploadedFile, it's an edit operation
-        handlers.handleSaveDetails(details);
-        showSuccess('Item saved successfully!');
-      }
-    } catch (error) {
-      showError(error.message || 'Failed to save item');
-      setUploadState('idle');
-      setOpenModal(null);
-    }
-  }, [uploadedFile, handlers, showSuccess, showError, setOpenModal, fetchItems]);
-
-  const handleSkipDetails = useCallback(async () => {
-    try {
-      // Create item with the uploaded file and no details
-      if (uploadedFile) {
-        setOpenModal(null); // Close modal immediately as requested
-        setUploadState('saving');
-        await handlers.handleApply(uploadedFile, '', '');
-        await fetchItems(); // Wait for items to refresh list and be visible
-        setUploadState('idle');
-        setUploadedFile(null);
-        setProcessedImageUrl(null);
-        showSuccess('Item saved successfully!');
-      } else {
-        handlers.confirmSkipDetails();
-        showSuccess('Item saved successfully!');
-      }
-    } catch (error) {
-      showError(error.message || 'Failed to save item');
-      setUploadState('idle');
-      setOpenModal(null);
-    }
-  }, [uploadedFile, handlers, showSuccess, showError, setOpenModal, fetchItems]);
-
   const handleAddClick = useCallback(() => {
     setOpenModal('upload');
   }, [setOpenModal]);
@@ -377,7 +352,7 @@ const Wardrobe = () => {
       );
     }
 
-    if (!items.length || (items.length === 1 && openModal === 'details')) {
+    if (!items.length) {
       return <EmptyWardrobe onAddClick={handleAddClick} />;
     }
 
@@ -413,20 +388,6 @@ const Wardrobe = () => {
           onFilesRejected={handleFilesRejected}
           onApply={handleApplyUpload}
           onCancel={handlers.handleCancel}
-        />
-      </Modal>
-
-      {/* Details Modal */}
-      <Modal
-        opened={openModal === 'details'}
-        onClose={handlers.handleDetailsModalClose}
-        title="Optional Details"
-        size="lg"
-        centered
-      >
-        <OptionalDetailsForm
-          onSave={handleSaveDetails}
-          onSkip={handleSkipDetails}
         />
       </Modal>
 

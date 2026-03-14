@@ -9,6 +9,7 @@ const Wardrobe = lazy(() => import('./pages/Wardrobe/Wardrobe'));
 const Outfits = lazy(() => import('./pages/Outfits/Outfits'));
 const Login = lazy(() => import('./pages/Auth/Login'));
 const Register = lazy(() => import('./pages/Auth/Register'));
+const OtpVerification = lazy(() => import('./pages/Auth/OtpVerification'));
 const Logout = lazy(() => import('./pages/Auth/Logout'));
 
 // Loading fallback component
@@ -47,7 +48,7 @@ const PublicRoute = ({ children }) => {
  */
 const Navigation = () => {
   const { pathname } = useLocation();
-  const authRoutes = ['/login', '/register', '/logout'];
+  const authRoutes = ['/login', '/register', '/logout', '/verify-otp'];
   
   if (authRoutes.includes(pathname)) return null;
   
@@ -99,6 +100,7 @@ function App() {
               <Register />
             </PublicRoute>
           } />
+          <Route path="/verify-otp" element={<OtpVerification />} />
           
           <Route path="/logout" element={<Logout />} />
           

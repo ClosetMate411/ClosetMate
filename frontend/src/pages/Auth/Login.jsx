@@ -42,11 +42,8 @@ const Login = () => {
     const result = await login(formData);
 
     if (result.success) {
-
-      navigate('/');
+      navigate('/verify-otp', { state: { email: formData.email, purpose: 'login' } });
     } else {
-      // The error message from backend (e.g. "Invalid email or password")
-      // is now correctly parsed by the apiService and passed here.
       showError(result.error || 'Login failed');
       setFormData(prev => ({ ...prev, password: '' }));
     }

@@ -67,7 +67,7 @@ const useAuthStore = create((set, get) => ({
   },
 
   /**
-   * Standard Register
+   * Standard Register — backend sends OTP to email
    */
   register: async (userData) => {
     set({ isLoading: true, error: null });
@@ -82,6 +82,53 @@ const useAuthStore = create((set, get) => ({
         error: error.message,
         errors: error.data?.errors 
       };
+    }
+  },
+
+  /**
+   * Verify registration OTP — returns JWT on success
+   */
+  verifyEmail: async (email, code) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await apiService.verifyEmail(email, code);
+      set({ isLoading: false });
+      return { success: true, message: response.message };
+    } catch (error) {
+      set({ error: error.message, isLoading: false });
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Verify login OTP — returns JWT and signs user in
+   */
+  verifyLogin: async (email, code) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await apiService.verifyLogin(email, code);
+      if (response.success && response.data) {
+        const { token, ...userData } = response.data;
+        localStorage.setItem('token', token);
+        set({ user: userData, isAuthenticated: true, isLoading: false });
+        return { success: true };
+      }
+      throw new Error('Verification failed');
+    } catch (error) {
+      set({ error: error.message, isLoading: false });
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Resend OTP code
+   */
+  resendCode: async (email, purpose) => {
+    try {
+      await apiService.resendCode(email, purpose);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
     }
   },
 
