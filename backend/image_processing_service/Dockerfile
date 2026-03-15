@@ -15,12 +15,12 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download bria-rmbg model at build time
+# Pre-download birefnet-general-lite model at build time
 # Avoids runtime download delays and cold start issues on Railway
 RUN python -c "\
 from rembg import new_session; \
-new_session('bria-rmbg'); \
-print('bria-rmbg cached successfully')"
+new_session('birefnet-general-lite'); \
+print('birefnet-general-lite cached successfully')"
 
 COPY main.py .
 
