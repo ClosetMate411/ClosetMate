@@ -1,0 +1,221 @@
+/* ═══════════════════════════════════════════════════════
+   CommentsModal
+═══════════════════════════════════════════════════════ */
+
+.comments-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+/* ── Input Form ──────────────────────────────────────── */
+
+.comment-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.comment-input {
+  flex: 1;
+  border: 1.5px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 0.875rem;
+  background: var(--surface, #fff);
+  color: var(--text-primary, #1a1a1a);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  font-family: inherit;
+}
+
+.comment-input::placeholder {
+  color: var(--text-light, #bbb);
+}
+
+.comment-input:focus {
+  border-color: var(--primary, #6c5ce7);
+  box-shadow: 0 0 0 3px rgba(108, 92, 231, 0.1);
+}
+
+.comment-input:disabled {
+  opacity: 0.6;
+  background: var(--bg-light, #f9f9f9);
+}
+
+.comment-submit-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: none;
+  background: var(--primary, #6c5ce7);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
+}
+
+.comment-submit-btn:hover:not(:disabled) {
+  background: var(--primary-dark, #5b4cdb);
+  transform: scale(1.05);
+}
+
+.comment-submit-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Error ───────────────────────────────────────────── */
+
+.comments-error {
+  font-size: 0.8rem;
+  color: #dc2626;
+  margin: 0;
+  padding: 8px 12px;
+  background: #fef2f2;
+  border-radius: 8px;
+}
+
+/* ── List ────────────────────────────────────────────── */
+
+.comments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 380px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.comments-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.comments-list::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}
+
+/* Loading */
+.comments-loading {
+  display: flex;
+  justify-content: center;
+  padding: 24px;
+}
+
+.comments-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2.5px solid rgba(108, 92, 231, 0.15);
+  border-top-color: var(--primary, #6c5ce7);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Empty */
+.comments-empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--text-light, #aaa);
+  font-size: 0.875rem;
+}
+
+.comments-empty p {
+  margin: 0;
+}
+
+/* ── Comment Item ─────────────────────────────────────── */
+
+.comment-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.comment-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary, #6c5ce7), var(--accent, #a29bfe));
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.comment-body {
+  flex: 1;
+  background: var(--bg-light, #f9f9f9);
+  border-radius: 12px;
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.comment-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+
+.comment-username {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a1a);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.comment-you-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  background: var(--primary-lighter, #ddd6fe);
+  color: var(--primary-dark, #4c1d95);
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+
+.comment-time {
+  font-size: 0.7rem;
+  color: var(--text-light, #aaa);
+  margin-left: auto;
+}
+
+.comment-delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted, #ccc);
+  padding: 2px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s ease, background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.comment-delete-btn:hover {
+  color: #dc2626;
+  background: #fee2e2;
+}
+
+.comment-text {
+  font-size: 0.85rem;
+  color: var(--text-primary, #444);
+  margin: 0;
+  line-height: 1.5;
+  word-break: break-word;
+}

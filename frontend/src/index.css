@@ -1,6 +1,8 @@
 @import './theme/colors.css';
 
-* {
+*,
+*::before,
+*::after {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
@@ -19,15 +21,48 @@ body {
   );
   color: var(--text-primary);
   min-height: 100vh;
+  line-height: 1.5;
 }
 
 #root {
   min-height: 100vh;
 }
 
+/* ── Global focus-visible (accessibility) ── */
+:focus-visible {
+  outline: 2.5px solid var(--primary);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* ── Custom scrollbar ── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--primary-lighter);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
+
+/* ── Smooth scroll ── */
+html {
+  scroll-behavior: smooth;
+}
+
+/* ── Page wrapper used by all main pages ── */
 .wardrobe-page-wrapper {
   position: relative;
-  min-height: calc(100vh - 75px); /* Account for new Navbar height */
+  min-height: calc(100vh - 75px);
   display: flex;
   flex-direction: column;
 }

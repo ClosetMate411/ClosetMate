@@ -4,45 +4,60 @@
 
 .outfits-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 24px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 20px;
   margin-top: 24px;
 }
 
 .add-outfit-card {
-  background: rgba(255, 255, 255, 0.4);
-  border: 2px dashed rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.5);
+  border: 2px dashed var(--primary-lighter);
   border-radius: 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 12px;
-  min-height: 380px;
+  min-height: 300px;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.25s ease;
 }
 
 .add-outfit-card:hover {
-  background: rgba(255, 255, 255, 0.6);
-  border-color: rgba(0, 0, 0, 0.2);
-  transform: scale(1.02);
+  background: var(--primary-lightest);
+  border-color: var(--primary);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 28px rgba(142, 55, 223, 0.1);
 }
 
 .add-icon {
-  font-size: 3rem;
+  font-size: 2.5rem;
   font-weight: 300;
-  color: #666;
+  color: var(--primary-lighter);
+  line-height: 1;
+}
+
+.add-outfit-card:hover .add-icon {
+  color: var(--primary);
 }
 
 .add-text {
-  font-size: 1.1rem;
-  color: #666;
-  font-weight: 500;
+  font-size: 1rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.add-outfit-card:hover .add-text {
+  color: var(--primary);
 }
 
 @media (max-width: 600px) {
   .outfits-grid {
     grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .add-outfit-card {
+    min-height: 200px;
   }
 }

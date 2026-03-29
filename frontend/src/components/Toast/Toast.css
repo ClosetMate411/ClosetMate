@@ -1,19 +1,24 @@
 .toast {
   position: fixed;
   bottom: 1.5rem;
-  left: 2rem;
-  right: 2rem;
-  transform: translateY(calc(100% + 1.5rem));
-  padding: 1rem 2rem;
-  border-radius: 0.5rem;
-  font-size: 1rem;
-  font-weight: 500;
+  right: 1.5rem;
+  left: auto;
+  max-width: 360px;
+  width: calc(100vw - 3rem);
+  transform: translateY(calc(100% + 2rem));
+  padding: 0.875rem 1.25rem;
+  border-radius: 14px;
+  font-size: 0.9rem;
+  font-weight: 600;
   color: #ffffff;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   z-index: 10000;
-  transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+              opacity 0.3s ease;
   opacity: 0;
-  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
 }
 
 .toast-visible {
@@ -22,49 +27,26 @@
 }
 
 .toast-success {
-  background-color: var(--primary);
+  background: var(--gradient-primary);
 }
 
 .toast-error {
-  background-color: var(--accent);
+  background: linear-gradient(135deg, var(--accent) 0%, #a02553 100%);
 }
 
 .toast-message {
   display: block;
+  line-height: 1.4;
 }
 
-/* Animation for entrance */
-@keyframes slideUp {
-  from {
-    transform: translateY(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
-/* Animation for exit */
-@keyframes slideDown {
-  from {
-    transform: translateY(0);
-    opacity: 1;
-  }
-  to {
-    transform: translateY(100%);
-    opacity: 0;
-  }
-}
-
-/* Responsive adjustments */
-@media (max-width: 768px) {
+@media (max-width: 480px) {
   .toast {
-    bottom: 0.75rem;
-    left: 1rem;
+    bottom: 1rem;
     right: 1rem;
-    transform: translateY(calc(100% + 0.75rem));
-    padding: 0.875rem 1.5rem;
-    font-size: 0.9rem;
+    left: 1rem;
+    max-width: unset;
+    width: auto;
+    border-radius: 12px;
+    padding: 0.8125rem 1.125rem;
   }
 }

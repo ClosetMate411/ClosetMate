@@ -42,6 +42,15 @@ export const API_ENDPOINTS = {
   wardrobeStats: '/api/outfits/wardrobe/stats',
   itemAttributes: (id) => `/api/outfits/items/${id}/attributes`,
   reanalyzeItem: (id) => `/api/outfits/items/${id}/reanalyze`,
+
+  // Community
+  communityFeed: '/api/community/feed',
+  communityShare: '/api/community/share',
+  communityUnshare: (sharedOutfitId) => `/api/community/${sharedOutfitId}`,
+  communityRate: (sharedOutfitId) => `/api/community/${sharedOutfitId}/rate`,
+  communityReact: (sharedOutfitId) => `/api/community/${sharedOutfitId}/react`,
+  communityComments: (sharedOutfitId) => `/api/community/${sharedOutfitId}/comments`,
+  communityComment: (commentId) => `/api/community/comments/${commentId}`,
 };
 
 export default API_CONFIG;

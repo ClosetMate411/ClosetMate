@@ -1,26 +1,26 @@
 .floating-logout-btn {
   position: fixed;
-  bottom: 0.5rem;
-  right: 0.5rem; /* Vertically aligned with wardrobe icon */
+  bottom: 1.25rem;
+  right: 1.25rem;
   z-index: 1000;
-  background-color: #ffffff;
+  background-color: var(--surface);
   border: 1px solid #fee2e2;
   border-radius: 50px;
-  padding: 0.5rem; /* Reduced padding */
+  padding: 0.5rem;
   text-decoration: none;
   color: #ef4444;
-  box-shadow: 0 4px 15px rgba(239, 68, 68, 0.1);
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.12);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 40px; /* Reduced from 48px */
-  min-height: 40px; /* Reduced from 48px */
+  min-width: 42px;
+  min-height: 42px;
 }
 
 .logout-content {
   display: flex;
-  flex-direction: row-reverse; /* Put icon first on the right */
+  flex-direction: row-reverse;
   align-items: center;
   gap: 0;
   transition: gap 0.3s ease;
@@ -28,7 +28,7 @@
 
 .logout-text {
   font-weight: 700;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   opacity: 0;
@@ -42,9 +42,9 @@
   background-color: #ef4444;
   color: #ffffff;
   transform: translateY(-3px);
-  box-shadow: 0 8px 25px rgba(239, 68, 68, 0.2);
+  box-shadow: 0 8px 22px rgba(239, 68, 68, 0.25);
   border-color: #ef4444;
-  padding: 0.5rem 1.15rem; /* Slightly wider padding for full text */
+  padding: 0.5rem 1.125rem;
 }
 
 .floating-logout-btn:hover .logout-content {
@@ -53,7 +53,7 @@
 
 .floating-logout-btn:hover .logout-text {
   opacity: 1;
-  width: 65px; /* Widened to ensure 'Logout' fits perfectly */
+  width: 65px;
 }
 
 .floating-logout-btn svg {
@@ -66,11 +66,11 @@
 
 @media (max-width: 768px) {
   .floating-logout-btn {
-    bottom: 1.5rem;
-    right: 1.5rem;
+    bottom: 1.25rem;
+    right: 1.25rem;
     padding: 0.6rem;
   }
-  
+
   .logout-text {
     display: none;
   }

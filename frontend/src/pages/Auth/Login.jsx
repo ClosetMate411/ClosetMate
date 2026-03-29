@@ -88,6 +88,12 @@ const Login = () => {
             />
           </div>
 
+          <div style={{ textAlign: 'right', marginTop: '-0.25rem' }}>
+            <Link to="/forgot-password" className="auth-link" style={{ fontSize: '0.8125rem' }}>
+              Forgot password?
+            </Link>
+          </div>
+
           <button type="submit" className="auth-button" disabled={isLoading}>
             {isLoading ? 'Logging in...' : 'Login'}
           </button>

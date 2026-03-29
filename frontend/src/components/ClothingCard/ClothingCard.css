@@ -1,35 +1,35 @@
 .clothing-card {
   background: var(--surface);
-  border: 0.0625rem solid var(--border);
-  border-radius: 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
   padding: 0.75rem;
   cursor: pointer;
   text-align: left;
   width: 100%;
   outline: none;
-  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
 
 .clothing-card:hover {
-  transform: translateY(-0.125rem);
+  transform: translateY(-3px);
   border-color: var(--primary-lighter);
-  box-shadow: 0 0.625rem 1.625rem rgba(36, 27, 51, 0.08);
+  box-shadow: 0 8px 22px rgba(142, 55, 223, 0.1);
 }
 
 .clothing-card:active {
-  transform: translateY(0);
+  transform: translateY(-1px);
 }
 
 .clothing-card:focus-visible {
-  outline: 0.1875rem solid var(--primary-lightest);
-  outline-offset: 0.125rem;
+  outline: 2.5px solid var(--primary);
+  outline-offset: 3px;
 }
 
 .clothing-thumb {
-  border-radius: 0.75rem;
+  border-radius: 10px;
   overflow: hidden;
   background: var(--bg-light);
-  border: 0.0625rem solid var(--border);
+  border: 1px solid var(--border);
   aspect-ratio: 1 / 1;
   display: flex;
   align-items: center;
@@ -45,7 +45,7 @@
 
 .clothing-name {
   margin-top: 0.625rem;
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
@@ -63,8 +63,7 @@
   }
 
   .clothing-name {
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
     margin-top: 0.5rem;
   }
 }
-

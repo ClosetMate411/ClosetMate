@@ -197,6 +197,39 @@ class APIService {
   async reanalyzeItem(id, imageUrl) {
     return axiosInstance.post(API_ENDPOINTS.reanalyzeItem(id), { image_url: imageUrl });
   }
+
+  // --- COMMUNITY ---
+  async getCommunityFeed(page = 1, limit = 20) {
+    return axiosInstance.get(API_ENDPOINTS.communityFeed, { params: { page, limit } });
+  }
+
+  async shareOutfit(data) {
+    return axiosInstance.post(API_ENDPOINTS.communityShare, data);
+  }
+
+  async unshareOutfit(sharedOutfitId) {
+    return axiosInstance.delete(API_ENDPOINTS.communityUnshare(sharedOutfitId));
+  }
+
+  async rateOutfit(sharedOutfitId, score) {
+    return axiosInstance.post(API_ENDPOINTS.communityRate(sharedOutfitId), { score });
+  }
+
+  async reactToOutfit(sharedOutfitId, emojiType) {
+    return axiosInstance.post(API_ENDPOINTS.communityReact(sharedOutfitId), { emoji_type: emojiType });
+  }
+
+  async getComments(sharedOutfitId, page = 1, limit = 20) {
+    return axiosInstance.get(API_ENDPOINTS.communityComments(sharedOutfitId), { params: { page, limit } });
+  }
+
+  async addComment(sharedOutfitId, text) {
+    return axiosInstance.post(API_ENDPOINTS.communityComments(sharedOutfitId), { text });
+  }
+
+  async deleteComment(commentId) {
+    return axiosInstance.delete(API_ENDPOINTS.communityComment(commentId));
+  }
 }
 
 const apiService = new APIService();

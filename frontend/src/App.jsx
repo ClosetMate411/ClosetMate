@@ -11,6 +11,9 @@ const Login = lazy(() => import('./pages/Auth/Login'));
 const Register = lazy(() => import('./pages/Auth/Register'));
 const OtpVerification = lazy(() => import('./pages/Auth/OtpVerification'));
 const Logout = lazy(() => import('./pages/Auth/Logout'));
+const ForgotPassword = lazy(() => import('./pages/Auth/ForgotPassword'));
+const ResetPassword = lazy(() => import('./pages/Auth/ResetPassword'));
+const Community = lazy(() => import('./pages/Community/Community'));
 
 // Loading fallback component
 const PageLoader = () => (
@@ -48,7 +51,7 @@ const PublicRoute = ({ children }) => {
  */
 const Navigation = () => {
   const { pathname } = useLocation();
-  const authRoutes = ['/login', '/register', '/logout', '/verify-otp'];
+  const authRoutes = ['/login', '/register', '/logout', '/verify-otp', '/forgot-password', '/reset-password'];
   
   if (authRoutes.includes(pathname)) return null;
   
@@ -88,6 +91,11 @@ function App() {
               <Outfits />
             </ProtectedRoute>
           } />
+          <Route path="/community" element={
+            <ProtectedRoute>
+              <Community />
+            </ProtectedRoute>
+          } />
 
           {/* Public Auth Routes (Unauthenticated only) */}
           <Route path="/login" element={
@@ -100,6 +108,12 @@ function App() {
               <Register />
             </PublicRoute>
           } />
+          <Route path="/forgot-password" element={
+            <PublicRoute>
+              <ForgotPassword />
+            </PublicRoute>
+          } />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/verify-otp" element={<OtpVerification />} />
           
           <Route path="/logout" element={<Logout />} />
