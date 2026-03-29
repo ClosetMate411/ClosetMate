@@ -338,7 +338,7 @@ class GeminiClothingAnalyzer:
             generation_config=genai.GenerationConfig(
                 response_mime_type="application/json",
                 temperature=0.7,  # Higher for creative outfit combinations
-                max_output_tokens=4096,
+                max_output_tokens=2048,
             ),
         )
 
@@ -421,12 +421,16 @@ class GeminiClothingAnalyzer:
                 "category": outfit_cat,
                 "subcategory": item.get("subcategory", "unknown"),
                 "color_primary": item.get("color_primary", "unknown"),
-                "color_secondary": item.get("color_secondary"),
-                "pattern": item.get("pattern", "solid"),
                 "style": item.get("style", "casual"),
                 "formality_level": item.get("formality_level", 2),
                 "weather_suitability": item.get("weather_suitability", ["mild"]),
             }
+            color_secondary = item.get("color_secondary")
+            if color_secondary:
+                simplified["color_secondary"] = color_secondary
+            pattern = item.get("pattern", "solid")
+            if pattern and pattern != "solid":
+                simplified["pattern"] = pattern
             simplified_items.append(simplified)
             items_by_category.setdefault(outfit_cat, []).append(simplified)
 
@@ -444,20 +448,25 @@ class GeminiClothingAnalyzer:
 
         valid_ids = {item["id"] for item in wardrobe_items}
 
+        overshoot_count = count + 2
         prompt = OUTFIT_GENERATION_PROMPT.format(
             wardrobe_items=json.dumps(simplified_items, indent=2),
             occasion=occasion,
             style=style,
-            count=count,
+            count=overshoot_count,
         )
 
-        # ── First pass: generate outfits ──
+        # ── First pass: generate outfits (overshoot by 2) ──
         outfits = await self._call_gemini_for_outfits(
             prompt, valid_ids, items_by_category
         )
 
-        # ── Retry up to 2 times if Gemini returned fewer than requested ──
-        for retry in range(2):
+        if len(outfits) > count:
+            logger.info(f"Overshoot: generated {len(outfits)}, trimmed to {count}")
+            outfits = outfits[:count]
+
+        # ── Retry up to 1 time if Gemini returned fewer than requested ──
+        for retry in range(1):
             if len(outfits) >= count:
                 break
 
@@ -466,7 +475,7 @@ class GeminiClothingAnalyzer:
                 sorted(o["item_ids"]) for o in outfits
             ]
             logger.warning(
-                f"Retry {retry+1}/2: Gemini returned {len(outfits)}/{count} outfits, "
+                f"Retry {retry+1}/1: Gemini returned {len(outfits)}/{count} outfits, "
                 f"requesting {remaining} more"
             )
 
@@ -491,7 +500,7 @@ class GeminiClothingAnalyzer:
                     break
 
             logger.info(
-                f"After retry {retry+1}/2: {len(outfits)}/{count} outfits"
+                f"After retry {retry+1}/1: {len(outfits)}/{count} outfits"
             )
 
         return {"outfits": outfits[:count]}
@@ -504,10 +513,10 @@ class GeminiClothingAnalyzer:
     ) -> list[dict]:
         """
         Send prompt to Gemini and return validated outfit list.
-        Retries up to 3 times on JSON parse failures.
+        Retries up to 2 times on JSON parse failures.
         """
         last_error = None
-        for attempt in range(3):
+        for attempt in range(2):
             try:
                 response = await self.outfit_model.generate_content_async(prompt)
                 raw_text = response.text
@@ -515,9 +524,12 @@ class GeminiClothingAnalyzer:
                 try:
                     result = json.loads(raw_text)
                 except json.JSONDecodeError:
-                    logger.warning(f"Outfit JSON parse failed (attempt {attempt+1}/3), repairing...")
+                    logger.warning(f"Outfit JSON parse failed (attempt {attempt+1}/2), repairing...")
                     repaired = repair_json(raw_text)
                     result = json.loads(repaired)
+
+                if isinstance(result, list):
+                    result = {"outfits": result}
 
                 validated = self._validate_outfits(
                     result, valid_ids, items_by_category
@@ -527,13 +539,13 @@ class GeminiClothingAnalyzer:
 
             except (json.JSONDecodeError, ValueError) as e:
                 last_error = e
-                logger.warning(f"Outfit generation attempt {attempt+1}/3 failed: {e}")
+                logger.warning(f"Outfit generation attempt {attempt+1}/2 failed: {e}")
                 continue
             except Exception as e:
                 logger.error(f"Gemini API error during outfit generation: {e}")
                 raise
 
-        logger.error(f"Failed to get valid outfits after 3 attempts: {last_error}")
+        logger.error(f"Failed to get valid outfits after 2 attempts: {last_error}")
         return []
 
     # ============== VALIDATION ==============
@@ -619,6 +631,9 @@ class GeminiClothingAnalyzer:
         Every outfit must be TOP+BOTTOM+SHOES (option A) or DRESS+SHOES (option B).
         Attempts to repair outfits missing required categories before discarding.
         """
+        if isinstance(data, list):
+            data = {"outfits": data}
+
         items_by_category = items_by_category or {}
         validated_outfits = []
         used_ids: set[str] = set()  # track used items for repair diversity
