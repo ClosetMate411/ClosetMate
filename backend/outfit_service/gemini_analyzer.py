@@ -1,6 +1,6 @@
 """
 Gemini Clothing Analyzer - Extracts structured clothing attributes from images
-Uses Gemini 2.0 Flash with strict JSON schema enforcement to minimize hallucination
+Uses Gemini 2.5 Flash-lite with strict JSON schema enforcement to minimize hallucination
 """
 import os
 import json
@@ -108,7 +108,7 @@ if not GEMINI_API_KEY:
 genai.configure(api_key=GEMINI_API_KEY)
 
 # Gemini 2.5 Flash — better JSON compliance, reasoning, same speed/cost tier
-MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 
 # ============== STRICT SCHEMA DEFINITIONS ==============
 # These mirror the database columns exactly - Gemini must conform to this
@@ -381,8 +381,8 @@ class GeminiClothingAnalyzer:
             model_name=MODEL_NAME,
             generation_config=genai.GenerationConfig(
                 response_mime_type="application/json",
-                temperature=0.7,  # Higher for creative outfit combinations
-                max_output_tokens=3072,
+                temperature=0.5,  # Higher for creative outfit combinations
+                max_output_tokens=4096,
             ),
         )
 

@@ -68,7 +68,7 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash-lite}
       - JWT_SECRET=${JWT_SECRET}
       - WARDROBE_SERVICE_URL=http://wardrobe:3001
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
