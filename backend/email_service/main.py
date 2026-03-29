@@ -22,6 +22,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localho
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 EMAIL_FROM = os.getenv("EMAIL_FROM", "ClosetMate <noreply@closetmate.org.tr>")
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://www.closetmate.org.tr")
 
 OTP_EXPIRY_MINUTES = 10
 MAX_OTP_REQUESTS_PER_HOUR = 5
@@ -141,7 +142,7 @@ def _otp_email_html(full_name: str, code: str, purpose: str) -> str:
 
 
 def _reset_email_html(full_name: str, reset_token: str) -> str:
-    reset_link = f"https://closetmate.org.tr/reset-password?token={reset_token}"
+    reset_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"
     return f"""
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
         <div style="text-align: center; margin-bottom: 32px;">
