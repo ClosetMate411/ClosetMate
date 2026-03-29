@@ -523,6 +523,10 @@ async def generate_outfits(
     if allowed_formality is not None:
         attributes = [a for a in attributes if a.formality_level in allowed_formality]
 
+    # Filter out sports jerseys for non-sport occasions
+    if occasion_lower not in ("gym", "outdoor", "lounging"):
+        attributes = [a for a in attributes if a.subcategory != "jersey"]
+
     # ── Step 3: Guard — need at least 2 items after filtering ────────────────
     if len(attributes) < 2:
         # Determine why there aren't enough items for a helpful message
@@ -592,6 +596,13 @@ async def generate_outfits(
         for entry in outfit.get("optional", []):
             entry["item"] = attr_map.get(entry["id"])
         enriched_outfits.append(outfit)
+
+    if not enriched_outfits:
+        return create_error_response(
+            "NO_VALID_OUTFITS",
+            "AI couldn't generate valid outfits with your current wardrobe. Try different filters or add more items.",
+            422
+        )
 
     return {
         "success": True,

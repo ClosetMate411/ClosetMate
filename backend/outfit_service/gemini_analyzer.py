@@ -6,6 +6,7 @@ import os
 import json
 import base64
 import logging
+import random
 from typing import Optional
 
 import google.generativeai as genai
@@ -319,6 +320,49 @@ REQUIRED JSON (strict JSON only, no extra text):
 Respond with ONLY the JSON object."""
 
 
+def smart_sample_items(items_by_category: dict, max_per_cat: int = 5) -> tuple[list, dict]:
+    """
+    Select a diverse subset of items per category using color-based
+    round-robin sampling. Returns (sampled_flat_list, sampled_by_category).
+    Ensures color diversity so outfits aren't monotone.
+    """
+    sampled_by_cat = {}
+
+    for cat, items in items_by_category.items():
+        if len(items) <= max_per_cat:
+            sampled_by_cat[cat] = list(items)
+            continue
+
+        # Group by primary color
+        by_color = {}
+        for item in items:
+            c = item.get("color_primary", "unknown")
+            by_color.setdefault(c, []).append(item)
+
+        picked = []
+        color_lists = [list(v) for v in by_color.values()]
+        random.shuffle(color_lists)
+
+        # Round-robin across color groups
+        while len(picked) < max_per_cat and color_lists:
+            for group in color_lists[:]:
+                if len(picked) >= max_per_cat:
+                    break
+                item = random.choice(group)
+                group.remove(item)
+                picked.append(item)
+                if not group:
+                    color_lists.remove(group)
+
+        sampled_by_cat[cat] = picked
+
+    sampled_flat = []
+    for items in sampled_by_cat.values():
+        sampled_flat.extend(items)
+
+    return sampled_flat, sampled_by_cat
+
+
 # ============== ANALYZER CLASS ==============
 
 class GeminiClothingAnalyzer:
@@ -338,7 +382,7 @@ class GeminiClothingAnalyzer:
             generation_config=genai.GenerationConfig(
                 response_mime_type="application/json",
                 temperature=0.7,  # Higher for creative outfit combinations
-                max_output_tokens=2048,
+                max_output_tokens=3072,
             ),
         )
 
@@ -434,6 +478,13 @@ class GeminiClothingAnalyzer:
             simplified_items.append(simplified)
             items_by_category.setdefault(outfit_cat, []).append(simplified)
 
+        # Smart sample to cap items sent to Gemini
+        if len(simplified_items) > 20:
+            logger.info(f"Smart sampling: {len(simplified_items)} items -> capping to ~5 per category")
+            simplified_items, items_by_category = smart_sample_items(items_by_category, max_per_cat=5)
+            valid_ids = {item["id"] for item in simplified_items}
+            logger.info(f"After sampling: {len(simplified_items)} items across {len(items_by_category)} categories")
+
         # Pre-check: need TOP+BOTTOM+SHOES (option A) or DRESS+SHOES (option B)
         has_option_a = all(
             cat in items_by_category for cat in ("TOP", "BOTTOM", "SHOES")
@@ -446,7 +497,7 @@ class GeminiClothingAnalyzer:
                 "Not enough items to form an outfit: need (TOP + BOTTOM + SHOES) or (DRESS + SHOES)"
             )
 
-        valid_ids = {item["id"] for item in wardrobe_items}
+        valid_ids = {item["id"] for item in simplified_items}
 
         overshoot_count = count + 2
         prompt = OUTFIT_GENERATION_PROMPT.format(
@@ -462,7 +513,7 @@ class GeminiClothingAnalyzer:
         )
 
         if len(outfits) > count:
-            logger.info(f"Overshoot: generated {len(outfits)}, trimmed to {count}")
+            logger.info(f"Overshoot: Gemini returned {len(outfits)}, trimmed to {count}")
             outfits = outfits[:count]
 
         # ── Retry up to 1 time if Gemini returned fewer than requested ──
