@@ -25,13 +25,16 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 from rembg import remove, new_session
+from pillow_heif import register_heif_opener
+
+register_heif_opener()  # Enables PIL to open HEIC/HEIF files
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-MAX_FILE_SIZE      = 5 * 1024 * 1024  # 5MB
+MAX_FILE_SIZE      = 10 * 1024 * 1024  # 10MB per SRS FReq2.1
 MAX_DIMENSION      = 1024
-ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 
 # ── Storage config ───────────────────────────────────────────────────────────
 STORAGE_PATH = Path(os.getenv("STORAGE_PATH", "/app/storage"))
@@ -267,13 +270,20 @@ async def process_image(image: UploadFile = File(...)):
 
     content = await image.read()
     if len(content) > MAX_FILE_SIZE:
-        return create_error_response("FILE_TOO_LARGE", "File exceeds 5MB limit")
+        return create_error_response("FILE_TOO_LARGE", "File exceeds 10MB limit")
 
     try:
         file_id = str(uuid.uuid4())
         logger.info(f"Processing: {image.filename} ({len(content)} bytes)")
 
         input_image = Image.open(io.BytesIO(content)).convert("RGBA")
+
+        # Dimension validation per SRS FReq2.1
+        w, h = input_image.size
+        if w < 200 or h < 200:
+            return create_error_response("IMAGE_TOO_SMALL", "Image must be at least 200×200 pixels")
+        if w > 4000 or h > 4000:
+            return create_error_response("IMAGE_TOO_LARGE", "Image must not exceed 4000×4000 pixels")
 
         # ── Preserve full-resolution original ─────────────────────────────────
         original_full = input_image.copy()

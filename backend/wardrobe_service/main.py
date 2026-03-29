@@ -34,8 +34,8 @@ OUTFIT_SERVICE_URL = os.getenv("OUTFIT_SERVICE_URL", "http://localhost:3003")
 EMAIL_SERVICE_URL = os.getenv("EMAIL_SERVICE_URL", "http://localhost:3005")
 JWT_SECRET = os.getenv("JWT_SECRET", "your-super-secret-key-change-in-production")
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION_HOURS = 1
-PASSWORD_RESET_EXPIRY_MINUTES = 10
+JWT_EXPIRATION_HOURS = 0.5  # 30 minutes per SRS 6.3a
+PASSWORD_RESET_EXPIRY_MINUTES = 60  # 1 hour per SRS FReq1.3
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
@@ -441,6 +441,8 @@ async def register(
         "purpose": "register"
     })
 
+    logger.info(f"AUTH: New user registered — {user.email} (id={user.id})")
+
     # Do NOT return JWT token — user must verify email first
     return {
         "success": True,
@@ -479,6 +481,7 @@ async def login(
     
     if user.lockout_until and user.lockout_until > datetime.utcnow():
         remaining = (user.lockout_until - datetime.utcnow()).seconds // 60
+        logger.warning(f"AUTH: Login attempt on locked account — {email}")
         return create_error_response(
             "ACCOUNT_LOCKED",
             f"Too many failed login attempts. You cannot login for {remaining + 1} minutes.",
@@ -492,10 +495,12 @@ async def login(
     
     if not verify_password(password, user.password_hash):
         user.failed_login_attempts += 1
-        
+        logger.warning(f"AUTH: Failed login attempt {user.failed_login_attempts}/{MAX_FAILED_ATTEMPTS} — {email}")
+
         if user.failed_login_attempts >= MAX_FAILED_ATTEMPTS:
             user.lockout_until = datetime.utcnow() + timedelta(minutes=LOCKOUT_MINUTES)
             db.commit()
+            logger.warning(f"AUTH: Account locked for {LOCKOUT_MINUTES}min — {email}")
             return create_error_response(
                 "ACCOUNT_LOCKED",
                 f"Too many failed login attempts. You cannot login for {LOCKOUT_MINUTES} minutes.",
@@ -514,6 +519,7 @@ async def login(
     user.lockout_until = None
     user.last_login = datetime.utcnow()
     db.commit()
+    logger.info(f"AUTH: Successful login — {email} (id={user.id})")
 
     # Send login OTP via Email Service
     otp_result = await call_email_service("/otp/send", {
@@ -635,12 +641,22 @@ async def reset_password(
         return create_error_response("PASSWORD_MISMATCH", "Passwords do not match", 400, "confirm_password")
     
     user = db.query(User).filter(User.id == reset_token.user_id).first()
+
+    if verify_password(new_password, user.password_hash):
+        return create_error_response(
+            "SAME_PASSWORD",
+            "New password cannot be the same as your current password.",
+            400,
+            "new_password"
+        )
+
     user.password_hash = hash_password(new_password)
-    
+
     reset_token.used = True
-    
+
     db.commit()
-    
+    logger.info(f"AUTH: Password reset successful — user_id={user.id}")
+
     return {
         "success": True,
         "message": "Password reset successful! Please log in with your new password."
@@ -669,6 +685,7 @@ async def logout(current_user: User = Depends(get_current_user)):
     - In JWT, logout is client-side (delete token)
     - This endpoint is for logging/confirmation
     """
+    logger.info(f"AUTH: User logged out — {current_user.email} (id={current_user.id})")
     return {
         "success": True,
         "message": "You have been logged out successfully."
@@ -991,22 +1008,20 @@ async def delete_item(
     if not item:
         return create_error_response("ITEM_NOT_FOUND", "Item not found", 404)
     
-    # >>> GEMINI INTEGRATION: Cleanup clothing attributes in outfit service
-    asyncio.create_task(
-        cleanup_clothing_attributes(
-            item_id=item_id,
-            token=credentials.credentials,
-        )
+    # Cleanup clothing attributes in outfit service (await to ensure consistency)
+    await cleanup_clothing_attributes(
+        item_id=item_id,
+        token=credentials.credentials,
     )
-    
-    # >>> Cleanup image file in image processing service
+
+    db.delete(item)
+    db.commit()
+
+    # Cleanup image file (fire-and-forget — not critical for data consistency)
     if item.file_name:
         asyncio.create_task(
             cleanup_image_file(item.file_name)
         )
-    
-    db.delete(item)
-    db.commit()
     logger.info(f"Item {item_id} deleted by user {current_user.id}")
     
     return {"success": True, "message": "Item deleted successfully"}

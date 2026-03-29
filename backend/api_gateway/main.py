@@ -16,6 +16,21 @@ WARDROBE_SERVICE_URL = os.getenv("WARDROBE_SERVICE_URL", "http://localhost:3001"
 IMAGE_SERVICE_URL = os.getenv("IMAGE_SERVICE_URL", "http://localhost:3002")
 OUTFIT_SERVICE_URL = os.getenv("OUTFIT_SERVICE_URL", "http://localhost:3003")
 COMMUNITY_SERVICE_URL = os.getenv("COMMUNITY_SERVICE_URL", "http://localhost:3004")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://www.closetmate.org.tr")
+
+ALLOWED_ORIGINS = [
+    FRONTEND_URL,
+    "https://www.closetmate.org.tr",
+    "https://closetmate.org.tr",
+    "https://apigateway-production-b91d.up.railway.app",  # Railway public gateway
+    "http://localhost:5173",      # Vite dev server
+    "http://localhost:3000",
+]
+
+# Append any extra origins from env (comma-separated)
+_extra = os.getenv("EXTRA_CORS_ORIGINS", "")
+if _extra:
+    ALLOWED_ORIGINS.extend([o.strip() for o in _extra.split(",") if o.strip()])
 
 app = FastAPI(
     title="ClosetMate API Gateway",
@@ -25,7 +40,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

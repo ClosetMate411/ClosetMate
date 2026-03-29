@@ -23,7 +23,7 @@ from fastapi import FastAPI, Depends, HTTPException, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 from sqlalchemy import (
     create_engine, Column, String, Integer, Text, DateTime,
@@ -212,7 +212,13 @@ class ReactRequest(BaseModel):
 
 
 class CommentRequest(BaseModel):
-    text: str = Field(..., min_length=1, max_length=1000)
+    text: str = Field(..., min_length=1, max_length=500)
+
+    @validator("text")
+    def text_not_blank(cls, v):
+        if not v.strip():
+            raise ValueError("Comment cannot be empty or whitespace only")
+        return v.strip()
 
 
 # ============== APP ==============
@@ -469,6 +475,9 @@ async def rate_outfit(
     if not shared:
         return create_error_response("NOT_FOUND", "Shared outfit not found", 404)
 
+    if shared.user_id == user_id:
+        return create_error_response("SELF_RATE", "You cannot rate your own outfit", 403)
+
     # Upsert rating
     existing = db.query(Rating).filter(
         Rating.shared_outfit_id == shared_outfit_id,
@@ -510,6 +519,9 @@ async def react_to_outfit(
     shared = db.query(SharedOutfit).filter(SharedOutfit.id == shared_outfit_id).first()
     if not shared:
         return create_error_response("NOT_FOUND", "Shared outfit not found", 404)
+
+    if shared.user_id == user_id:
+        return create_error_response("SELF_REACT", "You cannot react to your own outfit", 403)
 
     # Toggle: if exists remove, else add
     existing = db.query(Reaction).filter(

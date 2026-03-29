@@ -12,7 +12,7 @@ from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from sqlalchemy import create_engine, Column, String, DateTime, Boolean, Index
+from sqlalchemy import create_engine, Column, String, Integer, DateTime, Boolean, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 
@@ -61,6 +61,7 @@ class OTPCode(Base):
     expires_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     used = Column(Boolean, default=False)
+    failed_attempts = Column(Integer, default=0)
 
     __table_args__ = (
         Index("ix_otp_email_purpose", "email", "purpose"),
@@ -276,22 +277,36 @@ async def verify_otp(request: Request, db: Session = Depends(get_db)):
     if not email or not code:
         return JSONResponse(status_code=400, content={"success": False, "error": "Email and code are required"})
 
-    # Find valid, unused, non-expired code
-    otp = db.query(OTPCode).filter(
+    MAX_OTP_ATTEMPTS = 5
+
+    # Find the latest unused, non-expired OTP for this email
+    latest_otp = db.query(OTPCode).filter(
         OTPCode.email == email,
-        OTPCode.code == code,
         OTPCode.used == False,
         OTPCode.expires_at > datetime.utcnow()
-    ).first()
+    ).order_by(OTPCode.created_at.desc()).first()
 
-    if not otp:
+    if not latest_otp:
         return {"success": True, "valid": False, "error": "Invalid or expired verification code."}
 
+    # Brute-force protection: lock after MAX_OTP_ATTEMPTS failed tries
+    if latest_otp.failed_attempts >= MAX_OTP_ATTEMPTS:
+        latest_otp.used = True
+        db.commit()
+        return {"success": True, "valid": False, "error": "Too many failed attempts. Please request a new code."}
+
+    # Check code match
+    if latest_otp.code != code:
+        latest_otp.failed_attempts += 1
+        db.commit()
+        remaining = MAX_OTP_ATTEMPTS - latest_otp.failed_attempts
+        return {"success": True, "valid": False, "error": f"Invalid verification code. {remaining} attempts remaining."}
+
     # Mark as used
-    otp.used = True
+    latest_otp.used = True
     db.commit()
 
-    return {"success": True, "valid": True, "purpose": otp.purpose}
+    return {"success": True, "valid": True, "purpose": latest_otp.purpose}
 
 
 @app.post("/email/send-reset")
