@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import apiService from '../services/api.service';
+import useOutfitStore from './outfitStore';
+import useWardrobeStore from './wardrobeStore';
 
 /**
  * Auth Store with Explicit Token Management
@@ -46,16 +48,22 @@ const useAuthStore = create((set, get) => ({
     try {
       const response = await apiService.login(credentials);
       if (response.success && response.data) {
+        // OTP required — don't store token
+        if (response.data.requires_otp) {
+          set({ isLoading: false });
+          return { success: true, requires_otp: true, email: response.data.email };
+        }
+
         const { token, ...userData } = response.data;
-        
+
         // 1. Save to localStorage for external tests and persistence
         localStorage.setItem('token', token);
-        
+
         // 2. Set memory state
-        set({ 
-          user: userData, 
-          isAuthenticated: true, 
-          isLoading: false 
+        set({
+          user: userData,
+          isAuthenticated: true,
+          isLoading: false
         });
         return { success: true };
       }
@@ -143,6 +151,10 @@ const useAuthStore = create((set, get) => ({
       // Silent fail
     } finally {
       get().clearAuth();
+      // Clear other stores to prevent data leakage between accounts
+      useOutfitStore.getState().clearGenerated();
+      useOutfitStore.setState({ outfits: [] });
+      useWardrobeStore.getState().clearItems();
       set({ isLoading: false });
     }
   },

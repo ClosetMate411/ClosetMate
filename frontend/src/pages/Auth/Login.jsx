@@ -41,8 +41,10 @@ const Login = () => {
     // Reset password field on attempt
     const result = await login(formData);
 
-    if (result.success) {
+    if (result.success && result.requires_otp) {
       navigate('/verify-otp', { state: { email: formData.email, purpose: 'login' } });
+    } else if (result.success) {
+      navigate('/');
     } else {
       showError(result.error || 'Login failed');
       setFormData(prev => ({ ...prev, password: '' }));
