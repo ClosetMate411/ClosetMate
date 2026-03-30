@@ -49,10 +49,12 @@ nav {
   height: 100%;
   background: var(--overlay);
   backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   z-index: 1001;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.4s ease;
+  will-change: opacity;
 }
 
 .drawer-overlay.active {
@@ -67,11 +69,11 @@ nav {
   width: 320px;
   height: 100vh;
   background: rgba(255, 255, 255, 0.98); /* Slightly more opaque */
-  backdrop-filter: blur(20px);
   z-index: 1002;
   box-shadow: -10px 0 50px rgba(36, 27, 51, 0.1);
   transform: translateX(100%); /* Start off-screen */
   transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); /* Smooth spring-like slide */
+  will-change: transform;
   display: flex;
   flex-direction: column;
   padding: 2rem 1.5rem;
