@@ -135,9 +135,10 @@ nav {
   text-decoration: none;
   color: var(--text-muted);
   border-radius: 16px;
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s ease;
-  background: transparent; /* Start transparent for cleaner look */
+  background: transparent;
   border: 1px solid transparent;
+  will-change: transform;
+  transition: transform 0.15s ease-out, background-color 0.15s ease-out, border-color 0.15s ease-out;
 }
 
 .drawer-link:hover:not(.disabled) {
