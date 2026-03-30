@@ -50,8 +50,8 @@ OCCASION_FORMALITY_MAP = {
     "party":        [2, 3, 4],
     "date-night":   [3, 4, 5],
     "work":         [3, 4],
-    "wedding":      [4, 5],
-    "formal-event": [4, 5],
+    "wedding":      [3, 4, 5],
+    "formal-event": [3, 4, 5],
 }
 
 async def fetch_image_bytes(image_url: str) -> tuple[bytes, str]:
