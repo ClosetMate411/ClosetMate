@@ -12,7 +12,7 @@ from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from sqlalchemy import create_engine, Column, String, Integer, DateTime, Boolean, Index
+from sqlalchemy import create_engine, Column, String, Integer, DateTime, Boolean, Index, text as sa_text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 
@@ -69,6 +69,15 @@ class OTPCode(Base):
 
 
 Base.metadata.create_all(bind=engine)
+
+# ── Auto-migrate: add failed_attempts column if missing ──
+with engine.connect() as conn:
+    try:
+        conn.execute(sa_text("ALTER TABLE otp_codes ADD COLUMN failed_attempts INTEGER DEFAULT 0"))
+        conn.commit()
+        logger.info("Migration: added failed_attempts column to otp_codes")
+    except Exception:
+        conn.rollback()  # Column already exists, ignore
 
 
 # ============== HELPERS ==============
