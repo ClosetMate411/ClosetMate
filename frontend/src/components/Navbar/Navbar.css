@@ -53,7 +53,7 @@ nav {
   z-index: 1001;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.4s ease;
+  transition: opacity 0.2s ease;
   will-change: opacity;
 }
 
@@ -72,7 +72,7 @@ nav {
   z-index: 1002;
   box-shadow: -10px 0 50px rgba(36, 27, 51, 0.1);
   transform: translateX(100%); /* Start off-screen */
-  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); /* Smooth spring-like slide */
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   will-change: transform;
   display: flex;
   flex-direction: column;
