@@ -147,7 +147,6 @@ const Wardrobe = () => {
     try {
       setUploadState('saving');
       const newItemId = await handlers.handleApply(uploadedFile, '', '');
-      await fetchItems();
       setUploadedFile(null);
       setProcessedImageUrl(null);
 
@@ -155,16 +154,18 @@ const Wardrobe = () => {
       if (newItemId) {
         const { pollForAnalysis } = useWardrobeStore.getState();
         await pollForAnalysis(newItemId);
-        await fetchItems();
       }
 
+      // Single fetch after everything is done
+      await useWardrobeStore.getState().fetchItems();
       setUploadState('idle');
       showSuccess('Item saved and analyzed!');
     } catch (error) {
       showError(error.message || 'Failed to save item');
       setUploadState('idle');
     }
-  }, [uploadedFile, handlers, fetchItems, showSuccess, showError]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uploadedFile, handlers]);
 
   // UI interaction handlers
   const handleProcessEditImage = useCallback(async (file, tempEdits) => {
@@ -245,15 +246,15 @@ const Wardrobe = () => {
 
   const handleSaveEdit = useCallback(async (itemId, updates) => {
     // Check if anything actually changed before showing loader and sending request
-    const originalItem = items.find(i => i.id === itemId);
+    const currentItems = useWardrobeStore.getState().items;
+    const originalItem = currentItems.find(i => i.id === itemId);
     if (originalItem) {
       const nameChanged = (updates.itemName || '').trim() !== (originalItem.name || '').trim();
       const weatherChanged = (updates.weather || '').trim() !== (originalItem.weather || '').trim();
       const imageChanged = !!updates.file;
 
       if (!nameChanged && !weatherChanged && !imageChanged) {
-        console.log("No changes detected in Wardrobe, skipping API call");
-        setIsEditingItem(false); // Just exit edit mode
+        setIsEditingItem(false);
         return;
       }
     }
@@ -261,15 +262,15 @@ const Wardrobe = () => {
     try {
       setUploadState('updating');
       await handlers.handleSaveEdit(itemId, updates);
-      await fetchItems(); // Await full list refresh
+      await useWardrobeStore.getState().fetchItems();
       setUploadState('idle');
       showSuccess('Item updated successfully!');
     } catch (error) {
-      console.error("Failed to save edit:", error);
       showError(error.message || 'Failed to update item');
       setUploadState('idle');
     }
-  }, [handlers, showSuccess, showError, fetchItems, items]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handlers]);
 
   const handleCardClick = useCallback((item) => {
     setSelectedItem(item);

@@ -1,4 +1,4 @@
-import React, { memo, useState, useCallback } from 'react';
+import React, { memo, useState, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { IconTrash, IconMessageCircle } from '@tabler/icons-react';
 import useCommunityStore from '../../../store/communityStore';
@@ -21,16 +21,18 @@ const formatRelativeTime = (isoString) => {
 
 const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare }) => {
   const { outfit, shared_by, description, shared_at, ratings, reactions, comment_count } = item;
-  const { rateOutfit, reactToOutfit } = useCommunityStore();
+  const rateOutfit = useCommunityStore((s) => s.rateOutfit);
+  const reactToOutfit = useCommunityStore((s) => s.reactToOutfit);
 
   const [isRating, setIsRating] = useState(false);
   const [isReacting, setIsReacting] = useState(false);
   const [hoverRating, setHoverRating] = useState(null);
 
   // Resolve images from current user's wardrobe; show placeholder for other users' items
-  const resolvedItems = outfit.item_ids
-    .slice(0, 4)
-    .map((id) => wardrobeItems.find((w) => w.id === id) || null);
+  const resolvedItems = useMemo(() =>
+    outfit.item_ids.slice(0, 4).map((id) => wardrobeItems.find((w) => w.id === id) || null),
+    [outfit.item_ids, wardrobeItems]
+  );
 
   const handleReact = useCallback(
     async (emojiType) => {

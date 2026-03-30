@@ -1,14 +1,15 @@
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import './OutfitCard.css';
 
 const OutfitCard = ({ outfit, wardrobeItems, onClick }) => {
   const { name, item_ids, is_favorite, cohesion_score, style, occasion } = outfit;
-  
+
   // Resolve item details from wardrobeStore
-  const items = item_ids
-    .map(id => wardrobeItems.find(item => item.id === id))
-    .filter(Boolean);
+  const items = useMemo(() =>
+    item_ids.map(id => wardrobeItems.find(item => item.id === id)).filter(Boolean),
+    [item_ids, wardrobeItems]
+  );
 
   const handleClick = () => {
     onClick(outfit);

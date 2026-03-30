@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { CONFIRM_VARIANTS } from '../constants';
 
 /**
@@ -15,8 +15,10 @@ const useModal = () => {
     isOpen: false,
     type: null,
     data: null,
-    onConfirm: null,
   });
+
+  // Store onConfirm in a ref to avoid re-render cascades
+  const onConfirmRef = useRef(null);
 
   // Regular modal handlers
   const openModal = useCallback((modalName, data = null) => {
@@ -52,29 +54,21 @@ const useModal = () => {
 
   // Confirmation modal handlers
   const openConfirmModal = useCallback((type, data, onConfirm) => {
-    setConfirmModal({
-      isOpen: true,
-      type,
-      data,
-      onConfirm,
-    });
+    onConfirmRef.current = onConfirm;
+    setConfirmModal({ isOpen: true, type, data });
   }, []);
 
   const closeConfirmModal = useCallback(() => {
-    setConfirmModal({
-      isOpen: false,
-      type: null,
-      data: null,
-      onConfirm: null,
-    });
+    onConfirmRef.current = null;
+    setConfirmModal({ isOpen: false, type: null, data: null });
   }, []);
 
   const handleConfirm = useCallback(() => {
-    if (confirmModal.onConfirm) {
-      confirmModal.onConfirm();
+    if (onConfirmRef.current) {
+      onConfirmRef.current();
     }
     closeConfirmModal();
-  }, [confirmModal.onConfirm, closeConfirmModal]);
+  }, [closeConfirmModal]);
 
   // Get confirmation modal configuration based on type
   const confirmModalConfig = useMemo(() => {
@@ -87,14 +81,14 @@ const useModal = () => {
           message: `Are you sure that you want to delete "${data?.name}"?`,
           variant: CONFIRM_VARIANTS.DELETE,
         };
-      
+
       case 'save-details':
         return {
           title: 'Save Details',
           message: 'Are you sure you want to save these details?',
           variant: CONFIRM_VARIANTS.SAVE,
         };
-      
+
       case 'skip-details':
         return {
           title: 'Skip Details',
@@ -102,7 +96,7 @@ const useModal = () => {
           subtitle: 'Item will be saved with default values',
           variant: CONFIRM_VARIANTS.SAVE,
         };
-      
+
       case 'unsaved-changes':
         return {
           title: 'Info',
@@ -110,21 +104,21 @@ const useModal = () => {
           subtitle: 'Unsaved changes will be lost',
           variant: CONFIRM_VARIANTS.UNSAVED,
         };
-      
+
       case 'save-changes':
         return {
           title: 'Save Changes',
           message: 'Are you sure you want to save these changes?',
           variant: CONFIRM_VARIANTS.SAVE,
         };
-      
+
       case 'error':
         return {
           title: data?.title || 'Error',
           message: data?.message || 'Something went wrong',
-          variant: CONFIRM_VARIANTS.DELETE, // Uses the red alert style
+          variant: CONFIRM_VARIANTS.DELETE,
         };
-      
+
       default:
         return {
           title: data?.title || '',
@@ -141,7 +135,7 @@ const useModal = () => {
     isModalOpen,
     getModalData,
     closeAllModals,
-    
+
     // Confirmation modal methods
     openConfirmModal,
     closeConfirmModal,
@@ -152,4 +146,3 @@ const useModal = () => {
 };
 
 export default useModal;
-

@@ -49,13 +49,13 @@ const useCommunityStore = create((set, get) => ({
 
   // Optimistic: update user_rating immediately, server confirms
   rateOutfit: async (sharedOutfitId, score) => {
-    set((state) => ({
-      feed: state.feed.map((item) =>
-        item.id === sharedOutfitId
-          ? { ...item, ratings: { ...item.ratings, user_rating: score } }
-          : item
-      ),
-    }));
+    const { feed } = get();
+    const idx = feed.findIndex((item) => item.id === sharedOutfitId);
+    if (idx === -1) return;
+    const updated = { ...feed[idx], ratings: { ...feed[idx].ratings, user_rating: score } };
+    const newFeed = [...feed];
+    newFeed[idx] = updated;
+    set({ feed: newFeed });
     await apiService.rateOutfit(sharedOutfitId, score);
   },
 
@@ -63,50 +63,41 @@ const useCommunityStore = create((set, get) => ({
   reactToOutfit: async (sharedOutfitId, emojiType) => {
     const response = await apiService.reactToOutfit(sharedOutfitId, emojiType);
     const { action } = response.data;
-    set((state) => ({
-      feed: state.feed.map((item) => {
-        if (item.id !== sharedOutfitId) return item;
-        const counts = { ...item.reactions.counts };
-        const userReactions = [...item.reactions.user_reactions];
-        if (action === 'added') {
-          counts[emojiType] = (counts[emojiType] || 0) + 1;
-          return {
-            ...item,
-            reactions: { counts, user_reactions: [...userReactions, emojiType] },
-          };
-        } else {
-          counts[emojiType] = Math.max(0, (counts[emojiType] || 1) - 1);
-          if (!counts[emojiType]) delete counts[emojiType];
-          return {
-            ...item,
-            reactions: {
-              counts,
-              user_reactions: userReactions.filter((r) => r !== emojiType),
-            },
-          };
-        }
-      }),
-    }));
+    const { feed } = get();
+    const idx = feed.findIndex((item) => item.id === sharedOutfitId);
+    if (idx === -1) return;
+    const item = feed[idx];
+    const counts = { ...item.reactions.counts };
+    let userReactions;
+    if (action === 'added') {
+      counts[emojiType] = (counts[emojiType] || 0) + 1;
+      userReactions = [...item.reactions.user_reactions, emojiType];
+    } else {
+      counts[emojiType] = Math.max(0, (counts[emojiType] || 1) - 1);
+      if (!counts[emojiType]) delete counts[emojiType];
+      userReactions = item.reactions.user_reactions.filter((r) => r !== emojiType);
+    }
+    const newFeed = [...feed];
+    newFeed[idx] = { ...item, reactions: { counts, user_reactions: userReactions } };
+    set({ feed: newFeed });
   },
 
   incrementCommentCount: (sharedOutfitId) => {
-    set((state) => ({
-      feed: state.feed.map((item) =>
-        item.id === sharedOutfitId
-          ? { ...item, comment_count: item.comment_count + 1 }
-          : item
-      ),
-    }));
+    const { feed } = get();
+    const idx = feed.findIndex((item) => item.id === sharedOutfitId);
+    if (idx === -1) return;
+    const newFeed = [...feed];
+    newFeed[idx] = { ...feed[idx], comment_count: feed[idx].comment_count + 1 };
+    set({ feed: newFeed });
   },
 
   decrementCommentCount: (sharedOutfitId) => {
-    set((state) => ({
-      feed: state.feed.map((item) =>
-        item.id === sharedOutfitId
-          ? { ...item, comment_count: Math.max(0, item.comment_count - 1) }
-          : item
-      ),
-    }));
+    const { feed } = get();
+    const idx = feed.findIndex((item) => item.id === sharedOutfitId);
+    if (idx === -1) return;
+    const newFeed = [...feed];
+    newFeed[idx] = { ...feed[idx], comment_count: Math.max(0, feed[idx].comment_count - 1) };
+    set({ feed: newFeed });
   },
 }));
 

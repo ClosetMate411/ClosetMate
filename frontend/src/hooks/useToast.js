@@ -51,11 +51,7 @@ const useToast = () => {
     showToast(message, 'error');
   }, [showToast]);
 
-  return useMemo(() => ({
-    toast,
-    showSuccess,
-    showError
-  }), [toast, showSuccess, showError]);
+  return { toast, showSuccess, showError };
 };
 
 export default useToast;
