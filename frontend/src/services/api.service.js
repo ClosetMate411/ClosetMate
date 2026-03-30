@@ -138,6 +138,7 @@ class APIService {
 
   // --- WARDROBE ---
   async getAllItems() { return axiosInstance.get(API_ENDPOINTS.items); }
+  async getItem(id) { return axiosInstance.get(API_ENDPOINTS.item(id)); }
   async createItem(data) {
     const f = new FormData();
     if (data.name) f.append('item_name', data.name);

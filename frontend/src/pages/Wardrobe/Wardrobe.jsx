@@ -154,27 +154,18 @@ const Wardrobe = () => {
       setUploadState('saving');
       const newItemId = await handlers.handleApply(uploadedFile, '', '');
       await fetchItems();
-      setUploadState('idle');
       setUploadedFile(null);
       setProcessedImageUrl(null);
-      showSuccess('Item saved successfully!');
-      // Fetch AI-generated attributes in background and silently update the item
+
+      // Wait for AI analysis to update name & season (spinner stays visible)
       if (newItemId) {
-        apiService.getItemAttributes(newItemId)
-          .then((attrResponse) => {
-            const attrs = attrResponse?.data || attrResponse;
-            if (attrs) {
-              const itemName = attrs.item_name || attrs.name || '';
-              const weather = attrs.season || attrs.weather || '';
-              if (itemName || weather) {
-                handlers.handleSaveEdit(newItemId, { itemName, weather })
-                  .then(() => fetchItems())
-                  .catch(() => {});
-              }
-            }
-          })
-          .catch(() => {});
+        const { pollForAnalysis } = useWardrobeStore.getState();
+        await pollForAnalysis(newItemId);
+        await fetchItems();
       }
+
+      setUploadState('idle');
+      showSuccess('Item saved and analyzed!');
     } catch (error) {
       showError(error.message || 'Failed to save item');
       setUploadState('idle');

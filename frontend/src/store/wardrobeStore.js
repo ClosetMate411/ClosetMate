@@ -61,21 +61,47 @@ const useWardrobeStore = create((set, get) => ({
         season: weather,
         image: imageFile
       });
-      
+
       // Sync with Backend: Response is { success: true, data: { ...item... } }
       const rawItem = response.data || response;
       const newItem = transformItemsForDisplay([rawItem])[0];
-      
+
       set((state) => ({
         items: Array.isArray(state.items) ? [...state.items, newItem] : [newItem],
         loading: false
       }));
-      
+
+      // Poll for AI-generated name and season (non-blocking)
+      get().pollForAnalysis(newItem.id);
+
       return newItem.id;
     } catch (error) {
       set({ error: error.message, loading: false });
       console.error('Failed to add item:', error);
       throw error;
+    }
+  },
+
+  /**
+   * Poll backend for AI analysis results (name & season)
+   * Non-blocking, silently updates item when ready
+   */
+  pollForAnalysis: async (itemId, retries = 2) => {
+    for (let i = 0; i < retries; i++) {
+      await new Promise(r => setTimeout(r, 3000));
+      try {
+        const response = await apiService.getItem(itemId);
+        const rawItem = response.data || response;
+        if (rawItem.item_name && rawItem.item_name !== 'Untitled') {
+          const updated = transformItemsForDisplay([rawItem])[0];
+          set((state) => ({
+            items: state.items.map(item => item.id === itemId ? updated : item)
+          }));
+          return;
+        }
+      } catch {
+        // Silent fail — item stays as Untitled
+      }
     }
   },
   
