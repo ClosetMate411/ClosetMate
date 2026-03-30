@@ -265,11 +265,28 @@ async def call_email_service(endpoint: str, payload: dict) -> dict:
 
 # ============== OUTFIT SERVICE INTEGRATION ==============
 
+def _weather_to_season(weather_list: list) -> str:
+    """Map weather_suitability list to a season string"""
+    if not weather_list:
+        return "All Season"
+
+    mapping = {
+        "hot": "Summer",
+        "warm": "Spring/Summer",
+        "mild": "Spring/Fall",
+        "cool": "Fall/Winter",
+        "cold": "Winter",
+        "all-weather": "All Season",
+    }
+
+    primary = weather_list[0] if weather_list else "mild"
+    return mapping.get(primary, "All Season")
+
+
 async def trigger_clothing_analysis(item_id: str, user_id: str, image_url: str):
     """
     Fire-and-forget call to the outfit service to analyze the clothing item.
-    Non-blocking - if analysis fails, the item is still saved successfully.
-    The user can manually re-trigger analysis later via /reanalyze.
+    On success, updates the item's name and season from Gemini's analysis.
     """
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -283,6 +300,28 @@ async def trigger_clothing_analysis(item_id: str, user_id: str, image_url: str):
                 }
             )
             logger.info(f"Clothing analysis triggered for item {item_id}, status: {resp.status_code}")
+
+            # Update item with AI-generated name and season
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("success") and data.get("data"):
+                    attrs = data["data"]
+                    ai_name = attrs.get("name")
+                    weather = attrs.get("weather_suitability", [])
+                    season = _weather_to_season(weather)
+
+                    db = SessionLocal()
+                    try:
+                        item = db.query(ClothingItem).filter(ClothingItem.id == item_id).first()
+                        if item and item.item_name == "Untitled":
+                            item.item_name = ai_name or "Untitled"
+                        if item and item.season == "Untitled":
+                            item.season = season
+                        db.commit()
+                        logger.info(f"Item {item_id} updated from analysis: name='{ai_name}', season='{season}'")
+                    finally:
+                        db.close()
+
     except Exception as e:
         logger.warning(f"Failed to trigger clothing analysis for item {item_id}: {e}")
 

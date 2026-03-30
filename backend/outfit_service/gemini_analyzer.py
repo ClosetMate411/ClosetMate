@@ -710,6 +710,16 @@ class GeminiClothingAnalyzer:
             required = [r for r in required if isinstance(r, dict) and r.get("id") in valid_ids]
             optional = [o for o in optional if isinstance(o, dict) and o.get("id") in valid_ids]
 
+            # ── Deduplicate required items — keep only first item per category ──
+            seen_cats = set()
+            deduped_required = []
+            for r in required:
+                cat = r.get("category")
+                if cat not in seen_cats:
+                    seen_cats.add(cat)
+                    deduped_required.append(r)
+            required = deduped_required
+
             # ── Determine required categories (DRESS+SHOES or TOP+BOTTOM+SHOES) ──
             req_categories = {r.get("category") for r in required}
 
