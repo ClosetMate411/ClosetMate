@@ -64,11 +64,9 @@ const Navigation = () => {
 };
 
 function App() {
-  const init = useAuthStore(state => state.init);
-
   useEffect(() => {
-    init();
-  }, [init]);
+    useAuthStore.getState().init();
+  }, []);
 
   return (
     <Router>

@@ -20,8 +20,8 @@ const useWardrobeStore = create((set, get) => ({
    * Fetch all items from backend
    */
   fetchItems: async () => {
-    // Prevent multiple concurrent fetches or unnecessary re-fetching if we already have items
-    if (get().loading || get().items.length > 0) return;
+    // Prevent multiple concurrent fetches
+    if (get().loading) return;
     
     set({ loading: true, error: null });
     try {

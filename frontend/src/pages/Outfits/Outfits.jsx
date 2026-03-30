@@ -32,7 +32,8 @@ const Outfits = () => {
   useEffect(() => {
     fetchOutfits();
     fetchItems();
-  }, [fetchOutfits, fetchItems]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleGenerateClick = () => {
     setActiveModal('generate');

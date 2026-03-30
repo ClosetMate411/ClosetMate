@@ -36,7 +36,8 @@ const Community = () => {
     fetchFeed(1);
     fetchOutfits();
     fetchItems();
-  }, [fetchFeed, fetchOutfits, fetchItems]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Comments ─────────────────────────────────────────
   const handleOpenComments = useCallback((item) => {

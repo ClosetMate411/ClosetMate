@@ -45,7 +45,8 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
       setText('');
       setError(null);
     }
-  }, [opened, feedItem, fetchComments]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opened, feedItem]);
 
   const handleSubmit = useCallback(
     async (e) => {

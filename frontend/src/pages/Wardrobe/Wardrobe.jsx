@@ -45,15 +45,9 @@ const Wardrobe = () => {
 
   // Fetch items from backend on mount
   useEffect(() => {
-    const initFetch = async () => {
-      try {
-        await fetchItems();
-      } catch (error) {
-        showError(error.message || 'Failed to load wardrobe');
-      }
-    };
-    initFetch();
-  }, [fetchItems, showError]);
+    fetchItems();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
 
   // Get the current selected item. 
