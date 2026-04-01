@@ -825,8 +825,23 @@ async def rate_outfit(
         ))
         db.commit()
 
+    # Calculate fresh average and count
+    avg_rating = db.query(func.avg(Rating.score)).filter(
+        Rating.shared_outfit_id == shared_outfit_id,
+    ).scalar()
+    rating_count = db.query(Rating).filter(
+        Rating.shared_outfit_id == shared_outfit_id,
+    ).count()
+
     logger.info(f"User {user_id} rated shared outfit {shared_outfit_id}: {body.score}/5")
-    return {"success": True, "data": {"score": body.score}}
+    return {
+        "success": True,
+        "data": {
+            "score": body.score,
+            "average": round(float(avg_rating), 1) if avg_rating else body.score,
+            "count": rating_count,
+        }
+    }
 
 
 # ── 5. React with emoji ──────────────────────────────────────────────────────

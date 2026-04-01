@@ -63,37 +63,33 @@ const useCommunityStore = create((set, get) => ({
     }));
   },
 
-  // Optimistic: update user_rating, average, and count immediately
+  // Rate and update from backend response (accurate average/count)
   rateOutfit: async (sharedOutfitId, score) => {
+    const response = await apiService.rateOutfit(sharedOutfitId, score);
+    const { average, count } = response.data;
+
     const { feed } = get();
     const idx = feed.findIndex((item) => item.id === sharedOutfitId);
-    if (idx === -1) return;
-    const item = feed[idx];
-    const oldRatings = item.ratings;
-    const hadPreviousRating = oldRatings.user_rating != null;
-    const oldCount = oldRatings.count || 0;
-    const oldAvg = oldRatings.average || 0;
-
-    let newCount, newAvg;
-    if (hadPreviousRating) {
-      // Updating existing rating: recalculate average
-      newCount = oldCount;
-      newAvg = oldCount > 0
-        ? Math.round(((oldAvg * oldCount) - oldRatings.user_rating + score) / oldCount * 10) / 10
-        : score;
-    } else {
-      // New rating
-      newCount = oldCount + 1;
-      newAvg = Math.round(((oldAvg * oldCount) + score) / newCount * 10) / 10;
+    if (idx !== -1) {
+      const newFeed = [...feed];
+      newFeed[idx] = {
+        ...feed[idx],
+        ratings: { average, count, user_rating: score }
+      };
+      set({ feed: newFeed });
     }
 
-    const newFeed = [...feed];
-    newFeed[idx] = {
-      ...item,
-      ratings: { average: newAvg, count: newCount, user_rating: score }
-    };
-    set({ feed: newFeed });
-    await apiService.rateOutfit(sharedOutfitId, score);
+    // Also update in topRated if present
+    const { topRated } = get();
+    const trIdx = topRated.findIndex((item) => item.id === sharedOutfitId);
+    if (trIdx !== -1) {
+      const newTr = [...topRated];
+      newTr[trIdx] = {
+        ...topRated[trIdx],
+        ratings: { average, count, user_rating: score }
+      };
+      set({ topRated: newTr });
+    }
   },
 
   // Optimistic: toggle reaction counts immediately
