@@ -25,6 +25,8 @@ const getNotificationText = (n) => {
       return { icon: EMOJI_MAP[n.detail] || '👍', text: `reacted to ${outfit}` };
     case 'comment':
       return { icon: '💬', text: `commented on ${outfit}` };
+    case 'favorite':
+      return { icon: '❤️', text: `saved ${outfit} to favorites` };
     default:
       return { icon: '🔔', text: `interacted with ${outfit}` };
   }

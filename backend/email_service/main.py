@@ -189,15 +189,39 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    error_name = type(exc).__name__
+    if "OperationalError" in error_name or "DisconnectionError" in error_name:
+        logger.error(f"Database connection error: {exc}")
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "error": "Database connection failed. Please try again later."}
+        )
+    logger.error(f"Unhandled exception: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"success": False, "error": "An unexpected error occurred."}
+    )
+
+
 # ============== HEALTH ==============
 
 @app.get("/health")
-async def health_check():
-    return {
-        "status": "healthy",
-        "service": "email",
-        "resend_configured": _resend is not None,
-    }
+async def health_check(db: Session = Depends(get_db)):
+    try:
+        db.execute(sa_text("SELECT 1"))
+        return {
+            "status": "healthy",
+            "service": "email",
+            "database": "connected",
+            "resend_configured": _resend is not None,
+        }
+    except Exception as e:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy", "service": "email", "database": "disconnected", "error": str(e)}
+        )
 
 
 # ============== INTERNAL ENDPOINTS (called by Wardrobe Service) ==============

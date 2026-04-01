@@ -18,7 +18,7 @@ import logging
 from datetime import datetime
 from typing import Optional, List
 
-from fastapi import FastAPI, Depends, HTTPException, Header, Query
+from fastapi import FastAPI, Depends, HTTPException, Header, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -311,11 +311,34 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    error_name = type(exc).__name__
+    if "OperationalError" in error_name or "DisconnectionError" in error_name:
+        logger.error(f"Database connection error: {exc}")
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "error": {"code": "DATABASE_UNAVAILABLE", "message": "Database connection failed. Please try again later."}}
+        )
+    logger.error(f"Unhandled exception: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"success": False, "error": {"code": "INTERNAL_ERROR", "message": "An unexpected error occurred. Please try again later."}}
+    )
+
+
 # ============== HEALTH ==============
 
 @app.get("/health")
-async def health_check():
-    return {"status": "healthy", "service": "outfit"}
+async def health_check(db: Session = Depends(get_db)):
+    try:
+        db.execute(sa_text("SELECT 1"))
+        return {"status": "healthy", "service": "outfit", "database": "connected"}
+    except Exception as e:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy", "service": "outfit", "database": "disconnected", "error": str(e)}
+        )
 
 
 

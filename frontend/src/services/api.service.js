@@ -79,12 +79,22 @@ axiosInstance.interceptors.response.use(
     }
 
     if (error.response) {
+      // Service unavailable / DB down
+      if (status === 503) {
+        const msg = extractErrorMessage(errorData) || 'Service temporarily unavailable. Please try again in a moment.';
+        throw new Error(msg);
+      }
       const message = extractErrorMessage(errorData) || `Error: ${status}`;
       const newError = new Error(message);
       newError.data = errorData;
       throw newError;
     }
-    throw new Error(error.message || 'Network error');
+
+    // Network error (no response at all — internet cut, server unreachable)
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      throw new Error('Request timed out. Please check your connection and try again.');
+    }
+    throw new Error('Unable to connect to the server. Please check your internet connection.');
   }
 );
 
@@ -214,6 +224,14 @@ class APIService {
 
   async markNotificationsRead() {
     return axiosInstance.put(API_ENDPOINTS.communityNotificationsRead);
+  }
+
+  async getFavorites(page = 1, limit = 20) {
+    return axiosInstance.get(API_ENDPOINTS.communityFavorites, { params: { page, limit } });
+  }
+
+  async toggleFavorite(sharedOutfitId) {
+    return axiosInstance.post(API_ENDPOINTS.communityFavorite(sharedOutfitId));
   }
 
   async shareOutfit(data) {

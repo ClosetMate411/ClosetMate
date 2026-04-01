@@ -22,7 +22,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import FastAPI, Depends, HTTPException, Query, Header
+from fastapi import FastAPI, Depends, HTTPException, Query, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -169,9 +169,21 @@ class Notification(Base):
     recipient_user_id = Column(String, nullable=False, index=True)
     actor_user_id = Column(String, nullable=False)
     shared_outfit_id = Column(String, nullable=False)
-    type = Column(String(20), nullable=False)  # "rating", "reaction", "comment"
-    detail = Column(String(50), nullable=True)  # score or emoji_type
+    type = Column(String(20), nullable=False)  # "rating", "reaction", "comment", "favorite"
+    detail = Column(String(50), nullable=True)
     is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class CommunityFavorite(Base):
+    __tablename__ = "community_favorites"
+    __table_args__ = (
+        UniqueConstraint("shared_outfit_id", "user_id", name="uq_favorite_user"),
+    )
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    shared_outfit_id = Column(String, nullable=False, index=True)
+    user_id = Column(String, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -181,6 +193,7 @@ Rating.__table__.create(bind=engine, checkfirst=True)
 Reaction.__table__.create(bind=engine, checkfirst=True)
 Comment.__table__.create(bind=engine, checkfirst=True)
 Notification.__table__.create(bind=engine, checkfirst=True)
+CommunityFavorite.__table__.create(bind=engine, checkfirst=True)
 
 
 # ============== CONSTANTS ==============
@@ -262,11 +275,34 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    error_name = type(exc).__name__
+    if "OperationalError" in error_name or "DisconnectionError" in error_name:
+        logger.error(f"Database connection error: {exc}")
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "error": {"code": "DATABASE_UNAVAILABLE", "message": "Database connection failed. Please try again later."}}
+        )
+    logger.error(f"Unhandled exception: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"success": False, "error": {"code": "INTERNAL_ERROR", "message": "An unexpected error occurred. Please try again later."}}
+    )
+
+
 # ============== HEALTH ==============
 
 @app.get("/health")
-async def health():
-    return {"status": "healthy", "service": "community", "port": 3004}
+async def health(db: Session = Depends(get_db)):
+    try:
+        db.execute(sa_text("SELECT 1"))
+        return {"status": "healthy", "service": "community", "database": "connected"}
+    except Exception as e:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy", "service": "community", "database": "disconnected", "error": str(e)}
+        )
 
 
 # ============== COMMUNITY ENDPOINTS ==============
@@ -414,6 +450,14 @@ def _assemble_feed_item(shared: SharedOutfit, user_id: str, db: Session) -> dict
         Comment.shared_outfit_id == shared.id,
     ).count()
 
+    favorite_count = db.query(CommunityFavorite).filter(
+        CommunityFavorite.shared_outfit_id == shared.id,
+    ).count()
+    user_has_favorited = db.query(CommunityFavorite).filter(
+        CommunityFavorite.shared_outfit_id == shared.id,
+        CommunityFavorite.user_id == user_id,
+    ).first() is not None
+
     item_ids = [oi.item_id for oi in outfit_items]
     clothing_items = db.query(ClothingItemRef).filter(
         ClothingItemRef.id.in_(item_ids)
@@ -458,6 +502,10 @@ def _assemble_feed_item(shared: SharedOutfit, user_id: str, db: Session) -> dict
             "user_reactions": user_reaction_types,
         },
         "comment_count": comment_count,
+        "favorites": {
+            "count": favorite_count,
+            "user_has_favorited": user_has_favorited,
+        },
     }
 
 
@@ -635,6 +683,100 @@ async def mark_notifications_read(
     ).update({"is_read": True})
     db.commit()
     return {"success": True, "message": "All notifications marked as read"}
+
+
+# ── 3d. Community Favorites ──────────────────────────────────────────────────
+
+@app.post("/community/{shared_outfit_id}/favorite")
+async def toggle_favorite(
+    shared_outfit_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Toggle favorite on a shared outfit"""
+    shared = db.query(SharedOutfit).filter(SharedOutfit.id == shared_outfit_id).first()
+    if not shared:
+        return create_error_response("NOT_FOUND", "Shared outfit not found", 404)
+
+    existing = db.query(CommunityFavorite).filter(
+        CommunityFavorite.shared_outfit_id == shared_outfit_id,
+        CommunityFavorite.user_id == user_id,
+    ).first()
+
+    if existing:
+        db.delete(existing)
+        db.commit()
+        count = db.query(CommunityFavorite).filter(
+            CommunityFavorite.shared_outfit_id == shared_outfit_id
+        ).count()
+        return {"success": True, "data": {"action": "removed", "favorite_count": count}}
+
+    fav = CommunityFavorite(
+        shared_outfit_id=shared_outfit_id,
+        user_id=user_id,
+    )
+    db.add(fav)
+    db.commit()
+
+    count = db.query(CommunityFavorite).filter(
+        CommunityFavorite.shared_outfit_id == shared_outfit_id
+    ).count()
+
+    # Notify outfit owner (skip self)
+    if shared.user_id != user_id:
+        db.add(Notification(
+            recipient_user_id=shared.user_id,
+            actor_user_id=user_id,
+            shared_outfit_id=shared_outfit_id,
+            type="favorite",
+        ))
+        db.commit()
+
+    return {"success": True, "data": {"action": "added", "favorite_count": count}}
+
+
+@app.get("/community/favorites")
+async def get_favorites(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=50),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Get user's favorited community outfits"""
+    offset = (page - 1) * limit
+
+    total = db.query(CommunityFavorite).filter(
+        CommunityFavorite.user_id == user_id
+    ).count()
+
+    fav_rows = (
+        db.query(CommunityFavorite)
+        .filter(CommunityFavorite.user_id == user_id)
+        .order_by(CommunityFavorite.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    feed = []
+    for fav in fav_rows:
+        shared = db.query(SharedOutfit).filter(SharedOutfit.id == fav.shared_outfit_id).first()
+        if not shared:
+            continue
+        item = _assemble_feed_item(shared, user_id, db)
+        if item:
+            feed.append(item)
+
+    return {
+        "success": True,
+        "data": feed,
+        "pagination": {
+            "page": page,
+            "limit": limit,
+            "total": total,
+            "pages": (total + limit - 1) // limit if total > 0 else 0,
+        },
+    }
 
 
 # ── 4. Rate a shared outfit ──────────────────────────────────────────────────

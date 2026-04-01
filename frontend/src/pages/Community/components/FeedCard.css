@@ -341,6 +341,40 @@
 }
 
 /* Comments button */
+.feed-favorite-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85rem;
+  padding: 4px 8px;
+  border-radius: 10px;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.feed-favorite-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  transform: scale(1.1);
+}
+
+.feed-favorite-btn.active {
+  animation: heartPop 0.3s ease;
+}
+
+@keyframes heartPop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+
+.feed-favorite-count {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted, #888);
+}
+
 .feed-comments-btn {
   background: none;
   border: none;

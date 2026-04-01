@@ -14,6 +14,7 @@ import './Community.css';
 const TABS = [
   { key: 'feed', label: 'Feed' },
   { key: 'top-rated', label: 'Top Rated', icon: '⭐' },
+  { key: 'favorites', label: 'Favorites', icon: '❤️' },
   { key: 'notifications', label: 'Notifications', icon: '🔔' },
 ];
 
@@ -38,6 +39,10 @@ const Community = () => {
     unreadCount,
     fetchNotifications,
     markAllRead,
+    favorites,
+    favoritesPagination,
+    favoritesLoading,
+    fetchFavorites,
   } = useCommunityStore();
 
   const { outfits, fetchOutfits } = useOutfitStore();
@@ -58,10 +63,13 @@ const Community = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Fetch top-rated when tab is first opened
+  // Fetch data when tab is first opened
   useEffect(() => {
     if (activeTab === 'top-rated' && topRated.length === 0 && !topRatedLoading) {
       fetchTopRated(1);
+    }
+    if (activeTab === 'favorites') {
+      fetchFavorites(1);
     }
     if (activeTab === 'notifications') {
       fetchNotifications(1);
@@ -218,6 +226,10 @@ const Community = () => {
 
         {activeTab === 'top-rated' && (
           renderFeed(topRated, topRatedLoading, 'No top-rated outfits yet. Rate some outfits to see them here!')
+        )}
+
+        {activeTab === 'favorites' && (
+          renderFeed(favorites, favoritesLoading, 'No favorites yet. Tap the heart on outfits you love!')
         )}
 
         {activeTab === 'notifications' && (

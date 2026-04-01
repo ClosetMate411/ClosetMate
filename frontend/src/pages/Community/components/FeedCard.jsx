@@ -20,13 +20,25 @@ const formatRelativeTime = (isoString) => {
 };
 
 const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare }) => {
-  const { outfit, shared_by, description, shared_at, ratings, reactions, comment_count } = item;
+  const { outfit, shared_by, description, shared_at, ratings, reactions, comment_count, favorites } = item;
   const rateOutfit = useCommunityStore((s) => s.rateOutfit);
   const reactToOutfit = useCommunityStore((s) => s.reactToOutfit);
+  const toggleFavorite = useCommunityStore((s) => s.toggleFavorite);
 
   const [isRating, setIsRating] = useState(false);
   const [isReacting, setIsReacting] = useState(false);
+  const [isFavoriting, setIsFavoriting] = useState(false);
   const [hoverRating, setHoverRating] = useState(null);
+
+  const handleFavorite = useCallback(async () => {
+    if (isFavoriting) return;
+    setIsFavoriting(true);
+    try {
+      await toggleFavorite(item.id);
+    } finally {
+      setIsFavoriting(false);
+    }
+  }, [item.id, toggleFavorite, isFavoriting]);
 
   // Use backend-resolved items (with image_url), fallback to local wardrobe match
   const resolvedItems = useMemo(() => {
@@ -190,6 +202,17 @@ const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare }) => {
               </span>
             )}
           </div>
+
+          {/* Favorite */}
+          <button
+            className={`feed-favorite-btn${favorites?.user_has_favorited ? ' active' : ''}`}
+            onClick={handleFavorite}
+            disabled={isFavoriting}
+            aria-label={favorites?.user_has_favorited ? 'Remove from favorites' : 'Add to favorites'}
+          >
+            <span>{favorites?.user_has_favorited ? '❤️' : '🤍'}</span>
+            {(favorites?.count || 0) > 0 && <span className="feed-favorite-count">{favorites.count}</span>}
+          </button>
 
           {/* Comments */}
           <button

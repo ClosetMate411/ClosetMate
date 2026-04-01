@@ -18,7 +18,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from sqlalchemy import create_engine, Column, String, Integer, DateTime, ForeignKey, Boolean
+from sqlalchemy import create_engine, Column, String, Integer, DateTime, ForeignKey, Boolean, text as sa_text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
 
@@ -365,11 +365,34 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    error_name = type(exc).__name__
+    if "OperationalError" in error_name or "DisconnectionError" in error_name:
+        logger.error(f"Database connection error: {exc}")
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "error": {"code": "DATABASE_UNAVAILABLE", "message": "Database connection failed. Please try again later."}}
+        )
+    logger.error(f"Unhandled exception: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"success": False, "error": {"code": "INTERNAL_ERROR", "message": "An unexpected error occurred. Please try again later."}}
+    )
+
+
 # ============== HEALTH ==============
 
 @app.get("/health")
-async def health_check():
-    return {"status": "healthy", "service": "wardrobe"}
+async def health_check(db: Session = Depends(get_db)):
+    try:
+        db.execute(sa_text("SELECT 1"))
+        return {"status": "healthy", "service": "wardrobe", "database": "connected"}
+    except Exception as e:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy", "service": "wardrobe", "database": "disconnected", "error": str(e)}
+        )
 
 
 @app.get("/debug/image-service")

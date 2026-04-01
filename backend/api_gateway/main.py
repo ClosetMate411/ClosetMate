@@ -662,6 +662,27 @@ async def mark_notifications_read(authorization: Optional[str] = Header(None)):
         return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
 
 
+@app.get("/api/community/favorites")
+async def get_favorites(
+    page: int = 1,
+    limit: int = 20,
+    authorization: Optional[str] = Header(None),
+):
+    """Get user's favorited community outfits"""
+    if not authorization:
+        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{COMMUNITY_SERVICE_URL}/community/favorites",
+                params={"page": page, "limit": limit},
+                headers={"Authorization": authorization}
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
+
+
 # DELETE comment must come BEFORE /{shared_outfit_id} to avoid path conflict
 @app.delete("/api/community/comments/{comment_id}")
 async def delete_comment(comment_id: str, authorization: Optional[str] = Header(None)):
@@ -688,6 +709,25 @@ async def unshare_outfit(shared_outfit_id: str, authorization: Optional[str] = H
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.delete(
                 f"{COMMUNITY_SERVICE_URL}/community/{shared_outfit_id}",
+                headers={"Authorization": authorization}
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
+
+
+@app.post("/api/community/{shared_outfit_id}/favorite")
+async def toggle_favorite(
+    shared_outfit_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    """Toggle favorite on a shared outfit"""
+    if not authorization:
+        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{COMMUNITY_SERVICE_URL}/community/{shared_outfit_id}/favorite",
                 headers={"Authorization": authorization}
             )
             return JSONResponse(status_code=response.status_code, content=response.json())

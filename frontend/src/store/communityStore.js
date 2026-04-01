@@ -19,6 +19,11 @@ const useCommunityStore = create((set, get) => ({
   notificationsLoading: false,
   unreadCount: 0,
 
+  // Favorites
+  favorites: [],
+  favoritesPagination: { page: 1, limit: 20, total: 0, pages: 0 },
+  favoritesLoading: false,
+
   fetchFeed: async (page = 1) => {
     if (page === 1) {
       set({ loading: true, error: null });
@@ -58,14 +63,35 @@ const useCommunityStore = create((set, get) => ({
     }));
   },
 
-  // Optimistic: update user_rating immediately, server confirms
+  // Optimistic: update user_rating, average, and count immediately
   rateOutfit: async (sharedOutfitId, score) => {
     const { feed } = get();
     const idx = feed.findIndex((item) => item.id === sharedOutfitId);
     if (idx === -1) return;
-    const updated = { ...feed[idx], ratings: { ...feed[idx].ratings, user_rating: score } };
+    const item = feed[idx];
+    const oldRatings = item.ratings;
+    const hadPreviousRating = oldRatings.user_rating != null;
+    const oldCount = oldRatings.count || 0;
+    const oldAvg = oldRatings.average || 0;
+
+    let newCount, newAvg;
+    if (hadPreviousRating) {
+      // Updating existing rating: recalculate average
+      newCount = oldCount;
+      newAvg = oldCount > 0
+        ? Math.round(((oldAvg * oldCount) - oldRatings.user_rating + score) / oldCount * 10) / 10
+        : score;
+    } else {
+      // New rating
+      newCount = oldCount + 1;
+      newAvg = Math.round(((oldAvg * oldCount) + score) / newCount * 10) / 10;
+    }
+
     const newFeed = [...feed];
-    newFeed[idx] = updated;
+    newFeed[idx] = {
+      ...item,
+      ratings: { average: newAvg, count: newCount, user_rating: score }
+    };
     set({ feed: newFeed });
     await apiService.rateOutfit(sharedOutfitId, score);
   },
@@ -154,6 +180,54 @@ const useCommunityStore = create((set, get) => ({
     } catch {
       // silent fail
     }
+  },
+
+  // ── Favorites ──
+  fetchFavorites: async (page = 1) => {
+    set({ favoritesLoading: true });
+    try {
+      const response = await apiService.getFavorites(page);
+      set({
+        favorites: response.data || [],
+        favoritesPagination: response.pagination || { page, limit: 20, total: 0, pages: 0 },
+        favoritesLoading: false,
+      });
+    } catch (error) {
+      set({ favoritesLoading: false });
+      throw error;
+    }
+  },
+
+  toggleFavorite: async (sharedOutfitId) => {
+    const response = await apiService.toggleFavorite(sharedOutfitId);
+    const { action, favorite_count } = response.data;
+    const isFavorited = action === 'added';
+
+    // Update in feed
+    const { feed } = get();
+    const idx = feed.findIndex((item) => item.id === sharedOutfitId);
+    if (idx !== -1) {
+      const newFeed = [...feed];
+      newFeed[idx] = {
+        ...feed[idx],
+        favorites: { count: favorite_count, user_has_favorited: isFavorited },
+      };
+      set({ feed: newFeed });
+    }
+
+    // Update in topRated
+    const { topRated } = get();
+    const trIdx = topRated.findIndex((item) => item.id === sharedOutfitId);
+    if (trIdx !== -1) {
+      const newTr = [...topRated];
+      newTr[trIdx] = {
+        ...topRated[trIdx],
+        favorites: { count: favorite_count, user_has_favorited: isFavorited },
+      };
+      set({ topRated: newTr });
+    }
+
+    return { action, favorite_count };
   },
 }));
 
