@@ -1,5 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
+import useAuthStore from "../../store/authStore";
 import "./Home.css";
 
 const features = [
@@ -41,10 +42,17 @@ const features = [
 
 const Home = () => {
   const navigate = useNavigate();
+  const user = useAuthStore((s) => s.user);
 
   return (
     <main className="home-container">
       <div className="home-hero">
+        {user && (
+          <button className="home-profile-pill" onClick={() => navigate(`/profile/${user.user_id || user.id}`)}>
+            <span className="home-profile-avatar">{(user.full_name || user.name || 'U').charAt(0).toUpperCase()}</span>
+            <span className="home-profile-greeting">Hi, {(user.full_name || user.name || '').split(' ')[0]}</span>
+          </button>
+        )}
         <h1 className="main-header">Welcome to ClosetMate</h1>
         <p className="main-sub-heading">
           Your smart wardrobe companion — simple, effortless clothing management.

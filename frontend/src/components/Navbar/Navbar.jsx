@@ -2,10 +2,12 @@ import React, { memo } from 'react';
 import { Link } from 'react-router-dom';
 import logo from '../../assets/ClosetMate_Logo.svg';
 import { WardrobeIcon } from '../';
+import useAuthStore from '../../store/authStore';
 import './Navbar.css';
 
 const Navbar = () => {
   const [isDrawerOpen, setIsDrawerOpen] = React.useState(false);
+  const user = useAuthStore((s) => s.user);
 
   const toggleDrawer = () => setIsDrawerOpen(!isDrawerOpen);
 
@@ -47,7 +49,20 @@ const Navbar = () => {
           <h2>Menu</h2>
           <button className="close-btn" onClick={toggleDrawer}>&times;</button>
         </div>
-        
+
+        {/* Profile card */}
+        {user && (
+          <Link to={`/profile/${user.user_id || user.id}`} className="drawer-profile-card" onClick={toggleDrawer}>
+            <div className="drawer-profile-avatar">
+              {(user.full_name || user.name || 'U').charAt(0).toUpperCase()}
+            </div>
+            <div className="drawer-profile-info">
+              <span className="drawer-profile-name">{user.full_name || user.name}</span>
+              <span className="drawer-profile-label">View Profile</span>
+            </div>
+          </Link>
+        )}
+
         <div className="drawer-content">
           <Link to="/wardrobe" className="drawer-link" onClick={toggleDrawer}>
             <div className="drawer-icon-cell">

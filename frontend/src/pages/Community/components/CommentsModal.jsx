@@ -114,20 +114,16 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
       setMentionQuery(query);
       setMentionIndex(0);
 
-      // Debounced search
+      // Debounced search — trigger even on empty query (show all users)
       if (mentionTimerRef.current) clearTimeout(mentionTimerRef.current);
-      if (query.length >= 1) {
-        mentionTimerRef.current = setTimeout(async () => {
-          try {
-            const res = await apiService.searchUsers(query);
-            setMentionResults(res.data || []);
-          } catch {
-            setMentionResults([]);
-          }
-        }, 250);
-      } else {
-        setMentionResults([]);
-      }
+      mentionTimerRef.current = setTimeout(async () => {
+        try {
+          const res = await apiService.searchUsers(query || '');
+          setMentionResults(res.data || []);
+        } catch {
+          setMentionResults([]);
+        }
+      }, 150);
     } else {
       setMentionQuery(null);
       setMentionResults([]);

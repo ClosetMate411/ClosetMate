@@ -12,6 +12,45 @@
 
 /* ── Hero ─────────────────────────────────────────────── */
 
+.home-profile-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px 6px 6px;
+  border: 1.5px solid var(--border);
+  border-radius: 50px;
+  background: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+  margin-bottom: 8px;
+  font-family: inherit;
+}
+
+.home-profile-pill:hover {
+  border-color: var(--primary-lighter);
+  background: var(--primary-lightest);
+  transform: translateY(-1px);
+}
+
+.home-profile-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.home-profile-greeting {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
 .home-hero {
   text-align: center;
   display: flex;

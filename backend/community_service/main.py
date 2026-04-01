@@ -305,15 +305,15 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.get("/community/users/search")
 async def search_users(
-    q: str = Query("", min_length=1, max_length=50),
+    q: str = Query("", max_length=50),
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     """Search users by name for @mention autocomplete"""
-    users = db.query(UserRef).filter(
-        UserRef.full_name.ilike(f"%{q}%"),
-        UserRef.id != user_id,  # Exclude self
-    ).limit(5).all()
+    query = db.query(UserRef).filter(UserRef.id != user_id)
+    if q.strip():
+        query = query.filter(UserRef.full_name.ilike(f"%{q}%"))
+    users = query.limit(5).all()
 
     return {
         "success": True,

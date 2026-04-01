@@ -121,6 +121,57 @@ nav {
   color: var(--accent);
 }
 
+/* ── Drawer Profile Card ─────────────────────────────── */
+
+.drawer-profile-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  background: var(--primary-lightest);
+  border: 1px solid var(--primary-lighter);
+  border-radius: 14px;
+  text-decoration: none;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.drawer-profile-card:hover {
+  background: var(--primary-lighter);
+  transform: translateX(-2px);
+}
+
+.drawer-profile-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.drawer-profile-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.drawer-profile-name {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.drawer-profile-label {
+  font-size: 0.72rem;
+  color: var(--primary);
+  font-weight: 600;
+}
+
 .drawer-content {
   display: flex;
   flex-direction: column;
