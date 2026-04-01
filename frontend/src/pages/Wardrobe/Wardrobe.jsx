@@ -60,7 +60,7 @@ const Wardrobe = () => {
   }, [items, selectedItem]);
 
   const isLoading = useMemo(() => 
-    loading || ['processing', 'saving', 'updating', 'deleting'].includes(uploadState),
+    loading || ['processing', 'saving', 'analyzing', 'updating', 'deleting'].includes(uploadState),
     [loading, uploadState]
   );
 
@@ -145,18 +145,20 @@ const Wardrobe = () => {
   const handleConfirmImage = useCallback(async () => {
     if (!uploadedFile) return;
     try {
+      // Phase 1: Save item
       setUploadState('saving');
       const newItemId = await handlers.handleApply(uploadedFile, '', '');
       setUploadedFile(null);
       setProcessedImageUrl(null);
 
-      // Wait for AI analysis to update name & season (spinner stays visible)
+      // Phase 2: AI analysis
       if (newItemId) {
+        setUploadState('analyzing');
         const { pollForAnalysis } = useWardrobeStore.getState();
         await pollForAnalysis(newItemId);
       }
 
-      // Single fetch after everything is done
+      // Phase 3: Done
       await useWardrobeStore.getState().fetchItems();
       setUploadState('idle');
       showSuccess('Item saved and analyzed!');

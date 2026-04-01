@@ -3,13 +3,14 @@ import PropTypes from 'prop-types';
 import { LoadingScreen } from '../../../components';
 
 const LoadingOverlay = ({ uploadState, loading }) => {
-  const isLoading = loading || uploadState === 'processing' || uploadState === 'saving' || uploadState === 'updating' || uploadState === 'deleting';
+  const isLoading = loading || ['processing', 'saving', 'analyzing', 'updating', 'deleting'].includes(uploadState);
 
   if (!isLoading) return null;
 
   const getLoadingMessage = () => {
     if (uploadState === 'processing') return "Removing background...";
-    if (uploadState === 'saving') return "Saving changes...";
+    if (uploadState === 'saving') return "Saving item...";
+    if (uploadState === 'analyzing') return "Analyzing with AI...";
     if (uploadState === 'updating') return "Updating changes...";
     if (uploadState === 'deleting') return "Deleting item...";
     return "Fetching your wardrobe...";

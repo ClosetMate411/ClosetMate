@@ -88,7 +88,7 @@ const useWardrobeStore = create((set, get) => ({
    */
   pollForAnalysis: async (itemId, retries = 2) => {
     for (let i = 0; i < retries; i++) {
-      await new Promise(r => setTimeout(r, 3000));
+      await new Promise(r => setTimeout(r, 2000));
       try {
         const response = await apiService.getItem(itemId);
         const rawItem = response.data || response;

@@ -120,12 +120,12 @@ VALID_CATEGORIES = [
 
 VALID_SUBCATEGORIES = {
     "top": ["t-shirt", "shirt", "blouse", "polo", "tank-top", "sweater",
-            "hoodie", "cardigan", "crop-top", "turtleneck", "henley", "vest"],
+            "hoodie", "crop-top", "turtleneck", "henley"],
     "bottom": ["jeans", "chinos", "trousers", "shorts", "skirt",
                "sweatpants", "cargo-pants", "leggings", "culottes"],
     "outerwear": ["jacket", "blazer", "coat", "parka", "windbreaker",
                   "denim-jacket", "leather-jacket", "bomber", "trench-coat",
-                  "puffer-jacket", "raincoat", "vest"],
+                  "puffer-jacket", "raincoat", "vest", "cardigan"],
     "footwear": ["sneakers", "boots", "loafers", "sandals", "heels",
                  "flats", "oxford", "derby", "mules", "espadrilles"],
     "dress": ["casual-dress", "formal-dress", "maxi-dress", "mini-dress",
