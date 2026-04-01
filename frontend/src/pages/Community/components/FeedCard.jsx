@@ -28,11 +28,18 @@ const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare }) => {
   const [isReacting, setIsReacting] = useState(false);
   const [hoverRating, setHoverRating] = useState(null);
 
-  // Resolve images from current user's wardrobe; show placeholder for other users' items
-  const resolvedItems = useMemo(() =>
-    outfit.item_ids.slice(0, 4).map((id) => wardrobeItems.find((w) => w.id === id) || null),
-    [outfit.item_ids, wardrobeItems]
-  );
+  // Use backend-resolved items (with image_url), fallback to local wardrobe match
+  const resolvedItems = useMemo(() => {
+    if (outfit.items && outfit.items.length > 0) {
+      return outfit.items.slice(0, 4).map((i) => ({
+        id: i.id,
+        name: i.name || 'Unknown',
+        image: i.image_url,
+      }));
+    }
+    // Fallback for old data without resolved items
+    return outfit.item_ids.slice(0, 4).map((id) => wardrobeItems.find((w) => w.id === id) || null);
+  }, [outfit.items, outfit.item_ids, wardrobeItems]);
 
   const handleReact = useCallback(
     async (emojiType) => {

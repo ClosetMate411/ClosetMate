@@ -91,6 +91,17 @@ class OutfitItemRef(Base):
     position = Column(Integer)
 
 
+class ClothingItemRef(Base):
+    """Read-only reference to wardrobe_service's clothing_items table"""
+    __tablename__ = "clothing_items"
+    __table_args__ = {"extend_existing": True}
+
+    id = Column(String, primary_key=True)
+    user_id = Column(String, nullable=False)
+    item_name = Column(String(255))
+    image_url = Column(String)
+
+
 # ── Community models (this service owns these tables) ─────────────────────────
 
 class SharedOutfit(Base):
@@ -418,6 +429,21 @@ async def get_community_feed(
             Comment.shared_outfit_id == shared.id,
         ).count()
 
+        # Resolve item images from clothing_items table
+        item_ids = [oi.item_id for oi in outfit_items]
+        clothing_items = db.query(ClothingItemRef).filter(
+            ClothingItemRef.id.in_(item_ids)
+        ).all() if item_ids else []
+        items_map = {ci.id: ci for ci in clothing_items}
+        resolved_items = [
+            {
+                "id": iid,
+                "name": items_map[iid].item_name if iid in items_map else "Unknown",
+                "image_url": items_map[iid].image_url if iid in items_map else None,
+            }
+            for iid in item_ids
+        ]
+
         feed.append({
             "id": shared.id,
             "outfit": {
@@ -428,7 +454,8 @@ async def get_community_feed(
                 "season": outfit.season,
                 "cohesion_score": outfit.cohesion_score,
                 "reasoning": outfit.reasoning,
-                "item_ids": [oi.item_id for oi in outfit_items],
+                "item_ids": item_ids,
+                "items": resolved_items,
             },
             "shared_by": {
                 "user_id": shared.user_id,
