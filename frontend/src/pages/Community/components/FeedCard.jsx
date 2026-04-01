@@ -1,5 +1,6 @@
 import React, { memo, useState, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
+import { Link } from 'react-router-dom';
 import { IconTrash, IconMessageCircle } from '@tabler/icons-react';
 import useCommunityStore from '../../../store/communityStore';
 import './FeedCard.css';
@@ -90,10 +91,10 @@ const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare }) => {
             {shared_by.name.charAt(0).toUpperCase()}
           </div>
           <div className="feed-card-user-info">
-            <span className="feed-card-username">
+            <Link to={`/profile/${shared_by.user_id}`} className="feed-card-username feed-card-username-link">
               {shared_by.name}
               {shared_by.is_self && <span className="feed-you-badge">You</span>}
-            </span>
+            </Link>
             <span className="feed-card-time">{formatRelativeTime(shared_at)}</span>
           </div>
         </div>

@@ -263,3 +263,65 @@
 .comment-reply-btn:hover {
   opacity: 0.7;
 }
+
+/* ── Mention Autocomplete ────────────────────────────── */
+
+.comment-input-wrapper {
+  position: relative;
+}
+
+.mention-dropdown {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  margin-bottom: 6px;
+  z-index: 10;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.mention-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.85rem;
+  color: var(--text-primary, #1a1a1a);
+  transition: background 0.1s ease;
+  text-align: left;
+}
+
+.mention-option:hover,
+.mention-option.active {
+  background: var(--primary-lightest, #f3f0ff);
+}
+
+.mention-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary, #6c5ce7), var(--accent, #a29bfe));
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.mention-name {
+  font-weight: 600;
+}

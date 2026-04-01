@@ -94,6 +94,16 @@ class OutfitItemRef(Base):
     position = Column(Integer)
 
 
+class UserRef(Base):
+    """Read-only reference to wardrobe_service's users table"""
+    __tablename__ = "users"
+    __table_args__ = {"extend_existing": True}
+
+    id = Column(String, primary_key=True)
+    full_name = Column(String(100))
+    email = Column(String(254))
+
+
 class ClothingItemRef(Base):
     """Read-only reference to wardrobe_service's clothing_items table"""
     __tablename__ = "clothing_items"
@@ -289,6 +299,84 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"success": False, "error": {"code": "INTERNAL_ERROR", "message": "An unexpected error occurred. Please try again later."}}
     )
+
+
+# ============== USER SEARCH ==============
+
+@app.get("/community/users/search")
+async def search_users(
+    q: str = Query("", min_length=1, max_length=50),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Search users by name for @mention autocomplete"""
+    users = db.query(UserRef).filter(
+        UserRef.full_name.ilike(f"%{q}%"),
+        UserRef.id != user_id,  # Exclude self
+    ).limit(5).all()
+
+    return {
+        "success": True,
+        "data": [
+            {"user_id": u.id, "name": u.full_name}
+            for u in users
+        ],
+    }
+
+
+@app.get("/community/users/{profile_user_id}")
+async def get_user_profile(
+    profile_user_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Get a user's community profile"""
+    profile_user = db.query(UserRef).filter(UserRef.id == profile_user_id).first()
+    if not profile_user:
+        return create_error_response("NOT_FOUND", "User not found", 404)
+
+    # Shared outfits by this user
+    shared_outfits = db.query(SharedOutfit).filter(
+        SharedOutfit.user_id == profile_user_id
+    ).order_by(SharedOutfit.shared_at.desc()).all()
+
+    outfits = []
+    for shared in shared_outfits:
+        item = _assemble_feed_item(shared, user_id, db)
+        if item:
+            outfits.append(item)
+
+    # Stats
+    total_shared = len(outfits)
+    total_ratings = 0
+    total_score = 0
+    total_favorites = 0
+    for o in outfits:
+        count = o["ratings"]["count"] or 0
+        avg = o["ratings"]["average"] or 0
+        total_ratings += count
+        total_score += avg * count
+        total_favorites += o["favorites"]["count"]
+
+    avg_rating = round(total_score / total_ratings, 1) if total_ratings > 0 else None
+
+    return {
+        "success": True,
+        "data": {
+            "user": {
+                "user_id": profile_user.id,
+                "name": profile_user.full_name,
+                "is_self": profile_user.id == user_id,
+            },
+            "stats": {
+                "total_shared": total_shared,
+                "total_ratings_received": total_ratings,
+                "average_rating": avg_rating,
+                "total_favorites_received": total_favorites,
+            },
+            "outfits": outfits,
+        },
+    }
 
 
 # ============== HEALTH ==============

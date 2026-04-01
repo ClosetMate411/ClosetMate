@@ -604,6 +604,45 @@ async def get_community_feed(
         return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
 
 
+@app.get("/api/community/users/search")
+async def search_users(
+    q: str = "",
+    authorization: Optional[str] = Header(None),
+):
+    """Search users for @mention"""
+    if not authorization:
+        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{COMMUNITY_SERVICE_URL}/community/users/search",
+                params={"q": q},
+                headers={"Authorization": authorization}
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
+
+
+@app.get("/api/community/users/{profile_user_id}")
+async def get_user_profile(
+    profile_user_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    """Get user community profile"""
+    if not authorization:
+        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{COMMUNITY_SERVICE_URL}/community/users/{profile_user_id}",
+                headers={"Authorization": authorization}
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
+
+
 @app.get("/api/community/top-rated")
 async def get_top_rated(
     page: int = 1,

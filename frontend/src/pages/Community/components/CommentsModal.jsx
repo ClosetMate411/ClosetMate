@@ -23,6 +23,10 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
   const [text, setText] = useState('');
   const [error, setError] = useState(null);
   const [replyingTo, setReplyingTo] = useState(null);
+  const [mentionQuery, setMentionQuery] = useState(null);
+  const [mentionResults, setMentionResults] = useState([]);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const mentionTimerRef = useRef(null);
   const user = useAuthStore((state) => state.user);
   const inputRef = useRef(null);
 
@@ -95,6 +99,53 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
     [feedItem, onCommentDeleted]
   );
 
+  // ── Mention autocomplete ──
+  const handleTextChange = useCallback((e) => {
+    const val = e.target.value;
+    setText(val);
+
+    // Detect @mention trigger
+    const cursorPos = e.target.selectionStart;
+    const textBefore = val.slice(0, cursorPos);
+    const atMatch = textBefore.match(/@([A-Za-zğüşıöçĞÜŞİÖÇ\s]*)$/);
+
+    if (atMatch) {
+      const query = atMatch[1];
+      setMentionQuery(query);
+      setMentionIndex(0);
+
+      // Debounced search
+      if (mentionTimerRef.current) clearTimeout(mentionTimerRef.current);
+      if (query.length >= 1) {
+        mentionTimerRef.current = setTimeout(async () => {
+          try {
+            const res = await apiService.searchUsers(query);
+            setMentionResults(res.data || []);
+          } catch {
+            setMentionResults([]);
+          }
+        }, 250);
+      } else {
+        setMentionResults([]);
+      }
+    } else {
+      setMentionQuery(null);
+      setMentionResults([]);
+    }
+  }, []);
+
+  const insertMention = useCallback((selectedUser) => {
+    const cursorPos = inputRef.current?.selectionStart || text.length;
+    const textBefore = text.slice(0, cursorPos);
+    const textAfter = text.slice(cursorPos);
+    const atPos = textBefore.lastIndexOf('@');
+    const newText = textBefore.slice(0, atPos) + `@${selectedUser.name} ` + textAfter;
+    setText(newText);
+    setMentionQuery(null);
+    setMentionResults([]);
+    inputRef.current?.focus();
+  }, [text]);
+
   const handleReply = useCallback((comment) => {
     const name = comment.user.name;
     setReplyingTo(name);
@@ -108,6 +159,29 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
   }, []);
 
   const handleKeyDown = (e) => {
+    // Mention dropdown navigation
+    if (mentionResults.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionIndex((prev) => Math.min(prev + 1, mentionResults.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionIndex((prev) => Math.max(prev - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        insertMention(mentionResults[mentionIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        setMentionQuery(null);
+        setMentionResults([]);
+        return;
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
@@ -135,27 +209,46 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
         )}
 
         {/* Input */}
-        <form className="comment-form" onSubmit={handleSubmit}>
-          <input
-            ref={inputRef}
-            className="comment-input"
-            placeholder={replyingTo ? `Reply to @${replyingTo}…` : "Write a comment… (Enter to send)"}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            maxLength={1000}
-            disabled={submitting}
-            aria-label="Comment text"
-          />
-          <button
-            className="comment-submit-btn"
-            type="submit"
-            disabled={!text.trim() || submitting}
-            aria-label="Post comment"
-          >
-            <IconSend size={17} />
-          </button>
-        </form>
+        <div className="comment-input-wrapper">
+          <form className="comment-form" onSubmit={handleSubmit}>
+            <input
+              ref={inputRef}
+              className="comment-input"
+              placeholder={replyingTo ? `Reply to @${replyingTo}…` : "Write a comment… Type @ to mention"}
+              value={text}
+              onChange={handleTextChange}
+              onKeyDown={handleKeyDown}
+              maxLength={500}
+              disabled={submitting}
+              aria-label="Comment text"
+            />
+            <button
+              className="comment-submit-btn"
+              type="submit"
+              disabled={!text.trim() || submitting}
+              aria-label="Post comment"
+            >
+              <IconSend size={17} />
+            </button>
+          </form>
+
+          {/* Mention autocomplete dropdown */}
+          {mentionResults.length > 0 && (
+            <div className="mention-dropdown">
+              {mentionResults.map((u, i) => (
+                <button
+                  key={u.user_id}
+                  className={`mention-option${i === mentionIndex ? ' active' : ''}`}
+                  onClick={() => insertMention(u)}
+                  type="button"
+                >
+                  <span className="mention-avatar">{u.name.charAt(0).toUpperCase()}</span>
+                  <span className="mention-name">{u.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* Error */}
         {error && <p className="comments-error">{error}</p>}

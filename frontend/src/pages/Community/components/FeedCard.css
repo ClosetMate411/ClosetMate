@@ -72,6 +72,16 @@
   text-overflow: ellipsis;
 }
 
+.feed-card-username-link {
+  text-decoration: none;
+  color: inherit;
+  transition: color 0.15s ease;
+}
+
+.feed-card-username-link:hover {
+  color: var(--primary, #6c5ce7);
+}
+
 .feed-you-badge {
   font-size: 0.65rem;
   font-weight: 700;

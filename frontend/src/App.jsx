@@ -14,6 +14,7 @@ const Logout = lazy(() => import('./pages/Auth/Logout'));
 const ForgotPassword = lazy(() => import('./pages/Auth/ForgotPassword'));
 const ResetPassword = lazy(() => import('./pages/Auth/ResetPassword'));
 const Community = lazy(() => import('./pages/Community/Community'));
+const UserProfile = lazy(() => import('./pages/Community/UserProfile'));
 
 // Loading fallback component
 const PageLoader = () => (
@@ -92,6 +93,11 @@ function App() {
           <Route path="/community" element={
             <ProtectedRoute>
               <Community />
+            </ProtectedRoute>
+          } />
+          <Route path="/profile/:userId" element={
+            <ProtectedRoute>
+              <UserProfile />
             </ProtectedRoute>
           } />
 

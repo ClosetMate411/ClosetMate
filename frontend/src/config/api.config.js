@@ -50,6 +50,8 @@ export const API_ENDPOINTS = {
   communityNotificationsRead: '/api/community/notifications/read',
   communityFavorites: '/api/community/favorites',
   communityFavorite: (sharedOutfitId) => `/api/community/${sharedOutfitId}/favorite`,
+  communityUserSearch: '/api/community/users/search',
+  communityUserProfile: (userId) => `/api/community/users/${userId}`,
   communityShare: '/api/community/share',
   communityUnshare: (sharedOutfitId) => `/api/community/${sharedOutfitId}`,
   communityRate: (sharedOutfitId) => `/api/community/${sharedOutfitId}/rate`,

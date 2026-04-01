@@ -234,6 +234,14 @@ class APIService {
     return axiosInstance.post(API_ENDPOINTS.communityFavorite(sharedOutfitId));
   }
 
+  async searchUsers(query) {
+    return axiosInstance.get(API_ENDPOINTS.communityUserSearch, { params: { q: query } });
+  }
+
+  async getUserProfile(userId) {
+    return axiosInstance.get(API_ENDPOINTS.communityUserProfile(userId));
+  }
+
   async shareOutfit(data) {
     return axiosInstance.post(API_ENDPOINTS.communityShare, data);
   }
