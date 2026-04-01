@@ -104,7 +104,15 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
     const val = e.target.value;
     setText(val);
 
-    // Detect @mention trigger
+    // Sync replyingTo with text content
+    const firstMention = val.match(/^@([A-Za-zğüşıöçĞÜŞİÖÇ\s]+)/);
+    if (firstMention) {
+      setReplyingTo(firstMention[1].trim());
+    } else {
+      setReplyingTo(null);
+    }
+
+    // Detect @mention trigger at cursor
     const cursorPos = e.target.selectionStart;
     const textBefore = val.slice(0, cursorPos);
     const atMatch = textBefore.match(/@([A-Za-zğüşıöçĞÜŞİÖÇ\s]*)$/);
@@ -114,7 +122,6 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
       setMentionQuery(query);
       setMentionIndex(0);
 
-      // Debounced search — trigger even on empty query (show all users)
       if (mentionTimerRef.current) clearTimeout(mentionTimerRef.current);
       mentionTimerRef.current = setTimeout(async () => {
         try {
@@ -139,6 +146,9 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
     setText(newText);
     setMentionQuery(null);
     setMentionResults([]);
+    // Update replyingTo if this is the first mention
+    const firstMention = newText.match(/^@([A-Za-zğüşıöçĞÜŞİÖÇ\s]+)/);
+    setReplyingTo(firstMention ? firstMention[1].trim() : null);
     inputRef.current?.focus();
   }, [text]);
 
@@ -292,15 +302,18 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
                     )}
                   </div>
                   <p className="comment-text">{comment.text}</p>
-                  {!comment.user.is_self && (
-                    <button
-                      className="comment-reply-btn"
-                      onClick={() => handleReply(comment)}
-                    >
-                      Reply
-                    </button>
-                  )}
-                </div>
+                  <div className="comment-actions">
+                    {comment.user.is_self && (
+                      <button className="comment-action-btn comment-action-delete" onClick={() => handleDelete(comment.id)}>
+                        Delete
+                      </button>
+                    )}
+                    {!comment.user.is_self && (
+                      <button className="comment-reply-btn" onClick={() => handleReply(comment)}>
+                        Reply
+                      </button>
+                    )}
+                  </div>
               </div>
             ))}
         </div>
