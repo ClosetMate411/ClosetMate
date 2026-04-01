@@ -7,6 +7,12 @@
   flex-direction: column;
   gap: 12px;
   padding-top: 4px;
+  overflow: visible;
+}
+
+.comment-input-wrapper {
+  position: relative;
+  z-index: 10;
 }
 
 /* ── Input Form ──────────────────────────────────────── */
@@ -272,7 +278,7 @@
 
 .mention-dropdown {
   position: absolute;
-  bottom: 100%;
+  top: 100%;
   left: 0;
   right: 0;
   background: #fff;
@@ -280,8 +286,8 @@
   border-radius: 12px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   padding: 4px;
-  margin-bottom: 6px;
-  z-index: 10;
+  margin-top: 6px;
+  z-index: 100;
   max-height: 200px;
   overflow-y: auto;
 }

@@ -12,40 +12,12 @@
 
 /* ── Hero ─────────────────────────────────────────────── */
 
-.home-greeting-section {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  cursor: pointer;
-  transition: transform 0.15s ease;
-}
-
-.home-greeting-section:hover {
-  transform: translateY(-2px);
-}
-
-.home-greeting-section:hover .home-avatar-large {
-  box-shadow: 0 6px 20px rgba(108, 92, 231, 0.4);
-}
-
-.home-greeting-section .main-header {
-  margin: 0;
-}
-
-.home-avatar-large {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--primary), var(--accent));
-  color: #fff;
-  font-size: 1.5rem;
+.feature-icon-profile {
+  background: linear-gradient(135deg, var(--primary), var(--accent)) !important;
+  color: #fff !important;
+  font-size: 1.1rem;
   font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  box-shadow: 0 4px 14px rgba(108, 92, 231, 0.3);
-  transition: box-shadow 0.15s ease;
+  border-radius: 50% !important;
 }
 
 .home-hero {
