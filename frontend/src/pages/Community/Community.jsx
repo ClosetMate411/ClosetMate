@@ -6,9 +6,16 @@ import useWardrobeStore from '../../store/wardrobeStore';
 import { LoadingScreen, Toast, ConfirmModal } from '../../components';
 import { useToast, useModal } from '../../hooks';
 import FeedCard from './components/FeedCard';
+import NotificationList from './components/NotificationList';
 import CommentsModal from './components/CommentsModal';
 import ShareOutfitModal from './components/ShareOutfitModal';
 import './Community.css';
+
+const TABS = [
+  { key: 'feed', label: 'Feed' },
+  { key: 'top-rated', label: 'Top Rated', icon: '⭐' },
+  { key: 'notifications', label: 'Notifications', icon: '🔔' },
+];
 
 const Community = () => {
   const {
@@ -21,6 +28,16 @@ const Community = () => {
     unshareOutfit,
     incrementCommentCount,
     decrementCommentCount,
+    topRated,
+    topRatedPagination,
+    topRatedLoading,
+    fetchTopRated,
+    notifications,
+    notificationsPagination,
+    notificationsLoading,
+    unreadCount,
+    fetchNotifications,
+    markAllRead,
   } = useCommunityStore();
 
   const { outfits, fetchOutfits } = useOutfitStore();
@@ -28,6 +45,7 @@ const Community = () => {
   const { toast, showSuccess, showError } = useToast();
   const modal = useModal();
 
+  const [activeTab, setActiveTab] = useState('feed');
   const [selectedFeedItem, setSelectedFeedItem] = useState(null);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -36,8 +54,20 @@ const Community = () => {
     fetchFeed(1);
     fetchOutfits();
     fetchItems();
+    fetchNotifications(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Fetch top-rated when tab is first opened
+  useEffect(() => {
+    if (activeTab === 'top-rated' && topRated.length === 0 && !topRatedLoading) {
+      fetchTopRated(1);
+    }
+    if (activeTab === 'notifications') {
+      fetchNotifications(1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   // ── Comments ─────────────────────────────────────────
   const handleOpenComments = useCallback((item) => {
@@ -47,7 +77,6 @@ const Community = () => {
 
   const handleCloseComments = useCallback(() => {
     setCommentsOpen(false);
-    // Small delay so the modal closes gracefully before clearing item
     setTimeout(() => setSelectedFeedItem(null), 300);
   }, []);
 
@@ -96,6 +125,44 @@ const Community = () => {
 
   const hasMore = pagination.page < pagination.pages;
 
+  // ── Mark notifications read ───────────────────────────
+  const handleMarkRead = useCallback(() => {
+    markAllRead();
+  }, [markAllRead]);
+
+  // ── Render feed content ───────────────────────────────
+  const renderFeed = (items, isLoading, emptyMsg) => {
+    if (isLoading && items.length === 0) return <LoadingScreen />;
+    if (items.length === 0) {
+      return (
+        <div className="community-empty">
+          <div className="community-empty-icon" aria-hidden="true">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+          </div>
+          <h3 className="community-empty-title">{emptyMsg}</h3>
+        </div>
+      );
+    }
+    return (
+      <div className="community-feed-grid">
+        {items.map((item) => (
+          <FeedCard
+            key={item.id}
+            item={item}
+            wardrobeItems={wardrobeItems}
+            onCommentClick={handleOpenComments}
+            onUnshare={handleUnshareClick}
+          />
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="community-page-wrapper">
       <Container size="xl" py="xl">
@@ -114,39 +181,27 @@ const Community = () => {
           </button>
         </div>
 
-        {/* ── Feed ─────────────────────────────────────── */}
-        {loading && feed.length === 0 ? (
-          <LoadingScreen />
-        ) : feed.length === 0 ? (
-          <div className="community-empty">
-            <div className="community-empty-icon" aria-hidden="true">
-              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
-            </div>
-            <h3 className="community-empty-title">Nothing shared yet</h3>
-            <p className="community-empty-text">Be the first to share an outfit with the community!</p>
-            <button className="community-share-btn" onClick={() => setShareOpen(true)}>
-              Share Your First Outfit
+        {/* ── Tab Bar ──────────────────────────────────── */}
+        <div className="community-tabs">
+          {TABS.map((tab) => (
+            <button
+              key={tab.key}
+              className={`community-tab${activeTab === tab.key ? ' active' : ''}`}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              {tab.icon && <span className="tab-icon">{tab.icon}</span>}
+              {tab.label}
+              {tab.key === 'notifications' && unreadCount > 0 && (
+                <span className="tab-badge">{unreadCount}</span>
+              )}
             </button>
-          </div>
-        ) : (
-          <>
-            <div className="community-feed-grid">
-              {feed.map((item) => (
-                <FeedCard
-                  key={item.id}
-                  item={item}
-                  wardrobeItems={wardrobeItems}
-                  onCommentClick={handleOpenComments}
-                  onUnshare={handleUnshareClick}
-                />
-              ))}
-            </div>
+          ))}
+        </div>
 
+        {/* ── Tab Content ──────────────────────────────── */}
+        {activeTab === 'feed' && (
+          <>
+            {renderFeed(feed, loading, 'Nothing shared yet')}
             {hasMore && (
               <div className="community-load-more">
                 <button
@@ -154,15 +209,24 @@ const Community = () => {
                   onClick={handleLoadMore}
                   disabled={loadingMore}
                 >
-                  {loadingMore ? (
-                    <span className="load-more-spinner" />
-                  ) : (
-                    'Load More'
-                  )}
+                  {loadingMore ? <span className="load-more-spinner" /> : 'Load More'}
                 </button>
               </div>
             )}
           </>
+        )}
+
+        {activeTab === 'top-rated' && (
+          renderFeed(topRated, topRatedLoading, 'No top-rated outfits yet. Rate some outfits to see them here!')
+        )}
+
+        {activeTab === 'notifications' && (
+          <NotificationList
+            notifications={notifications}
+            loading={notificationsLoading}
+            onMarkRead={handleMarkRead}
+            unreadCount={unreadCount}
+          />
         )}
       </Container>
 

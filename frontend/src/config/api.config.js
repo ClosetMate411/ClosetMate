@@ -45,6 +45,9 @@ export const API_ENDPOINTS = {
 
   // Community
   communityFeed: '/api/community/feed',
+  communityTopRated: '/api/community/top-rated',
+  communityNotifications: '/api/community/notifications',
+  communityNotificationsRead: '/api/community/notifications/read',
   communityShare: '/api/community/share',
   communityUnshare: (sharedOutfitId) => `/api/community/${sharedOutfitId}`,
   communityRate: (sharedOutfitId) => `/api/community/${sharedOutfitId}/rate`,

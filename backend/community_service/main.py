@@ -6,6 +6,9 @@ Endpoints:
   POST   /community/share                        - Share an outfit
   DELETE /community/{shared_outfit_id}            - Unshare an outfit
   GET    /community/feed                          - Community feed
+  GET    /community/top-rated                     - Top rated outfits
+  GET    /community/notifications                 - User notifications
+  PUT    /community/notifications/read            - Mark notifications as read
   POST   /community/{shared_outfit_id}/rate       - Rate a shared outfit
   POST   /community/{shared_outfit_id}/react      - React with emoji
   GET    /community/{shared_outfit_id}/comments   - Get comments
@@ -27,7 +30,7 @@ from pydantic import BaseModel, Field, validator
 
 from sqlalchemy import (
     create_engine, Column, String, Integer, Text, DateTime,
-    Boolean, Float, UniqueConstraint, text as sa_text,
+    Boolean, Float, UniqueConstraint, text as sa_text, func,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -159,11 +162,25 @@ class Comment(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    recipient_user_id = Column(String, nullable=False, index=True)
+    actor_user_id = Column(String, nullable=False)
+    shared_outfit_id = Column(String, nullable=False)
+    type = Column(String(20), nullable=False)  # "rating", "reaction", "comment"
+    detail = Column(String(50), nullable=True)  # score or emoji_type
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 # Only create community tables — never touch outfit tables
 SharedOutfit.__table__.create(bind=engine, checkfirst=True)
 Rating.__table__.create(bind=engine, checkfirst=True)
 Reaction.__table__.create(bind=engine, checkfirst=True)
 Comment.__table__.create(bind=engine, checkfirst=True)
+Notification.__table__.create(bind=engine, checkfirst=True)
 
 
 # ============== CONSTANTS ==============
@@ -345,6 +362,105 @@ async def unshare_outfit(
     return {"success": True, "message": "Outfit unshared successfully"}
 
 
+# ── Helper: assemble a feed item from a SharedOutfit row ─────────────────────
+
+def _assemble_feed_item(shared: SharedOutfit, user_id: str, db: Session) -> dict | None:
+    """Build a single feed-item dict. Returns None if the outfit no longer exists."""
+    outfit = db.query(OutfitRef).filter(OutfitRef.id == shared.outfit_id).first()
+    if not outfit:
+        return None
+
+    outfit_items = (
+        db.query(OutfitItemRef)
+        .filter(OutfitItemRef.outfit_id == shared.outfit_id)
+        .order_by(OutfitItemRef.position)
+        .all()
+    )
+
+    result = db.execute(
+        sa_text("SELECT full_name FROM users WHERE id = :uid"),
+        {"uid": shared.user_id},
+    ).fetchone()
+    user_name = result[0] if result else "Unknown"
+
+    avg_rating = db.query(func.avg(Rating.score)).filter(
+        Rating.shared_outfit_id == shared.id,
+    ).scalar()
+    rating_count = db.query(Rating).filter(
+        Rating.shared_outfit_id == shared.id,
+    ).count()
+
+    user_rating = db.query(Rating).filter(
+        Rating.shared_outfit_id == shared.id,
+        Rating.user_id == user_id,
+    ).first()
+
+    reactions = (
+        db.query(Reaction.emoji_type, func.count(Reaction.id))
+        .filter(Reaction.shared_outfit_id == shared.id)
+        .group_by(Reaction.emoji_type)
+        .all()
+    )
+    reaction_counts = {emoji: count for emoji, count in reactions}
+
+    user_reactions = (
+        db.query(Reaction.emoji_type)
+        .filter(Reaction.shared_outfit_id == shared.id, Reaction.user_id == user_id)
+        .all()
+    )
+    user_reaction_types = [r[0] for r in user_reactions]
+
+    comment_count = db.query(Comment).filter(
+        Comment.shared_outfit_id == shared.id,
+    ).count()
+
+    item_ids = [oi.item_id for oi in outfit_items]
+    clothing_items = db.query(ClothingItemRef).filter(
+        ClothingItemRef.id.in_(item_ids)
+    ).all() if item_ids else []
+    items_map = {ci.id: ci for ci in clothing_items}
+    resolved_items = [
+        {
+            "id": iid,
+            "name": items_map[iid].item_name if iid in items_map else "Unknown",
+            "image_url": items_map[iid].image_url if iid in items_map else None,
+        }
+        for iid in item_ids
+    ]
+
+    return {
+        "id": shared.id,
+        "outfit": {
+            "id": outfit.id,
+            "name": outfit.name,
+            "style": outfit.style,
+            "occasion": outfit.occasion,
+            "season": outfit.season,
+            "cohesion_score": outfit.cohesion_score,
+            "reasoning": outfit.reasoning,
+            "item_ids": item_ids,
+            "items": resolved_items,
+        },
+        "shared_by": {
+            "user_id": shared.user_id,
+            "name": user_name,
+            "is_self": shared.user_id == user_id,
+        },
+        "description": shared.description,
+        "shared_at": shared.shared_at.isoformat() + "Z" if shared.shared_at else None,
+        "ratings": {
+            "average": round(float(avg_rating), 1) if avg_rating else None,
+            "count": rating_count,
+            "user_rating": user_rating.score if user_rating else None,
+        },
+        "reactions": {
+            "counts": reaction_counts,
+            "user_reactions": user_reaction_types,
+        },
+        "comment_count": comment_count,
+    }
+
+
 # ── 3. Community feed ────────────────────────────────────────────────────────
 
 @app.get("/community/feed")
@@ -368,113 +484,9 @@ async def get_community_feed(
 
     feed = []
     for shared in shared_outfits:
-        # Get outfit details
-        outfit = db.query(OutfitRef).filter(OutfitRef.id == shared.outfit_id).first()
-        if not outfit:
-            continue
-
-        # Get outfit item IDs
-        outfit_items = (
-            db.query(OutfitItemRef)
-            .filter(OutfitItemRef.outfit_id == shared.outfit_id)
-            .order_by(OutfitItemRef.position)
-            .all()
-        )
-
-        # Get user's display name
-        # TODO: Replace raw SQL with internal API call to wardrobe_service /users/{id} endpoint
-        result = db.execute(
-            sa_text("SELECT full_name FROM users WHERE id = :uid"),
-            {"uid": shared.user_id},
-        ).fetchone()
-        user_name = result[0] if result else "Unknown"
-
-        # Aggregate ratings
-        from sqlalchemy import func
-        avg_rating = db.query(func.avg(Rating.score)).filter(
-            Rating.shared_outfit_id == shared.id,
-        ).scalar()
-        rating_count = db.query(Rating).filter(
-            Rating.shared_outfit_id == shared.id,
-        ).count()
-
-        # Get user's own rating
-        user_rating = db.query(Rating).filter(
-            Rating.shared_outfit_id == shared.id,
-            Rating.user_id == user_id,
-        ).first()
-
-        # Aggregate reactions
-        reactions = (
-            db.query(Reaction.emoji_type, func.count(Reaction.id))
-            .filter(Reaction.shared_outfit_id == shared.id)
-            .group_by(Reaction.emoji_type)
-            .all()
-        )
-        reaction_counts = {emoji: count for emoji, count in reactions}
-
-        # User's own reactions
-        user_reactions = (
-            db.query(Reaction.emoji_type)
-            .filter(
-                Reaction.shared_outfit_id == shared.id,
-                Reaction.user_id == user_id,
-            )
-            .all()
-        )
-        user_reaction_types = [r[0] for r in user_reactions]
-
-        # Comment count
-        comment_count = db.query(Comment).filter(
-            Comment.shared_outfit_id == shared.id,
-        ).count()
-
-        # Resolve item images from clothing_items table
-        item_ids = [oi.item_id for oi in outfit_items]
-        clothing_items = db.query(ClothingItemRef).filter(
-            ClothingItemRef.id.in_(item_ids)
-        ).all() if item_ids else []
-        items_map = {ci.id: ci for ci in clothing_items}
-        resolved_items = [
-            {
-                "id": iid,
-                "name": items_map[iid].item_name if iid in items_map else "Unknown",
-                "image_url": items_map[iid].image_url if iid in items_map else None,
-            }
-            for iid in item_ids
-        ]
-
-        feed.append({
-            "id": shared.id,
-            "outfit": {
-                "id": outfit.id,
-                "name": outfit.name,
-                "style": outfit.style,
-                "occasion": outfit.occasion,
-                "season": outfit.season,
-                "cohesion_score": outfit.cohesion_score,
-                "reasoning": outfit.reasoning,
-                "item_ids": item_ids,
-                "items": resolved_items,
-            },
-            "shared_by": {
-                "user_id": shared.user_id,
-                "name": user_name,
-                "is_self": shared.user_id == user_id,
-            },
-            "description": shared.description,
-            "shared_at": shared.shared_at.isoformat() + "Z" if shared.shared_at else None,
-            "ratings": {
-                "average": round(float(avg_rating), 1) if avg_rating else None,
-                "count": rating_count,
-                "user_rating": user_rating.score if user_rating else None,
-            },
-            "reactions": {
-                "counts": reaction_counts,
-                "user_reactions": user_reaction_types,
-            },
-            "comment_count": comment_count,
-        })
+        item = _assemble_feed_item(shared, user_id, db)
+        if item:
+            feed.append(item)
 
     return {
         "success": True,
@@ -486,6 +498,143 @@ async def get_community_feed(
             "pages": (total + limit - 1) // limit if total > 0 else 0,
         },
     }
+
+
+# ── 3b. Top Rated ────────────────────────────────────────────────────────────
+
+@app.get("/community/top-rated")
+async def get_top_rated(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=50),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Get top-rated shared outfits (avg rating >= 4.0, at least 1 rating)"""
+    offset = (page - 1) * limit
+
+    # Subquery: shared_outfit_ids with avg >= 4.0 and at least 1 rating
+    top_ids_q = (
+        db.query(
+            Rating.shared_outfit_id,
+            func.avg(Rating.score).label("avg_score"),
+        )
+        .group_by(Rating.shared_outfit_id)
+        .having(func.avg(Rating.score) >= 4.0)
+        .having(func.count(Rating.id) >= 1)
+        .subquery()
+    )
+
+    total = db.query(func.count()).select_from(top_ids_q).scalar()
+
+    top_rows = (
+        db.query(SharedOutfit, top_ids_q.c.avg_score)
+        .join(top_ids_q, SharedOutfit.id == top_ids_q.c.shared_outfit_id)
+        .order_by(top_ids_q.c.avg_score.desc(), SharedOutfit.shared_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    feed = []
+    for shared, _ in top_rows:
+        item = _assemble_feed_item(shared, user_id, db)
+        if item:
+            feed.append(item)
+
+    return {
+        "success": True,
+        "data": feed,
+        "pagination": {
+            "page": page,
+            "limit": limit,
+            "total": total or 0,
+            "pages": ((total or 0) + limit - 1) // limit if total else 0,
+        },
+    }
+
+
+# ── 3c. Notifications ────────────────────────────────────────────────────────
+
+@app.get("/community/notifications")
+async def get_notifications(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=50),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Get notifications for the current user"""
+    offset = (page - 1) * limit
+
+    total = db.query(Notification).filter(
+        Notification.recipient_user_id == user_id,
+    ).count()
+
+    unread_count = db.query(Notification).filter(
+        Notification.recipient_user_id == user_id,
+        Notification.is_read == False,
+    ).count()
+
+    notifications = (
+        db.query(Notification)
+        .filter(Notification.recipient_user_id == user_id)
+        .order_by(Notification.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    items = []
+    for n in notifications:
+        # Resolve actor name
+        actor_row = db.execute(
+            sa_text("SELECT full_name FROM users WHERE id = :uid"),
+            {"uid": n.actor_user_id},
+        ).fetchone()
+        actor_name = actor_row[0] if actor_row else "Someone"
+
+        # Resolve outfit name
+        shared = db.query(SharedOutfit).filter(SharedOutfit.id == n.shared_outfit_id).first()
+        outfit_name = None
+        if shared:
+            outfit_ref = db.query(OutfitRef).filter(OutfitRef.id == shared.outfit_id).first()
+            outfit_name = outfit_ref.name if outfit_ref else None
+
+        items.append({
+            "id": n.id,
+            "type": n.type,
+            "detail": n.detail,
+            "is_read": n.is_read,
+            "created_at": n.created_at.isoformat() + "Z" if n.created_at else None,
+            "actor": {"user_id": n.actor_user_id, "name": actor_name},
+            "shared_outfit_id": n.shared_outfit_id,
+            "outfit_name": outfit_name,
+        })
+
+    return {
+        "success": True,
+        "data": items,
+        "unread_count": unread_count,
+        "pagination": {
+            "page": page,
+            "limit": limit,
+            "total": total,
+            "pages": (total + limit - 1) // limit if total > 0 else 0,
+        },
+    }
+
+
+@app.put("/community/notifications/read")
+async def mark_notifications_read(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Mark all notifications as read"""
+    db.query(Notification).filter(
+        Notification.recipient_user_id == user_id,
+        Notification.is_read == False,
+    ).update({"is_read": True})
+    db.commit()
+    return {"success": True, "message": "All notifications marked as read"}
 
 
 # ── 4. Rate a shared outfit ──────────────────────────────────────────────────
@@ -522,6 +671,17 @@ async def rate_outfit(
         db.add(rating)
 
     db.commit()
+
+    # Create notification (skip self-notifications)
+    if shared.user_id != user_id:
+        db.add(Notification(
+            recipient_user_id=shared.user_id,
+            actor_user_id=user_id,
+            shared_outfit_id=shared_outfit_id,
+            type="rating",
+            detail=str(body.score),
+        ))
+        db.commit()
 
     logger.info(f"User {user_id} rated shared outfit {shared_outfit_id}: {body.score}/5")
     return {"success": True, "data": {"score": body.score}}
@@ -569,6 +729,17 @@ async def react_to_outfit(
     )
     db.add(reaction)
     db.commit()
+
+    # Create notification for reaction (skip self)
+    if shared.user_id != user_id:
+        db.add(Notification(
+            recipient_user_id=shared.user_id,
+            actor_user_id=user_id,
+            shared_outfit_id=shared_outfit_id,
+            type="reaction",
+            detail=body.emoji_type,
+        ))
+        db.commit()
 
     return {"success": True, "data": {"action": "added", "emoji_type": body.emoji_type}}
 
@@ -654,6 +825,17 @@ async def add_comment(
     db.add(comment)
     db.commit()
     db.refresh(comment)
+
+    # Create notification for comment (skip self)
+    if shared.user_id != user_id:
+        db.add(Notification(
+            recipient_user_id=shared.user_id,
+            actor_user_id=user_id,
+            shared_outfit_id=shared_outfit_id,
+            type="comment",
+            detail=body.text[:50],
+        ))
+        db.commit()
 
     logger.info(f"User {user_id} commented on shared outfit {shared_outfit_id}")
     return {

@@ -604,6 +604,64 @@ async def get_community_feed(
         return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
 
 
+@app.get("/api/community/top-rated")
+async def get_top_rated(
+    page: int = 1,
+    limit: int = 20,
+    authorization: Optional[str] = Header(None),
+):
+    """Get top-rated shared outfits"""
+    if not authorization:
+        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{COMMUNITY_SERVICE_URL}/community/top-rated",
+                params={"page": page, "limit": limit},
+                headers={"Authorization": authorization}
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
+
+
+@app.get("/api/community/notifications")
+async def get_notifications(
+    page: int = 1,
+    limit: int = 20,
+    authorization: Optional[str] = Header(None),
+):
+    """Get user notifications"""
+    if not authorization:
+        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{COMMUNITY_SERVICE_URL}/community/notifications",
+                params={"page": page, "limit": limit},
+                headers={"Authorization": authorization}
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
+
+
+@app.put("/api/community/notifications/read")
+async def mark_notifications_read(authorization: Optional[str] = Header(None)):
+    """Mark all notifications as read"""
+    if not authorization:
+        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.put(
+                f"{COMMUNITY_SERVICE_URL}/community/notifications/read",
+                headers={"Authorization": authorization}
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
+
+
 # DELETE comment must come BEFORE /{shared_outfit_id} to avoid path conflict
 @app.delete("/api/community/comments/{comment_id}")
 async def delete_comment(comment_id: str, authorization: Optional[str] = Header(None)):

@@ -64,6 +64,78 @@
   transform: translateY(0);
 }
 
+/* ── Tab Bar ─────────────────────────────────────────── */
+
+.community-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 24px;
+  padding: 4px;
+  background: var(--bg-light);
+  border-radius: 14px;
+  border: 1px solid var(--border);
+}
+
+.community-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  font-family: inherit;
+  white-space: nowrap;
+  position: relative;
+}
+
+.community-tab:hover {
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--text-primary);
+}
+
+.community-tab.active {
+  background: #fff;
+  color: var(--primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.tab-icon {
+  font-size: 0.9rem;
+}
+
+.tab-badge {
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  line-height: 1;
+}
+
+@media (max-width: 600px) {
+  .community-tabs {
+    gap: 4px;
+  }
+  .community-tab {
+    font-size: 0.8rem;
+    padding: 8px 10px;
+  }
+}
+
 /* ── Feed Grid ───────────────────────────────────────── */
 
 .community-feed-grid {

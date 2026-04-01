@@ -204,6 +204,18 @@ class APIService {
     return axiosInstance.get(API_ENDPOINTS.communityFeed, { params: { page, limit } });
   }
 
+  async getTopRated(page = 1, limit = 20) {
+    return axiosInstance.get(API_ENDPOINTS.communityTopRated, { params: { page, limit } });
+  }
+
+  async getNotifications(page = 1, limit = 20) {
+    return axiosInstance.get(API_ENDPOINTS.communityNotifications, { params: { page, limit } });
+  }
+
+  async markNotificationsRead() {
+    return axiosInstance.put(API_ENDPOINTS.communityNotificationsRead);
+  }
+
   async shareOutfit(data) {
     return axiosInstance.post(API_ENDPOINTS.communityShare, data);
   }

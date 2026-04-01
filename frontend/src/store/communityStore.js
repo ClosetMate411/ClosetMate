@@ -8,6 +8,17 @@ const useCommunityStore = create((set, get) => ({
   loadingMore: false,
   error: null,
 
+  // Top Rated
+  topRated: [],
+  topRatedPagination: { page: 1, limit: 20, total: 0, pages: 0 },
+  topRatedLoading: false,
+
+  // Notifications
+  notifications: [],
+  notificationsPagination: { page: 1, limit: 20, total: 0, pages: 0 },
+  notificationsLoading: false,
+  unreadCount: 0,
+
   fetchFeed: async (page = 1) => {
     if (page === 1) {
       set({ loading: true, error: null });
@@ -98,6 +109,51 @@ const useCommunityStore = create((set, get) => ({
     const newFeed = [...feed];
     newFeed[idx] = { ...feed[idx], comment_count: Math.max(0, feed[idx].comment_count - 1) };
     set({ feed: newFeed });
+  },
+
+  // ── Top Rated ──
+  fetchTopRated: async (page = 1) => {
+    set({ topRatedLoading: true });
+    try {
+      const response = await apiService.getTopRated(page);
+      set({
+        topRated: response.data || [],
+        topRatedPagination: response.pagination || { page, limit: 20, total: 0, pages: 0 },
+        topRatedLoading: false,
+      });
+    } catch (error) {
+      set({ topRatedLoading: false });
+      throw error;
+    }
+  },
+
+  // ── Notifications ──
+  fetchNotifications: async (page = 1) => {
+    set({ notificationsLoading: true });
+    try {
+      const response = await apiService.getNotifications(page);
+      set({
+        notifications: response.data || [],
+        unreadCount: response.unread_count || 0,
+        notificationsPagination: response.pagination || { page, limit: 20, total: 0, pages: 0 },
+        notificationsLoading: false,
+      });
+    } catch (error) {
+      set({ notificationsLoading: false });
+      throw error;
+    }
+  },
+
+  markAllRead: async () => {
+    try {
+      await apiService.markNotificationsRead();
+      set((state) => ({
+        unreadCount: 0,
+        notifications: state.notifications.map((n) => ({ ...n, is_read: true })),
+      }));
+    } catch {
+      // silent fail
+    }
   },
 }));
 
