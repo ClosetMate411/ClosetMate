@@ -180,6 +180,7 @@ VALID_OCCASIONS = [
 ]
 
 VALID_WEATHER = ["hot", "warm", "mild", "cool", "cold", "all-weather"]
+VALID_SEASONS = ["Spring", "Summer", "Fall", "Winter"]
 
 
 # ============== ANALYSIS PROMPT ==============
@@ -204,6 +205,7 @@ REQUIRED JSON SCHEMA:
   "fit": one of """ + json.dumps(VALID_FIT) + """,
   "formality_level": integer 1-5 (1=very casual, 5=very formal),
   "weather_suitability": list of one or more from """ + json.dumps(VALID_WEATHER) + """,
+  "seasons": list of one or more from """ + json.dumps(VALID_SEASONS) + """ (which seasons is this item suitable for, based on fabric weight, material, and coverage),
   "suitable_occasions": list of one or more from """ + json.dumps(VALID_OCCASIONS) + """,
   "name": "Short display name combining color + material + subcategory (e.g. 'Black Cotton T-Shirt'), max 40 chars",
   "description": a brief 1-2 sentence factual description of the item (max 150 chars)
@@ -219,6 +221,7 @@ FALLBACK VALUES (use when unsure):
 - fit: "regular"
 - formality_level: 2
 - weather_suitability: ["mild"]
+- seasons: ["Spring", "Fall"]
 - suitable_occasions: ["everyday"]
 
 Respond with ONLY the JSON object. No other text."""
@@ -650,6 +653,13 @@ class GeminiClothingAnalyzer:
             validated["weather_suitability"] = [w for w in weather if w in VALID_WEATHER] or ["mild"]
         else:
             validated["weather_suitability"] = ["mild"]
+
+        # Seasons
+        seasons = data.get("seasons", ["Spring", "Fall"])
+        if isinstance(seasons, list):
+            validated["seasons"] = [s for s in seasons if s in VALID_SEASONS] or ["Spring", "Fall"]
+        else:
+            validated["seasons"] = ["Spring", "Fall"]
 
         # Suitable occasions
         occasions = data.get("suitable_occasions", ["everyday"])

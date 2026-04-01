@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 
 from sqlalchemy import (
     create_engine, Column, String, Integer, Text, DateTime,
-    Boolean, ForeignKey, JSON as SQLAlchemyJSON
+    Boolean, ForeignKey, JSON as SQLAlchemyJSON, text as sa_text,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
@@ -127,6 +127,7 @@ class ClothingAttribute(Base):
 
     # JSON arrays stored as text
     weather_suitability = Column(SQLAlchemyJSON, default=list)  # ["mild", "cool"]
+    seasons = Column(SQLAlchemyJSON, default=list)              # ["Spring", "Fall"]
     suitable_occasions = Column(SQLAlchemyJSON, default=list)   # ["everyday", "work"]
 
     # AI-generated description
@@ -151,6 +152,7 @@ class ClothingAttribute(Base):
             "fit": self.fit,
             "formality_level": self.formality_level,
             "weather_suitability": self.weather_suitability or [],
+            "seasons": self.seasons or [],
             "suitable_occasions": self.suitable_occasions or [],
             "description": self.description,
             "analyzed_at": self.analyzed_at.isoformat() + "Z" if self.analyzed_at else None,
@@ -212,6 +214,15 @@ class OutfitItem(Base):
 
 # Create tables
 Base.metadata.create_all(bind=engine)
+
+# Auto-migrate: add seasons column if missing
+with engine.connect() as conn:
+    try:
+        conn.execute(sa_text("ALTER TABLE clothing_attributes ADD COLUMN seasons JSON DEFAULT '[]'"))
+        conn.commit()
+        logger.info("Migration: added seasons column to clothing_attributes")
+    except Exception:
+        conn.rollback()
 
 
 # ============== DEPENDENCIES ==============
@@ -373,6 +384,7 @@ async def analyze_clothing_item(
         fit=attributes["fit"],
         formality_level=attributes["formality_level"],
         weather_suitability=attributes["weather_suitability"],
+        seasons=attributes.get("seasons", ["Spring", "Fall"]),
         suitable_occasions=attributes["suitable_occasions"],
         description=attributes["description"],
     )
@@ -447,6 +459,7 @@ async def reanalyze_clothing_item(
         fit=attributes["fit"],
         formality_level=attributes["formality_level"],
         weather_suitability=attributes["weather_suitability"],
+        seasons=attributes.get("seasons", ["Spring", "Fall"]),
         suitable_occasions=attributes["suitable_occasions"],
         description=attributes["description"],
     )

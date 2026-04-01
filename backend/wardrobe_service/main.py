@@ -265,22 +265,13 @@ async def call_email_service(endpoint: str, payload: dict) -> dict:
 
 # ============== OUTFIT SERVICE INTEGRATION ==============
 
-def _weather_to_season(weather_list: list) -> str:
-    """Map weather_suitability list to a season string"""
-    if not weather_list:
+def _seasons_to_display(seasons_list: list) -> str:
+    """Convert seasons array to display string for wardrobe item"""
+    if not seasons_list:
         return "All Season"
-
-    mapping = {
-        "hot": "Summer",
-        "warm": "Spring/Summer",
-        "mild": "Spring/Fall",
-        "cool": "Fall/Winter",
-        "cold": "Winter",
-        "all-weather": "All Season",
-    }
-
-    primary = weather_list[0] if weather_list else "mild"
-    return mapping.get(primary, "All Season")
+    if len(seasons_list) == 4:
+        return "All Season"
+    return "/".join(seasons_list)
 
 
 async def trigger_clothing_analysis(item_id: str, user_id: str, image_url: str):
@@ -307,8 +298,8 @@ async def trigger_clothing_analysis(item_id: str, user_id: str, image_url: str):
                 if data.get("success") and data.get("data"):
                     attrs = data["data"]
                     ai_name = attrs.get("name")
-                    weather = attrs.get("weather_suitability", [])
-                    season = _weather_to_season(weather)
+                    seasons = attrs.get("seasons", [])
+                    season = _seasons_to_display(seasons)
 
                     db = SessionLocal()
                     try:
