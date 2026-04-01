@@ -48,12 +48,12 @@ const Home = () => {
     <main className="home-container">
       <div className="home-hero">
         {user && (
-          <button className="home-profile-pill" onClick={() => navigate(`/profile/${user.user_id || user.id}`)}>
-            <span className="home-profile-avatar">{(user.full_name || user.name || 'U').charAt(0).toUpperCase()}</span>
-            <span className="home-profile-greeting">Hi, {(user.full_name || user.name || '').split(' ')[0]}</span>
-          </button>
+          <div className="home-greeting-section" onClick={() => navigate(`/profile/${user.user_id || user.id}`)}>
+            <div className="home-avatar-large">{(user.full_name || user.name || 'U').charAt(0).toUpperCase()}</div>
+            <h1 className="main-header">Hi, {(user.full_name || user.name || '').split(' ')[0]}</h1>
+          </div>
         )}
-        <h1 className="main-header">Welcome to ClosetMate</h1>
+        {!user && <h1 className="main-header">Welcome to ClosetMate</h1>}
         <p className="main-sub-heading">
           Your smart wardrobe companion — simple, effortless clothing management.
         </p>

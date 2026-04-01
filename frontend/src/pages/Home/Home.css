@@ -12,43 +12,40 @@
 
 /* ── Hero ─────────────────────────────────────────────── */
 
-.home-profile-pill {
+.home-greeting-section {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 16px 6px 6px;
-  border: 1.5px solid var(--border);
-  border-radius: 50px;
-  background: rgba(255, 255, 255, 0.8);
+  gap: 16px;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
-  margin-bottom: 8px;
-  font-family: inherit;
+  transition: transform 0.15s ease;
 }
 
-.home-profile-pill:hover {
-  border-color: var(--primary-lighter);
-  background: var(--primary-lightest);
-  transform: translateY(-1px);
+.home-greeting-section:hover {
+  transform: translateY(-2px);
 }
 
-.home-profile-avatar {
-  width: 28px;
-  height: 28px;
+.home-greeting-section:hover .home-avatar-large {
+  box-shadow: 0 6px 20px rgba(108, 92, 231, 0.4);
+}
+
+.home-greeting-section .main-header {
+  margin: 0;
+}
+
+.home-avatar-large {
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--primary), var(--accent));
   color: #fff;
-  font-size: 0.75rem;
-  font-weight: 700;
+  font-size: 1.5rem;
+  font-weight: 800;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.home-profile-greeting {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--text-primary);
+  flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(108, 92, 231, 0.3);
+  transition: box-shadow 0.15s ease;
 }
 
 .home-hero {
