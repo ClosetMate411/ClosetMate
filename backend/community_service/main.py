@@ -994,6 +994,27 @@ async def add_comment(
         ))
         db.commit()
 
+    # Detect @mentions and notify mentioned users
+    import re
+    mentions = re.findall(r'@([A-Za-zğüşıöçĞÜŞİÖÇ\s]+?)(?:\s|$|[,.])', body.text)
+    for mention_name in mentions:
+        mention_name = mention_name.strip()
+        if not mention_name:
+            continue
+        mentioned_user = db.execute(
+            sa_text("SELECT id FROM users WHERE LOWER(full_name) = LOWER(:name)"),
+            {"name": mention_name},
+        ).fetchone()
+        if mentioned_user and mentioned_user[0] != user_id:
+            db.add(Notification(
+                recipient_user_id=mentioned_user[0],
+                actor_user_id=user_id,
+                shared_outfit_id=shared_outfit_id,
+                type="reply",
+                detail=body.text[:50],
+            ))
+    db.commit()
+
     logger.info(f"User {user_id} commented on shared outfit {shared_outfit_id}")
     return {
         "success": True,

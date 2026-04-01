@@ -22,6 +22,7 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
   const [submitting, setSubmitting] = useState(false);
   const [text, setText] = useState('');
   const [error, setError] = useState(null);
+  const [replyingTo, setReplyingTo] = useState(null);
   const user = useAuthStore((state) => state.user);
   const inputRef = useRef(null);
 
@@ -69,6 +70,7 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
         };
         setComments((prev) => [newComment, ...prev]);
         setText('');
+        setReplyingTo(null);
         onCommentAdded(feedItem.id);
       } catch (err) {
         setError(err.message || 'Failed to post comment.');
@@ -93,6 +95,18 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
     [feedItem, onCommentDeleted]
   );
 
+  const handleReply = useCallback((comment) => {
+    const name = comment.user.name;
+    setReplyingTo(name);
+    setText(`@${name} `);
+    inputRef.current?.focus();
+  }, []);
+
+  const cancelReply = useCallback(() => {
+    setReplyingTo(null);
+    setText('');
+  }, []);
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -112,12 +126,20 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
       size="md"
     >
       <div className="comments-modal">
+        {/* Reply indicator */}
+        {replyingTo && (
+          <div className="comment-reply-bar">
+            <span>Replying to <strong>@{replyingTo}</strong></span>
+            <button className="comment-reply-cancel" onClick={cancelReply} type="button">&times;</button>
+          </div>
+        )}
+
         {/* Input */}
         <form className="comment-form" onSubmit={handleSubmit}>
           <input
             ref={inputRef}
             className="comment-input"
-            placeholder="Write a comment… (Enter to send)"
+            placeholder={replyingTo ? `Reply to @${replyingTo}…` : "Write a comment… (Enter to send)"}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -181,6 +203,14 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
                     )}
                   </div>
                   <p className="comment-text">{comment.text}</p>
+                  {!comment.user.is_self && (
+                    <button
+                      className="comment-reply-btn"
+                      onClick={() => handleReply(comment)}
+                    >
+                      Reply
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

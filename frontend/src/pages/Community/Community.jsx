@@ -133,6 +133,16 @@ const Community = () => {
 
   const hasMore = pagination.page < pagination.pages;
 
+  // ── Notification click → go to post ───────────────────
+  const handleNotificationClick = useCallback((sharedOutfitId) => {
+    const feedItem = feed.find((item) => item.id === sharedOutfitId);
+    if (feedItem) {
+      setActiveTab('feed');
+      setSelectedFeedItem(feedItem);
+      setCommentsOpen(true);
+    }
+  }, [feed]);
+
   // ── Mark notifications read ───────────────────────────
   const handleMarkRead = useCallback(() => {
     markAllRead();
@@ -238,6 +248,7 @@ const Community = () => {
             loading={notificationsLoading}
             onMarkRead={handleMarkRead}
             unreadCount={unreadCount}
+            onNotificationClick={handleNotificationClick}
           />
         )}
       </Container>

@@ -27,12 +27,14 @@ const getNotificationText = (n) => {
       return { icon: '💬', text: `commented on ${outfit}` };
     case 'favorite':
       return { icon: '❤️', text: `saved ${outfit} to favorites` };
+    case 'reply':
+      return { icon: '💬', text: `mentioned you on ${outfit}` };
     default:
       return { icon: '🔔', text: `interacted with ${outfit}` };
   }
 };
 
-const NotificationList = ({ notifications, loading, onMarkRead, unreadCount }) => {
+const NotificationList = ({ notifications, loading, onMarkRead, unreadCount, onNotificationClick }) => {
   if (loading) {
     return (
       <div className="notif-loading">
@@ -67,7 +69,13 @@ const NotificationList = ({ notifications, loading, onMarkRead, unreadCount }) =
       {notifications.map((n) => {
         const { icon, text } = getNotificationText(n);
         return (
-          <div key={n.id} className={`notif-item${n.is_read ? '' : ' unread'}`}>
+          <div
+            key={n.id}
+            className={`notif-item${n.is_read ? '' : ' unread'} clickable`}
+            onClick={() => onNotificationClick?.(n.shared_outfit_id)}
+            role="button"
+            tabIndex={0}
+          >
             <span className="notif-icon">{icon}</span>
             <div className="notif-body">
               <p className="notif-text">
@@ -75,6 +83,7 @@ const NotificationList = ({ notifications, loading, onMarkRead, unreadCount }) =
               </p>
               <span className="notif-time">{formatRelativeTime(n.created_at)}</span>
             </div>
+            <span className="notif-arrow">›</span>
           </div>
         );
       })}
@@ -87,6 +96,7 @@ NotificationList.propTypes = {
   loading: PropTypes.bool,
   onMarkRead: PropTypes.func,
   unreadCount: PropTypes.number,
+  onNotificationClick: PropTypes.func,
 };
 
 export default memo(NotificationList);

@@ -95,3 +95,20 @@
   margin-top: 2px;
   display: block;
 }
+
+.notif-item.clickable {
+  cursor: pointer;
+}
+
+.notif-item.clickable:hover {
+  background: var(--primary-lightest);
+  border-color: var(--primary-lighter);
+}
+
+.notif-arrow {
+  font-size: 1.25rem;
+  color: var(--text-light);
+  flex-shrink: 0;
+  align-self: center;
+  margin-left: auto;
+}

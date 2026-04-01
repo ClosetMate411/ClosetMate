@@ -219,3 +219,47 @@
   line-height: 1.5;
   word-break: break-word;
 }
+
+/* ── Reply ───────────────────────────────────────────── */
+
+.comment-reply-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--primary-lightest, #f3f0ff);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: var(--primary, #6c5ce7);
+}
+
+.comment-reply-cancel {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  color: var(--text-muted, #888);
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.comment-reply-cancel:hover {
+  color: var(--text-primary, #444);
+}
+
+.comment-reply-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--primary, #6c5ce7);
+  padding: 2px 0;
+  margin-top: 2px;
+  transition: opacity 0.15s ease;
+  font-family: inherit;
+}
+
+.comment-reply-btn:hover {
+  opacity: 0.7;
+}
