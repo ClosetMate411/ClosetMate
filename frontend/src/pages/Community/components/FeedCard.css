@@ -334,6 +334,12 @@
   margin-left: 4px;
 }
 
+.feed-rating-count {
+  font-weight: 500;
+  color: var(--text-light);
+  margin-left: 2px;
+}
+
 /* Comments button */
 .feed-comments-btn {
   background: none;

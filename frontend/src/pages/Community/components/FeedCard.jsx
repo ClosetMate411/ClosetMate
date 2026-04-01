@@ -184,7 +184,10 @@ const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare }) => {
               </button>
             ))}
             {ratings.average != null && (
-              <span className="feed-rating-avg">{ratings.average}</span>
+              <span className="feed-rating-avg">
+                {ratings.average}
+                {ratings.count > 0 && <span className="feed-rating-count">({ratings.count})</span>}
+              </span>
             )}
           </div>
 
