@@ -64,13 +64,19 @@ const CompareModal = ({ opened, onClose, feedItem, outfits, wardrobeItems }) => 
               {communityOutfit.name}
             </div>
             <div className="compare-modal-card">
-              <div className="compare-modal-items">
-                {communityItems.slice(0, 4).map((item) => (
-                  <div key={item.id} className="compare-modal-item">
-                    <img src={item.image} alt={item.name} loading="lazy" referrerPolicy="no-referrer" />
-                    <span className="compare-modal-item-name">{item.name}</span>
-                  </div>
-                ))}
+              <div className="compare-modal-collage">
+                {[0, 1, 2, 3].map((i) => {
+                  const ci = communityItems[i];
+                  return (
+                    <div key={i} className="compare-modal-collage-cell">
+                      {ci ? (
+                        <img src={ci.image} alt={ci.name} loading="lazy" referrerPolicy="no-referrer" />
+                      ) : (
+                        <div className="compare-modal-collage-empty" />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               <div className="compare-modal-meta">
                 <div className="compare-modal-tags">
@@ -108,13 +114,19 @@ const CompareModal = ({ opened, onClose, feedItem, outfits, wardrobeItems }) => 
 
             {selectedOutfit ? (
               <div className="compare-modal-card">
-                <div className="compare-modal-items">
-                  {myItems.slice(0, 4).map((item) => (
-                    <div key={item.id} className="compare-modal-item">
-                      <img src={item.image} alt={item.name} loading="lazy" referrerPolicy="no-referrer" />
-                      <span className="compare-modal-item-name">{item.name}</span>
-                    </div>
-                  ))}
+                <div className="compare-modal-collage">
+                  {[0, 1, 2, 3].map((i) => {
+                    const mi = myItems[i];
+                    return (
+                      <div key={i} className="compare-modal-collage-cell">
+                        {mi ? (
+                          <img src={mi.image} alt={mi.name} loading="lazy" referrerPolicy="no-referrer" />
+                        ) : (
+                          <div className="compare-modal-collage-empty" />
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
                 <div className="compare-modal-meta">
                   <div className="compare-modal-tags">
