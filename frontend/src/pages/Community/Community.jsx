@@ -1,5 +1,6 @@
 import React, { useEffect, useCallback, useState } from 'react';
 import { Container } from '@mantine/core';
+import { VirtuosoGrid } from 'react-virtuoso';
 import useCommunityStore from '../../store/communityStore';
 import useOutfitStore from '../../store/outfitStore';
 import useWardrobeStore from '../../store/wardrobeStore';
@@ -63,15 +64,15 @@ const Community = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Fetch data when tab is first opened
+  // Fetch data when tab is first opened (only if not already loaded)
   useEffect(() => {
     if (activeTab === 'top-rated' && topRated.length === 0 && !topRatedLoading) {
       fetchTopRated(1);
     }
-    if (activeTab === 'favorites') {
+    if (activeTab === 'favorites' && favorites.length === 0 && !favoritesLoading) {
       fetchFavorites(1);
     }
-    if (activeTab === 'notifications') {
+    if (activeTab === 'notifications' && notifications.length === 0 && !notificationsLoading) {
       fetchNotifications(1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -167,17 +168,19 @@ const Community = () => {
       );
     }
     return (
-      <div className="community-feed-grid">
-        {items.map((item) => (
+      <VirtuosoGrid
+        useWindowScroll
+        totalCount={items.length}
+        listClassName="community-feed-grid"
+        itemContent={(index) => (
           <FeedCard
-            key={item.id}
-            item={item}
+            item={items[index]}
             wardrobeItems={wardrobeItems}
             onCommentClick={handleOpenComments}
             onUnshare={handleUnshareClick}
           />
-        ))}
-      </div>
+        )}
+      />
     );
   };
 
@@ -254,21 +257,25 @@ const Community = () => {
       </Container>
 
       {/* ── Modals ─────────────────────────────────────── */}
-      <CommentsModal
-        opened={commentsOpen}
-        onClose={handleCloseComments}
-        feedItem={selectedFeedItem}
-        onCommentAdded={handleCommentAdded}
-        onCommentDeleted={handleCommentDeleted}
-      />
+      {commentsOpen && (
+        <CommentsModal
+          opened={commentsOpen}
+          onClose={handleCloseComments}
+          feedItem={selectedFeedItem}
+          onCommentAdded={handleCommentAdded}
+          onCommentDeleted={handleCommentDeleted}
+        />
+      )}
 
-      <ShareOutfitModal
-        opened={shareOpen}
-        onClose={() => setShareOpen(false)}
-        outfits={outfits}
-        wardrobeItems={wardrobeItems}
-        onShare={handleShare}
-      />
+      {shareOpen && (
+        <ShareOutfitModal
+          opened={shareOpen}
+          onClose={() => setShareOpen(false)}
+          outfits={outfits}
+          wardrobeItems={wardrobeItems}
+          onShare={handleShare}
+        />
+      )}
 
       <ConfirmModal
         opened={modal.isConfirmModalOpen}

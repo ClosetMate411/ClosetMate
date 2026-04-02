@@ -78,7 +78,7 @@ const ShareOutfitModal = ({ opened, onClose, outfits, wardrobeItems, onShare }) 
                       {[0, 1, 2, 3].map((i) => (
                         <div key={i} className="share-collage-cell">
                           {thumbImages[i] ? (
-                            <img src={thumbImages[i].image} alt="" referrerPolicy="no-referrer" />
+                            <img src={thumbImages[i].image} alt="" loading="lazy" referrerPolicy="no-referrer" />
                           ) : (
                             <div className="share-collage-placeholder" />
                           )}

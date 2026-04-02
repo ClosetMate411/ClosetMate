@@ -67,70 +67,55 @@ const useCommunityStore = create((set, get) => ({
   rateOutfit: async (sharedOutfitId, score) => {
     const response = await apiService.rateOutfit(sharedOutfitId, score);
     const { average, count } = response.data;
+    const newRatings = { average, count, user_rating: score };
 
-    const { feed } = get();
-    const idx = feed.findIndex((item) => item.id === sharedOutfitId);
-    if (idx !== -1) {
-      const newFeed = [...feed];
-      newFeed[idx] = {
-        ...feed[idx],
-        ratings: { average, count, user_rating: score }
-      };
-      set({ feed: newFeed });
-    }
-
-    // Also update in topRated if present
-    const { topRated } = get();
-    const trIdx = topRated.findIndex((item) => item.id === sharedOutfitId);
-    if (trIdx !== -1) {
-      const newTr = [...topRated];
-      newTr[trIdx] = {
-        ...topRated[trIdx],
-        ratings: { average, count, user_rating: score }
-      };
-      set({ topRated: newTr });
-    }
+    set((state) => ({
+      feed: state.feed.map((item) =>
+        item.id === sharedOutfitId ? { ...item, ratings: newRatings } : item
+      ),
+      topRated: state.topRated.map((item) =>
+        item.id === sharedOutfitId ? { ...item, ratings: newRatings } : item
+      ),
+    }));
   },
 
   // Optimistic: toggle reaction counts immediately
   reactToOutfit: async (sharedOutfitId, emojiType) => {
     const response = await apiService.reactToOutfit(sharedOutfitId, emojiType);
     const { action } = response.data;
-    const { feed } = get();
-    const idx = feed.findIndex((item) => item.id === sharedOutfitId);
-    if (idx === -1) return;
-    const item = feed[idx];
-    const counts = { ...item.reactions.counts };
-    let userReactions;
-    if (action === 'added') {
-      counts[emojiType] = (counts[emojiType] || 0) + 1;
-      userReactions = [...item.reactions.user_reactions, emojiType];
-    } else {
-      counts[emojiType] = Math.max(0, (counts[emojiType] || 1) - 1);
-      if (!counts[emojiType]) delete counts[emojiType];
-      userReactions = item.reactions.user_reactions.filter((r) => r !== emojiType);
-    }
-    const newFeed = [...feed];
-    newFeed[idx] = { ...item, reactions: { counts, user_reactions: userReactions } };
-    set({ feed: newFeed });
+
+    set((state) => ({
+      feed: state.feed.map((item) => {
+        if (item.id !== sharedOutfitId) return item;
+        const counts = { ...item.reactions.counts };
+        let userReactions;
+        if (action === 'added') {
+          counts[emojiType] = (counts[emojiType] || 0) + 1;
+          userReactions = [...item.reactions.user_reactions, emojiType];
+        } else {
+          counts[emojiType] = Math.max(0, (counts[emojiType] || 1) - 1);
+          if (!counts[emojiType]) delete counts[emojiType];
+          userReactions = item.reactions.user_reactions.filter((r) => r !== emojiType);
+        }
+        return { ...item, reactions: { counts, user_reactions: userReactions } };
+      }),
+    }));
   },
 
   incrementCommentCount: (sharedOutfitId) => {
-    const { feed } = get();
-    const idx = feed.findIndex((item) => item.id === sharedOutfitId);
-    if (idx === -1) return;
-    const newFeed = [...feed];
-    newFeed[idx] = { ...feed[idx], comment_count: feed[idx].comment_count + 1 };
-    set({ feed: newFeed });
+    set((state) => ({
+      feed: state.feed.map((item) =>
+        item.id === sharedOutfitId ? { ...item, comment_count: item.comment_count + 1 } : item
+      ),
+    }));
   },
 
   decrementCommentCount: (sharedOutfitId) => {
-    const { feed } = get();
-    const idx = feed.findIndex((item) => item.id === sharedOutfitId);
-    if (idx === -1) return;
-    const newFeed = [...feed];
-    newFeed[idx] = { ...feed[idx], comment_count: Math.max(0, feed[idx].comment_count - 1) };
-    set({ feed: newFeed });
+    set((state) => ({
+      feed: state.feed.map((item) =>
+        item.id === sharedOutfitId ? { ...item, comment_count: Math.max(0, item.comment_count - 1) } : item
+      ),
+    }));
   },
 
   // ── Top Rated ──
@@ -198,30 +183,16 @@ const useCommunityStore = create((set, get) => ({
     const response = await apiService.toggleFavorite(sharedOutfitId);
     const { action, favorite_count } = response.data;
     const isFavorited = action === 'added';
+    const newFavorites = { count: favorite_count, user_has_favorited: isFavorited };
 
-    // Update in feed
-    const { feed } = get();
-    const idx = feed.findIndex((item) => item.id === sharedOutfitId);
-    if (idx !== -1) {
-      const newFeed = [...feed];
-      newFeed[idx] = {
-        ...feed[idx],
-        favorites: { count: favorite_count, user_has_favorited: isFavorited },
-      };
-      set({ feed: newFeed });
-    }
-
-    // Update in topRated
-    const { topRated } = get();
-    const trIdx = topRated.findIndex((item) => item.id === sharedOutfitId);
-    if (trIdx !== -1) {
-      const newTr = [...topRated];
-      newTr[trIdx] = {
-        ...topRated[trIdx],
-        favorites: { count: favorite_count, user_has_favorited: isFavorited },
-      };
-      set({ topRated: newTr });
-    }
+    set((state) => ({
+      feed: state.feed.map((item) =>
+        item.id === sharedOutfitId ? { ...item, favorites: newFavorites } : item
+      ),
+      topRated: state.topRated.map((item) =>
+        item.id === sharedOutfitId ? { ...item, favorites: newFavorites } : item
+      ),
+    }));
 
     return { action, favorite_count };
   },

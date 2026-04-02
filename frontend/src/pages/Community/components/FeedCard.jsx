@@ -122,7 +122,7 @@ const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare }) => {
           return (
             <div key={i} className={`feed-collage-cell feed-collage-cell--${i + 1}`}>
               {outfitItem ? (
-                <img src={outfitItem.image} alt={outfitItem.name} referrerPolicy="no-referrer" />
+                <img src={outfitItem.image} alt={outfitItem.name} loading="lazy" referrerPolicy="no-referrer" />
               ) : (
                 <div className="feed-collage-placeholder" aria-hidden="true">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
