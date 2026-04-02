@@ -314,6 +314,7 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
                       </button>
                     )}
                   </div>
+                </div>
               </div>
             ))}
         </div>
