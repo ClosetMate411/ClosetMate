@@ -4,7 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ActivityIndicator, View, Pressable, Text } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import useAuthStore from '../store/authStore';
-import { Home, Wardrobe, Outfits, Login, Register, ForgotPassword, ResetPassword, Logout } from '../screens';
+import { Home, Wardrobe, Outfits, Community, Login, Register, ForgotPassword, ResetPassword, VerifyLogin, VerifySignup, Logout } from '../screens';
 import { palette } from '../theme/colors';
 
 const Stack = createNativeStackNavigator();
@@ -44,6 +44,7 @@ export default function RootNavigator() {
     <NavigationContainer>
       {isAuthenticated ? (
         <Stack.Navigator
+          key="auth"
           screenOptions={({ navigation }) => ({
             headerRight: () => <LogoutHeaderButton navigation={navigation} />,
             headerStyle: { backgroundColor: palette.surface },
@@ -55,6 +56,7 @@ export default function RootNavigator() {
           <Stack.Screen name="Home" component={Home} options={{ headerShown: false }} />
           <Stack.Screen name="Wardrobe" component={Wardrobe} />
           <Stack.Screen name="Outfits" component={Outfits} />
+          <Stack.Screen name="Community" component={Community} />
           <Stack.Screen
             name="Logout"
             component={Logout}
@@ -62,11 +64,13 @@ export default function RootNavigator() {
           />
         </Stack.Navigator>
       ) : (
-        <Stack.Navigator screenOptions={{ contentStyle: { backgroundColor: palette.background } }}>
+        <Stack.Navigator key="guest" screenOptions={{ contentStyle: { backgroundColor: palette.background } }}>
           <Stack.Screen name="Login" component={Login} options={{ headerShown: false }} />
           <Stack.Screen name="Register" component={Register} options={{ headerShown: false }} />
           <Stack.Screen name="ForgotPassword" component={ForgotPassword} options={{ headerShown: false }} />
           <Stack.Screen name="ResetPassword" component={ResetPassword} options={{ headerShown: false }} />
+          <Stack.Screen name="VerifyLogin" component={VerifyLogin} options={{ headerShown: false }} />
+          <Stack.Screen name="VerifySignup" component={VerifySignup} options={{ headerShown: false }} />
         </Stack.Navigator>
       )}
     </NavigationContainer>

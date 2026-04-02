@@ -8,17 +8,26 @@ const withTimeout = (promise, ms, message) =>
     new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
   ]);
 
+const sortNewestFirst = (items = []) =>
+  [...items].sort((a, b) => {
+    const aTime = new Date(a?.created_at || a?.createdAt || a?.updated_at || a?.updatedAt || 0).getTime();
+    const bTime = new Date(b?.created_at || b?.createdAt || b?.updated_at || b?.updatedAt || 0).getTime();
+    return bTime - aTime;
+  });
+
 const useWardrobeStore = create((set, get) => ({
   items: [],
   loading: false,
   error: null,
   openModal: null,
   currentItemId: null,
+  aiLabels: {},
 
   setOpenModal: (modalName) => set({ openModal: modalName }),
   setCurrentItemId: (id) => set({ currentItemId: id }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
+  setAiLabels: (labels) => set((state) => ({ aiLabels: { ...state.aiLabels, ...labels } })),
 
   fetchItems: async () => {
     if (get().loading || get().items.length > 0) return get().items;
@@ -39,7 +48,12 @@ const useWardrobeStore = create((set, get) => ({
         rawItems = response.items;
       }
 
-      const normalizedItems = transformItemsForDisplay(rawItems);
+      if (__DEV__ && rawItems.length > 0) {
+        console.log('[WARDROBE DEBUG] Sample raw item keys:', Object.keys(rawItems[0]));
+        console.log('[WARDROBE DEBUG] Sample raw item:', JSON.stringify(rawItems[0], null, 2));
+      }
+
+      const normalizedItems = sortNewestFirst(transformItemsForDisplay(rawItems));
       set({ items: normalizedItems, loading: false });
       return normalizedItems;
     } catch (error) {
@@ -48,7 +62,7 @@ const useWardrobeStore = create((set, get) => ({
     }
   },
 
-  addItem: async (imageFile, itemName = 'Untitled', weather = 'Untitled') => {
+  addItem: async (imageFile, itemName = '', weather = '') => {
     set({ loading: true, error: null });
     try {
       const response = await apiService.createItem({
@@ -61,7 +75,7 @@ const useWardrobeStore = create((set, get) => ({
       const newItem = transformItemsForDisplay([rawItem])[0];
 
       set((state) => ({
-        items: Array.isArray(state.items) ? [...state.items, newItem] : [newItem],
+        items: Array.isArray(state.items) ? [newItem, ...state.items] : [newItem],
         loading: false,
       }));
 

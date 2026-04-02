@@ -17,17 +17,28 @@ export const API_ENDPOINTS = {
 
   register: '/api/auth/register',
   login: '/api/auth/login',
+  verifyLogin: '/api/auth/verify-login',
   logout: '/api/auth/logout',
   me: '/api/auth/me',
   forgotPassword: '/api/auth/forgot-password',
   resetPassword: '/api/auth/reset-password',
+  resendCode: '/api/auth/resend-code',
+  verifyRegistration: '/api/auth/verify-login',
 
   items: '/api/wardrobe/items',
   item: (id) => `/api/wardrobe/items/${id}`,
 
   outfits: '/api/outfits',
   outfit: (id) => `/api/outfits/${id}`,
+  favoriteOutfit: (id) => `/api/outfits/${id}/favorite`,
   generateOutfits: '/api/outfits/generate',
+
+  communityFeed: '/api/community/feed',
+  communityShare: '/api/community/share',
+  communityReact: (id) => `/api/community/${id}/react`,
+  communityRate: (id) => `/api/community/${id}/rate`,
+  communityComments: (id) => `/api/community/${id}/comments`,
+  communityDeleteComment: (id) => `/api/community/comments/${id}`,
 };
 
 export default API_CONFIG;

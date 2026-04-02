@@ -41,6 +41,8 @@ export default function WardrobeScreen() {
   const addItem = useWardrobeStore((s) => s.addItem);
   const updateItem = useWardrobeStore((s) => s.updateItem);
   const removeItem = useWardrobeStore((s) => s.removeItem);
+  const setAiLabels = useWardrobeStore((s) => s.setAiLabels);
+  const aiLabels = useWardrobeStore((s) => s.aiLabels);
 
   const [uploadState, setUploadState] = useState('idle'); // idle|processing|saving|updating|deleting|error|confirming
   const [pickedAsset, setPickedAsset] = useState(null); // ImagePicker asset
@@ -60,6 +62,36 @@ export default function WardrobeScreen() {
       try { await fetchItems(); } catch (e) { Alert.alert('Error', e.message || 'Failed to load wardrobe'); }
     })();
   }, [fetchItems]);
+
+  // Load AI labels from outfits if not already loaded
+  useEffect(() => {
+    if (Object.keys(aiLabels).length > 0) return;
+    (async () => {
+      try {
+        const res = await apiService.getOutfits();
+        const list = Array.isArray(res?.data) ? res.data : [];
+        const labels = {};
+        const detailPromises = list.map(async (outfit) => {
+          if (outfit?.items && outfit.items.length > 0) return outfit;
+          if (!outfit?.id) return outfit;
+          try {
+            const detail = await apiService.getOutfit(outfit.id);
+            return detail?.data || outfit;
+          } catch { return outfit; }
+        });
+        const detailedOutfits = await Promise.all(detailPromises);
+        for (const outfit of detailedOutfits) {
+          const outfitItems = Array.isArray(outfit?.items) ? outfit.items : [];
+          for (const item of outfitItems) {
+            const id = item?.item_id || item?.id || item?._id || item?.wardrobe_item_id;
+            const name = item?.name || item?.item_name;
+            if (id && name && name.trim()) labels[String(id)] = name.trim();
+          }
+        }
+        if (Object.keys(labels).length > 0) setAiLabels(labels);
+      } catch {}
+    })();
+  }, [aiLabels, setAiLabels]);
 
   const currentSelectedItem = useMemo(() => {
     if (!selectedItem) return null;
@@ -213,23 +245,6 @@ export default function WardrobeScreen() {
     await processPickedAsset(asset);
   };
 
-  const useSampleImage = async () => {
-    try {
-      const sample = Asset.fromModule(require('../../../assets/images/Logo.png'));
-      await sample.downloadAsync();
-      const uri = sample.localUri || sample.uri;
-      if (!uri) throw new Error('Sample image not available');
-
-      await processPickedAsset({
-        uri,
-        fileName: 'sample-logo.png',
-        mimeType: 'image/png',
-      });
-    } catch (e) {
-      Alert.alert('Sample image failed', e?.message || 'Could not load sample image.');
-    }
-  };
-
   const retryProcessing = async () => {
     if (!pickedAsset || retryCount >= 2) return;
     setUploadState('processing');
@@ -369,14 +384,9 @@ export default function WardrobeScreen() {
     <View style={{ flex: 1, padding: 16, gap: 10, backgroundColor: palette.background }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <Text style={{ fontSize: 22, fontWeight: '800', color: palette.text }}>Wardrobe</Text>
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Pressable onPress={useSampleImage} style={{ paddingVertical: 10, paddingHorizontal: 12, borderWidth: 1, borderRadius: 10, borderColor: palette.borderStrong, backgroundColor: palette.surface }}>
-            <Text style={{ color: palette.text }}>Sample</Text>
-          </Pressable>
-          <Pressable onPress={openUploadInterface} style={{ paddingVertical: 10, paddingHorizontal: 12, borderWidth: 1, borderRadius: 10, borderColor: palette.primary, backgroundColor: palette.primary }}>
-            <Text style={{ color: '#fff', fontWeight: '700' }}>Add</Text>
-          </Pressable>
-        </View>
+        <Pressable onPress={openUploadInterface} style={{ paddingVertical: 10, paddingHorizontal: 12, borderWidth: 1, borderRadius: 10, borderColor: palette.primary, backgroundColor: palette.primary }}>
+          <Text style={{ color: '#fff', fontWeight: '700' }}>Add</Text>
+        </Pressable>
       </View>
 
       {showUploadInterface ? (

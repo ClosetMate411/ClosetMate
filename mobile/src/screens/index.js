@@ -1,8 +1,11 @@
 export { default as Home } from './Home/HomeScreen';
 export { default as Wardrobe } from './Wardrobe/WardrobeScreen';
 export { default as Outfits } from './Outfits/OutfitsScreen';
+export { default as Community } from './Community/CommunityScreen';
 export { default as Login } from './Auth/LoginScreen';
 export { default as Register } from './Auth/RegisterScreen';
 export { default as ForgotPassword } from './Auth/ForgotPasswordScreen';
 export { default as ResetPassword } from './Auth/ResetPasswordScreen';
+export { default as VerifyLogin } from './Auth/VerifyLoginScreen';
+export { default as VerifySignup } from './Auth/VerifySignupScreen';
 export { default as Logout } from './Auth/LogoutScreen';

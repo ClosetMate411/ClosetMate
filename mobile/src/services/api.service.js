@@ -90,6 +90,27 @@ class APIService {
     });
   }
 
+  async verifyLogin(data) {
+    return axiosInstance.post(API_ENDPOINTS.verifyLogin, {
+      email: data.email,
+      code: data.code,
+    });
+  }
+
+  async resendCode(data) {
+    return axiosInstance.post(API_ENDPOINTS.resendCode, {
+      email: data.email,
+      purpose: data.purpose,
+    });
+  }
+
+  async verifyRegistration(data) {
+    return axiosInstance.post(API_ENDPOINTS.verifyRegistration, {
+      email: data.email,
+      code: data.code,
+    });
+  }
+
   async logout() { return axiosInstance.post(API_ENDPOINTS.logout); }
   async getCurrentUser() { return axiosInstance.get(API_ENDPOINTS.me); }
 
@@ -139,13 +160,48 @@ class APIService {
     return axiosInstance.get(API_ENDPOINTS.outfit(id));
   }
 
+  async toggleFavoriteOutfit(id) {
+    return axiosInstance.put(API_ENDPOINTS.favoriteOutfit(id));
+  }
+
   async generateOutfits(filters = {}) {
     const f = new FormData();
     f.append('count', String(filters.count ?? 3));
     f.append('season', filters.season ?? 'all');
     f.append('occasion', filters.occasion ?? 'everyday');
     f.append('style', filters.style ?? 'any');
-    return axiosInstance.post(API_ENDPOINTS.generateOutfits, f);
+    return axiosInstance.post(API_ENDPOINTS.generateOutfits, f, {
+      timeout: 90000,
+    });
+  }
+
+  // Community
+  async getCommunityFeed(page = 1, limit = 20) {
+    return axiosInstance.get(API_ENDPOINTS.communityFeed, { params: { page, limit } });
+  }
+
+  async shareOutfit(outfitId) {
+    return axiosInstance.post(API_ENDPOINTS.communityShare, { outfit_id: outfitId });
+  }
+
+  async addReaction(shareId, emojiType) {
+    return axiosInstance.post(API_ENDPOINTS.communityReact(shareId), { emoji_type: emojiType });
+  }
+
+  async rateOutfit(shareId, score) {
+    return axiosInstance.post(API_ENDPOINTS.communityRate(shareId), { score });
+  }
+
+  async getComments(shareId) {
+    return axiosInstance.get(API_ENDPOINTS.communityComments(shareId));
+  }
+
+  async addComment(shareId, text) {
+    return axiosInstance.post(API_ENDPOINTS.communityComments(shareId), { text });
+  }
+
+  async deleteComment(commentId) {
+    return axiosInstance.delete(API_ENDPOINTS.communityDeleteComment(commentId));
   }
 }
 
