@@ -94,7 +94,7 @@
 
 .compare-modal-items {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
 }
 

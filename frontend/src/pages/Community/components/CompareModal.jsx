@@ -65,7 +65,7 @@ const CompareModal = ({ opened, onClose, feedItem, outfits, wardrobeItems }) => 
             </div>
             <div className="compare-modal-card">
               <div className="compare-modal-items">
-                {communityItems.map((item) => (
+                {communityItems.slice(0, 4).map((item) => (
                   <div key={item.id} className="compare-modal-item">
                     <img src={item.image} alt={item.name} loading="lazy" referrerPolicy="no-referrer" />
                     <span className="compare-modal-item-name">{item.name}</span>
@@ -109,7 +109,7 @@ const CompareModal = ({ opened, onClose, feedItem, outfits, wardrobeItems }) => 
             {selectedOutfit ? (
               <div className="compare-modal-card">
                 <div className="compare-modal-items">
-                  {myItems.map((item) => (
+                  {myItems.slice(0, 4).map((item) => (
                     <div key={item.id} className="compare-modal-item">
                       <img src={item.image} alt={item.name} loading="lazy" referrerPolicy="no-referrer" />
                       <span className="compare-modal-item-name">{item.name}</span>
