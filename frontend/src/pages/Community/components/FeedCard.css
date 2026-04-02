@@ -146,8 +146,7 @@
 .feed-collage-cell img {
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  padding: 4px;
+  object-fit: cover;
 }
 
 .feed-collage-placeholder {

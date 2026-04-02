@@ -60,8 +60,10 @@ const CompareModal = ({ opened, onClose, feedItem, outfits, wardrobeItems }) => 
               <span className="compare-modal-label">Community</span>
               <span className="compare-modal-author">{feedItem.shared_by.name}</span>
             </div>
+            <div className="compare-modal-select compare-modal-select--static">
+              {communityOutfit.name}
+            </div>
             <div className="compare-modal-card">
-              <h4 className="compare-modal-name">{communityOutfit.name}</h4>
               <div className="compare-modal-items">
                 {communityItems.map((item) => (
                   <div key={item.id} className="compare-modal-item">
@@ -106,7 +108,6 @@ const CompareModal = ({ opened, onClose, feedItem, outfits, wardrobeItems }) => 
 
             {selectedOutfit ? (
               <div className="compare-modal-card">
-                <h4 className="compare-modal-name">{selectedOutfit.name}</h4>
                 <div className="compare-modal-items">
                   {myItems.map((item) => (
                     <div key={item.id} className="compare-modal-item">

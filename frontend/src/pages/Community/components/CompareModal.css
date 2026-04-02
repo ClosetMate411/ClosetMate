@@ -65,6 +65,12 @@
   border-color: var(--primary, #6c5ce7);
 }
 
+.compare-modal-select--static {
+  cursor: default;
+  background: var(--bg-light, #faf8fc);
+  color: var(--text-primary, #333);
+}
+
 /* ── Card ── */
 
 .compare-modal-card {
@@ -161,7 +167,6 @@
   font-weight: 800;
   letter-spacing: 0.02em;
   flex-shrink: 0;
-  margin-top: 60px;
 }
 
 /* ── Empty State ── */
