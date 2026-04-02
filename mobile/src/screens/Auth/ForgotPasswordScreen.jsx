@@ -80,9 +80,20 @@ export default function ForgotPasswordScreen({ navigation }) {
           </Pressable>
         </>
       ) : (
-        <View style={{ borderWidth: 1, borderColor: palette.border, borderRadius: 12, padding: 14, backgroundColor: palette.surface }}>
-          <Text style={{ color: palette.text, textAlign: 'center', lineHeight: 22 }}>{SUCCESS_TEXT}</Text>
-        </View>
+        <>
+          <View style={{ borderWidth: 1, borderColor: palette.border, borderRadius: 12, padding: 14, backgroundColor: palette.surface, gap: 10 }}>
+            <Text style={{ color: palette.text, textAlign: 'center', lineHeight: 22 }}>{SUCCESS_TEXT}</Text>
+            <Text style={{ color: palette.textMuted, textAlign: 'center', lineHeight: 22 }}>
+              If the website link in the email does not open, copy the full reset link and paste it into the reset form in the app.
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => navigation.replace('ResetPassword')}
+            style={{ padding: 14, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: palette.primary, backgroundColor: palette.primary }}
+          >
+            <Text style={{ fontWeight: '700', color: '#fff' }}>Open Reset Form</Text>
+          </Pressable>
+        </>
       )}
 
       <Pressable onPress={() => navigation.replace('Login')} style={{ alignItems: 'center', marginTop: 8 }}>
@@ -91,4 +102,3 @@ export default function ForgotPasswordScreen({ navigation }) {
     </View>
   );
 }
-

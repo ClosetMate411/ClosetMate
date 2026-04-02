@@ -1,9 +1,25 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator } from 'react-native';
 import apiService from '../../services/api.service';
 import { palette } from '../../theme/colors';
 
 const INVALID_LINK_TEXT = 'Password reset link has expired or is invalid. Please request a new password reset.';
+
+const parseResetToken = (value) => {
+  const trimmed = value?.trim?.() || '';
+  if (!trimmed) return '';
+
+  const tokenMatch = trimmed.match(/[?&]token=([^&]+)/i);
+  if (tokenMatch?.[1]) {
+    try {
+      return decodeURIComponent(tokenMatch[1]);
+    } catch (_e) {
+      return tokenMatch[1];
+    }
+  }
+
+  return trimmed;
+};
 
 const validatePassword = (password) => {
   if (password.length < 8) return 'Password must be at least 8 characters';
@@ -16,7 +32,7 @@ const validatePassword = (password) => {
 };
 
 export default function ResetPasswordScreen({ navigation, route }) {
-  const tokenFromRoute = route?.params?.token || '';
+  const tokenFromRoute = parseResetToken(route?.params?.token || '');
   const [token, setToken] = useState(tokenFromRoute);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -24,8 +40,6 @@ export default function ResetPasswordScreen({ navigation, route }) {
   const [isLoading, setIsLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [invalidLink, setInvalidLink] = useState(false);
-
-  const tokenMissing = useMemo(() => !token?.trim(), [token]);
 
   const onSubmit = async () => {
     if (isLoading) return;
@@ -42,7 +56,7 @@ export default function ResetPasswordScreen({ navigation, route }) {
     setIsLoading(true);
     try {
       const res = await apiService.resetPassword({
-        token: token.trim(),
+        token: parseResetToken(token),
         newPassword,
         confirmPassword,
       });
@@ -62,7 +76,7 @@ export default function ResetPasswordScreen({ navigation, route }) {
     }
   };
 
-  if (invalidLink || (tokenMissing && !successMessage)) {
+  if (invalidLink) {
     return (
       <View style={{ flex: 1, padding: 20, justifyContent: 'center', gap: 12, backgroundColor: palette.background }}>
         <View style={{ borderWidth: 1, borderColor: palette.border, borderRadius: 12, padding: 14, backgroundColor: palette.surface }}>
@@ -98,15 +112,20 @@ export default function ResetPasswordScreen({ navigation, route }) {
         </>
       ) : (
         <>
+          <Text style={{ color: palette.textMuted, textAlign: 'center', marginBottom: 8, lineHeight: 22 }}>
+            Paste the full reset link from your email or just the reset token below.
+          </Text>
+
           <Text style={{ color: palette.text, fontWeight: '600' }}>Reset Token</Text>
           <TextInput
             value={token}
             onChangeText={(v) => {
-              setToken(v);
+              setToken(parseResetToken(v));
               if (fieldErrors.token) setFieldErrors((p) => ({ ...p, token: undefined }));
             }}
             autoCapitalize="none"
             editable={!isLoading}
+            placeholder="Paste reset link or token"
             placeholderTextColor={palette.textMuted}
             style={{ borderWidth: 1, borderColor: fieldErrors.token ? palette.danger : palette.borderStrong, padding: 12, borderRadius: 10, backgroundColor: palette.surface, color: palette.text }}
           />
@@ -155,4 +174,3 @@ export default function ResetPasswordScreen({ navigation, route }) {
     </View>
   );
 }
-

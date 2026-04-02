@@ -4,6 +4,14 @@ import { Image as ExpoImage } from 'expo-image';
 import useAuthStore from '../../store/authStore';
 import { palette } from '../../theme/colors';
 
+const mapLoginErrorMessage = (message) => {
+  if (!message) return '';
+  if (message.toLowerCase().includes('email service unavailable')) {
+    return 'Verification email service is temporarily unavailable. Please try again in a minute.';
+  }
+  return message;
+};
+
 export default function LoginScreen({ navigation, route }) {
   const login = useAuthStore((s) => s.login);
   const isLoading = useAuthStore((s) => s.isLoading);
@@ -27,6 +35,14 @@ export default function LoginScreen({ navigation, route }) {
     if (isLoading) return;
     clearError();
     const result = await login({ email, password });
+    if (result.success && result.requiresOtp) {
+      setPassword('');
+      navigation.replace('VerifyLogin', {
+        email: result.email || email,
+        expiresInSeconds: result.expiresInSeconds,
+      });
+      return;
+    }
     if (!result.success) setPassword('');
   };
 
@@ -93,7 +109,7 @@ export default function LoginScreen({ navigation, route }) {
         style={{ borderWidth: 1, borderColor: palette.borderStrong, padding: 12, borderRadius: 10, backgroundColor: palette.surface, color: palette.text }}
       />
 
-      {error ? <Text style={{ color: palette.danger }}>{error}</Text> : null}
+      {error ? <Text style={{ color: palette.danger }}>{mapLoginErrorMessage(error)}</Text> : null}
 
       <Pressable
         onPress={onSubmit}

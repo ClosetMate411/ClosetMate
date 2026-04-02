@@ -20,15 +20,15 @@ export default function RegisterScreen({ navigation }) {
     clearError();
     const result = await register({ fullName, email, password, confirmPassword });
     if (result.success) {
-      navigation.replace('Login', { message: result.message || 'Account created successfully!', email });
+      navigation.replace('VerifySignup', { email });
     } else if (result.errors && Array.isArray(result.errors)) {
       const mapped = {};
       result.errors.forEach((err) => {
         if (!err.field) return;
         const field =
           err.field === 'full_name' ? 'fullName' :
-          err.field === 'confirm_password' ? 'confirmPassword' :
-          err.field;
+            err.field === 'confirm_password' ? 'confirmPassword' :
+              err.field;
         mapped[field] = err.message;
       });
       setFieldErrors(mapped);
