@@ -4,9 +4,7 @@
 ═══════════════════════════════════════════════════════ */
 
 .feed-card {
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 20px;
   padding: 16px;
@@ -166,13 +164,12 @@
   position: absolute;
   bottom: 8px;
   right: 8px;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.65);
   color: #fff;
   padding: 2px 8px;
   border-radius: 10px;
   font-size: 11px;
   font-weight: 600;
-  backdrop-filter: blur(4px);
 }
 
 /* ── Outfit Info ─────────────────────────────────────── */
