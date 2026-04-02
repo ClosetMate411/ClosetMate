@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import useOutfitStore from "../../store/outfitStore";
 import useWardrobeStore from "../../store/wardrobeStore";
@@ -52,29 +52,11 @@ const features = [
 const Home = () => {
   const navigate = useNavigate();
   const { stats, fetchStats } = useOutfitStore();
-  const { items } = useWardrobeStore();
-  const [compareIds, setCompareIds] = useState([null, null]);
-  const { outfits } = useOutfitStore();
-
-  const { fetchOutfits } = useOutfitStore();
-  const { fetchItems } = useWardrobeStore();
 
   useEffect(() => {
     fetchStats();
-    fetchOutfits();
-    fetchItems();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const handleCompareSelect = useCallback((index, outfitId) => {
-    setCompareIds(prev => {
-      const next = [...prev];
-      next[index] = outfitId;
-      return next;
-    });
-  }, []);
-
-  const compareOutfits = compareIds.map(id => outfits.find(o => o.id === id) || null);
 
   return (
     <main className="home-container">
@@ -131,7 +113,6 @@ const Home = () => {
             </div>
           </div>
 
-          {/* Category Distribution */}
           <div className="stats-section">
             <h3 className="stats-section-title">Category Breakdown</h3>
             <div className="stats-bars">
@@ -150,7 +131,6 @@ const Home = () => {
             </div>
           </div>
 
-          {/* Color Palette */}
           <div className="stats-section">
             <h3 className="stats-section-title">Your Color Palette</h3>
             <div className="stats-colors">
@@ -167,7 +147,6 @@ const Home = () => {
             </div>
           </div>
 
-          {/* Style Distribution */}
           <div className="stats-section">
             <h3 className="stats-section-title">Style Mix</h3>
             <div className="stats-tags">
@@ -177,56 +156,6 @@ const Home = () => {
                 </span>
               ))}
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Outfit Comparison ────────────────────────────── */}
-      {outfits.length >= 2 && (
-        <div className="compare-section">
-          <h2 className="stats-title">Compare Outfits</h2>
-          <div className="compare-grid">
-            {[0, 1].map((idx) => (
-              <div key={idx} className="compare-slot">
-                <select
-                  className="compare-select"
-                  value={compareIds[idx] || ''}
-                  onChange={(e) => handleCompareSelect(idx, e.target.value || null)}
-                >
-                  <option value="">Select outfit...</option>
-                  {outfits.map((o) => (
-                    <option key={o.id} value={o.id}>{o.name}</option>
-                  ))}
-                </select>
-
-                {compareOutfits[idx] && (
-                  <div className="compare-card">
-                    <div className="compare-items">
-                      {compareOutfits[idx].item_ids
-                        .map(id => items.find(i => i.id === id))
-                        .filter(Boolean)
-                        .map(item => (
-                          <img key={item.id} src={item.image} alt={item.name} className="compare-item-img" referrerPolicy="no-referrer" />
-                        ))
-                      }
-                    </div>
-                    <div className="compare-meta">
-                      <h4 className="compare-name">{compareOutfits[idx].name}</h4>
-                      <div className="compare-badges">
-                        {compareOutfits[idx].style && <span className="meta-tag">{compareOutfits[idx].style}</span>}
-                        {compareOutfits[idx].occasion && <span className="meta-tag">{compareOutfits[idx].occasion}</span>}
-                        {compareOutfits[idx].cohesion_score && (
-                          <span className="compare-score">{compareOutfits[idx].cohesion_score}/10</span>
-                        )}
-                      </div>
-                      {compareOutfits[idx].reasoning && (
-                        <p className="compare-reasoning">{compareOutfits[idx].reasoning}</p>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
           </div>
         </div>
       )}

@@ -203,8 +203,7 @@
    Wardrobe Stats Dashboard
 ═══════════════════════════════════════════════════════ */
 
-.stats-dashboard,
-.compare-section {
+.stats-dashboard {
   width: 100%;
   max-width: 52rem;
   background: rgba(255, 255, 255, 0.8);
@@ -383,108 +382,8 @@
   margin-left: 4px;
 }
 
-/* ═══════════════════════════════════════════════════════
-   Outfit Comparison
-═══════════════════════════════════════════════════════ */
-
-.compare-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-.compare-slot {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.compare-select {
-  width: 100%;
-  padding: 10px 14px;
-  border: 1.5px solid var(--border);
-  border-radius: 12px;
-  font-size: 0.85rem;
-  font-family: inherit;
-  font-weight: 600;
-  color: var(--text-primary);
-  background: var(--surface);
-  cursor: pointer;
-  outline: none;
-  transition: border-color 0.15s ease;
-}
-
-.compare-select:focus {
-  border-color: var(--primary);
-}
-
-.compare-card {
-  background: var(--bg-light);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.compare-items {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
-  gap: 8px;
-}
-
-.compare-item-img {
-  width: 100%;
-  aspect-ratio: 1;
-  object-fit: contain;
-  border-radius: 10px;
-  background: #fff;
-  border: 1px solid var(--border);
-}
-
-.compare-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.compare-name {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.compare-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-}
-
-.compare-score {
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: #15803d;
-  background: #f0fdf4;
-  padding: 2px 8px;
-  border-radius: 6px;
-  border: 1px solid #bbf7d0;
-}
-
-.compare-reasoning {
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  line-height: 1.5;
-  margin: 0;
-}
-
 @media (max-width: 640px) {
   .stats-summary {
     grid-template-columns: repeat(2, 1fr);
-  }
-  .compare-grid {
-    grid-template-columns: 1fr;
   }
 }
