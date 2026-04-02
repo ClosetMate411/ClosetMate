@@ -1,6 +1,16 @@
-import React from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import useOutfitStore from "../../store/outfitStore";
+import useWardrobeStore from "../../store/wardrobeStore";
 import "./Home.css";
+
+const COLOR_MAP = {
+  black: '#1a1a1a', white: '#f5f5f5', gray: '#9ca3af', navy: '#1e3a5f',
+  blue: '#3b82f6', red: '#ef4444', burgundy: '#800020', pink: '#ec4899',
+  green: '#22c55e', olive: '#808000', yellow: '#eab308', orange: '#f97316',
+  purple: '#a855f7', brown: '#92400e', tan: '#d2b48c', beige: '#f5f0e1',
+  cream: '#fffdd0', khaki: '#c3b091', charcoal: '#36454f', denim: '#6892d5',
+};
 
 const features = [
   {
@@ -41,6 +51,25 @@ const features = [
 
 const Home = () => {
   const navigate = useNavigate();
+  const { stats, fetchStats } = useOutfitStore();
+  const { items } = useWardrobeStore();
+  const [compareIds, setCompareIds] = useState([null, null]);
+  const { outfits } = useOutfitStore();
+
+  useEffect(() => {
+    fetchStats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleCompareSelect = useCallback((index, outfitId) => {
+    setCompareIds(prev => {
+      const next = [...prev];
+      next[index] = outfitId;
+      return next;
+    });
+  }, []);
+
+  const compareOutfits = compareIds.map(id => outfits.find(o => o.id === id) || null);
 
   return (
     <main className="home-container">
@@ -72,6 +101,130 @@ const Home = () => {
           </button>
         ))}
       </div>
+
+      {/* ── Wardrobe Stats Dashboard ─────────────────────── */}
+      {stats && stats.total_items > 0 && (
+        <div className="stats-dashboard">
+          <h2 className="stats-title">Your Wardrobe at a Glance</h2>
+
+          <div className="stats-summary">
+            <div className="stats-card">
+              <span className="stats-number">{stats.total_items}</span>
+              <span className="stats-label">Items</span>
+            </div>
+            <div className="stats-card">
+              <span className="stats-number">{stats.total_outfits}</span>
+              <span className="stats-label">Outfits</span>
+            </div>
+            <div className="stats-card">
+              <span className="stats-number">{Object.keys(stats.categories || {}).length}</span>
+              <span className="stats-label">Categories</span>
+            </div>
+            <div className="stats-card">
+              <span className="stats-number">{stats.dominant_style || '-'}</span>
+              <span className="stats-label">Top Style</span>
+            </div>
+          </div>
+
+          {/* Category Distribution */}
+          <div className="stats-section">
+            <h3 className="stats-section-title">Category Breakdown</h3>
+            <div className="stats-bars">
+              {Object.entries(stats.categories || {}).map(([cat, count]) => (
+                <div key={cat} className="stats-bar-row">
+                  <span className="stats-bar-label">{cat}</span>
+                  <div className="stats-bar-track">
+                    <div
+                      className="stats-bar-fill"
+                      style={{ width: `${(count / stats.total_items) * 100}%` }}
+                    />
+                  </div>
+                  <span className="stats-bar-count">{count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Color Palette */}
+          <div className="stats-section">
+            <h3 className="stats-section-title">Your Color Palette</h3>
+            <div className="stats-colors">
+              {(stats.top_colors || []).map((color) => (
+                <div key={color} className="stats-color-chip">
+                  <span
+                    className="stats-color-dot"
+                    style={{ background: COLOR_MAP[color] || '#ccc' }}
+                  />
+                  <span className="stats-color-name">{color}</span>
+                  <span className="stats-color-count">{(stats.colors || {})[color]}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Style Distribution */}
+          <div className="stats-section">
+            <h3 className="stats-section-title">Style Mix</h3>
+            <div className="stats-tags">
+              {Object.entries(stats.styles || {}).map(([style, count]) => (
+                <span key={style} className="stats-tag">
+                  {style} <strong>{count}</strong>
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Outfit Comparison ────────────────────────────── */}
+      {outfits.length >= 2 && (
+        <div className="compare-section">
+          <h2 className="stats-title">Compare Outfits</h2>
+          <div className="compare-grid">
+            {[0, 1].map((idx) => (
+              <div key={idx} className="compare-slot">
+                <select
+                  className="compare-select"
+                  value={compareIds[idx] || ''}
+                  onChange={(e) => handleCompareSelect(idx, e.target.value || null)}
+                >
+                  <option value="">Select outfit...</option>
+                  {outfits.map((o) => (
+                    <option key={o.id} value={o.id}>{o.name}</option>
+                  ))}
+                </select>
+
+                {compareOutfits[idx] && (
+                  <div className="compare-card">
+                    <div className="compare-items">
+                      {compareOutfits[idx].item_ids
+                        .map(id => items.find(i => i.id === id))
+                        .filter(Boolean)
+                        .map(item => (
+                          <img key={item.id} src={item.image} alt={item.name} className="compare-item-img" referrerPolicy="no-referrer" />
+                        ))
+                      }
+                    </div>
+                    <div className="compare-meta">
+                      <h4 className="compare-name">{compareOutfits[idx].name}</h4>
+                      <div className="compare-badges">
+                        {compareOutfits[idx].style && <span className="meta-tag">{compareOutfits[idx].style}</span>}
+                        {compareOutfits[idx].occasion && <span className="meta-tag">{compareOutfits[idx].occasion}</span>}
+                        {compareOutfits[idx].cohesion_score && (
+                          <span className="compare-score">{compareOutfits[idx].cohesion_score}/10</span>
+                        )}
+                      </div>
+                      {compareOutfits[idx].reasoning && (
+                        <p className="compare-reasoning">{compareOutfits[idx].reasoning}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </main>
   );
 };
