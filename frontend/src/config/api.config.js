@@ -4,7 +4,7 @@
  */
 
 export const API_CONFIG = {
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'https://apigateway-production-b91d.up.railway.app',
+  baseURL: import.meta.env.VITE_API_BASE_URL,
   timeout: 90000,
   headers: {
     'Accept': 'application/json',

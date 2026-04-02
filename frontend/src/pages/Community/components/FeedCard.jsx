@@ -59,12 +59,18 @@ const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare, onCompareCli
       if (isReacting) return;
       setIsReacting(true);
       try {
+        // Remove any other active reactions first (single-select enforcement)
+        const otherReactions = reactions.user_reactions.filter(r => r !== emojiType);
+        for (const r of otherReactions) {
+          await reactToOutfit(item.id, r);
+        }
+        // Toggle the clicked emoji
         await reactToOutfit(item.id, emojiType);
       } finally {
         setIsReacting(false);
       }
     },
-    [item.id, reactToOutfit, isReacting]
+    [item.id, reactToOutfit, isReacting, reactions.user_reactions]
   );
 
   const handleRate = useCallback(
