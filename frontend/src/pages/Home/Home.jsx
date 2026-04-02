@@ -56,8 +56,13 @@ const Home = () => {
   const [compareIds, setCompareIds] = useState([null, null]);
   const { outfits } = useOutfitStore();
 
+  const { fetchOutfits } = useOutfitStore();
+  const { fetchItems } = useWardrobeStore();
+
   useEffect(() => {
     fetchStats();
+    fetchOutfits();
+    fetchItems();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
