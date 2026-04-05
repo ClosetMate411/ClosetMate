@@ -1,69 +1,98 @@
-.clothing-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 0.75rem;
-  cursor: pointer;
-  text-align: left;
-  width: 100%;
-  outline: none;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
-}
-
-.clothing-card:hover {
-  transform: translateY(-3px);
-  border-color: var(--primary-lighter);
-  box-shadow: 0 8px 22px rgba(142, 55, 223, 0.1);
-}
-
-.clothing-card:active {
-  transform: translateY(-1px);
-}
-
-.clothing-card:focus-visible {
-  outline: 2.5px solid var(--primary);
-  outline-offset: 3px;
-}
-
-.clothing-thumb {
-  border-radius: 10px;
-  overflow: hidden;
-  background: var(--bg-light);
-  border: 1px solid var(--border);
-  aspect-ratio: 1 / 1;
+/* Fashion-store card — image on light-purple bg, name below */
+.fc-card {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  cursor: pointer;
+  background: transparent;
+  /* No border, no shadow — card IS the page background */
 }
 
-.clothing-thumb img {
+/* ── Image zone ── */
+.fc-image-zone {
+  position: relative;
+  width: 100%;
+  /* Reliable aspect-ratio via padding-top — works across all browsers */
+  padding-top: 120%; /* 5:6 ratio = 6/5 = 1.2 = 120% */
+  height: 0;
+  background: #ece8f4;
+  overflow: hidden;
+  border-radius: 6px;
+}
+
+.fc-image {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
+  padding: 8%;
+  box-sizing: border-box;
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.clothing-name {
-  margin-top: 0.625rem;
-  font-size: 0.875rem;
+/* ── Hover layer ── */
+.fc-hover-layer {
+  position: absolute;
+  inset: 0;
+  background: rgba(91, 33, 182, 0.08);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 1.25rem;
+  pointer-events: none;
+}
+
+.fc-view-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.4rem 1rem;
+  background: #0f0820;
+  color: #ffffff;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: 100px;
+}
+
+/* ── Footer ── */
+.fc-footer {
+  padding: 0.625rem 0.25rem 0;
+  text-align: center;
+}
+
+.fc-name {
+  display: block;
+  font-size: 1rem;
   font-weight: 600;
-  color: var(--text-primary);
+  color: #0f0820;
+  letter-spacing: -0.01em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.4;
 }
 
-.clothing-name--muted {
-  color: var(--text-muted);
+.fc-name--muted {
+  color: #a89fc0;
+  font-style: italic;
 }
 
 @media (max-width: 768px) {
-  .clothing-card {
-    padding: 0.625rem;
+  .fc-image-zone {
+    border-radius: 4px;
   }
+  .fc-name {
+    font-size: 0.875rem;
+  }
+}
 
-  .clothing-name {
+@media (max-width: 480px) {
+  .fc-footer {
+    padding: 0.5rem 0.125rem 0;
+  }
+  .fc-name {
     font-size: 0.8125rem;
-    margin-top: 0.5rem;
   }
 }

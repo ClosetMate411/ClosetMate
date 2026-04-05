@@ -1,9 +1,11 @@
 .loading-screen-overlay {
-  flex: 1; /* Take up all available space in the flex column */
+  flex: 1;
+  position: relative;
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 400px; /* Ensure it stays visible */
+  min-height: 400px;
+  overflow: hidden;
 }
 
 .loading-screen-content {

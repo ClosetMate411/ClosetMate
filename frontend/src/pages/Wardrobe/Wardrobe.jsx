@@ -1,22 +1,22 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
-import { Modal } from "@mantine/core";
-import { 
-  ClothingGrid, 
-  EmptyWardrobe, 
-  ClothingDropzone, 
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  ClothingGrid,
+  EmptyWardrobe,
+  ClothingDropzone,
   ConfirmModal,
   Toast,
   LoadingScreen,
-  ImageConfirmation
+  ImageConfirmation,
 } from "../../components";
 import useWardrobeStore from "../../store/wardrobeStore";
+import useAuthStore from "../../store/authStore";
 import { useModal, useWardrobeHandlers, useToast } from "../../hooks";
 import apiService from "../../services/api.service";
 import ProcessingError from "./components/ProcessingError";
-import LoadingOverlay from "./components/LoadingOverlay";
+import ClothingDetail from "../../components/ClothingDetail/ClothingDetail";
 import "./Wardrobe.css";
 
-// Selector functions for better performance
 const selectItems = (state) => state.items;
 const selectLoading = (state) => state.loading;
 const selectOpenModal = (state) => state.openModal;
@@ -29,114 +29,100 @@ const Wardrobe = () => {
   const openModal = useWardrobeStore(selectOpenModal);
   const setOpenModal = useWardrobeStore(selectSetOpenModal);
   const fetchItems = useWardrobeStore(selectFetchItems);
-  
+  const user = useAuthStore((s) => s.user);
+  const displayName = user?.full_name || user?.name || "My";
+
   const [selectedItem, setSelectedItem] = useState(null);
   const [isEditingItem, setIsEditingItem] = useState(false);
-  
-  // Upload workflow states
-  const [uploadState, setUploadState] = useState('idle'); // 'idle' | 'processing' | 'saving' | 'updating' | 'deleting' | 'error' | 'confirming'
+  const [uploadState, setUploadState] = useState("idle");
   const [uploadedFile, setUploadedFile] = useState(null);
   const [processedImageUrl, setProcessedImageUrl] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
-  
+
   const modal = useModal();
   const { toast, showSuccess, showError } = useToast();
   const handlers = useWardrobeHandlers(modal);
 
-  // Fetch items from backend on mount
   useEffect(() => {
     fetchItems();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-
-  // Get the current selected item. 
-  // We prioritize local 'selectedItem' state because it may contain un-saved 
-  // UI updates (like a newly processed and confirmed image).
   const currentSelectedItem = useMemo(() => {
     if (!selectedItem) return null;
-    const itemInStore = items.find(item => item.id === selectedItem.id);
+    const itemInStore = items.find((item) => item.id === selectedItem.id);
     return itemInStore ? { ...itemInStore, ...selectedItem } : selectedItem;
   }, [items, selectedItem]);
 
-  const isLoading = useMemo(() => 
-    loading || ['processing', 'saving', 'analyzing', 'updating', 'deleting'].includes(uploadState),
+  const isLoading = useMemo(
+    () =>
+      loading ||
+      ["processing", "saving", "analyzing", "updating", "deleting"].includes(uploadState),
     [loading, uploadState]
   );
 
-  // File handlers (for validation)
-  const handleFilesAccepted = useCallback(() => {
-    // Handle accepted files
-  }, []);
+  const handleFilesAccepted = useCallback(() => {}, []);
 
-  const handleFilesRejected = useCallback((rejections) => {
-    const error = rejections[0]?.errors[0];
-    if (error?.code === 'file-too-large') {
-      showError('File is too large. Maximum size is 10MB.');
-    } else if (error?.code === 'file-invalid-type') {
-      showError('Invalid file format. Please upload JPEG, PNG, or HEIC.');
-    } else {
-      showError('Failed to upload image. Please try another file.');
-    }
-  }, [showError]);
+  const handleFilesRejected = useCallback(
+    (rejections) => {
+      const error = rejections[0]?.errors[0];
+      if (error?.code === "file-too-large") showError("File is too large. Maximum size is 10MB.");
+      else if (error?.code === "file-invalid-type") showError("Invalid file format. Please upload JPEG, PNG, or HEIC.");
+      else showError("Failed to upload image. Please try another file.");
+    },
+    [showError]
+  );
 
-  // Upload workflow handlers
-  const handleApplyUpload = useCallback(async (uploadedFiles) => {
-    const file = uploadedFiles[0].file;
-    setUploadedFile(file);
-    setOpenModal(null); // Close upload modal
-    setUploadState('processing');
-    setRetryCount(0);
-    
-    try {
-      const result = await apiService.processImage(file);
-      
-      // Backend returns: { success: true, data: { processed_url, original_url, file_name, file_size } }
-      const imageUrl = result.data?.processed_url || result.processed_url || result.image_url || result.processed_image_url;
-      
-      if (!imageUrl) {
-        throw new Error('No image URL in response');
+  const handleApplyUpload = useCallback(
+    async (uploadedFiles) => {
+      const file = uploadedFiles[0].file;
+      setUploadedFile(file);
+      setOpenModal(null);
+      setUploadState("processing");
+      setRetryCount(0);
+      try {
+        const result = await apiService.processImage(file);
+        const imageUrl =
+          result.data?.processed_url || result.processed_url || result.image_url || result.processed_image_url;
+        if (!imageUrl) throw new Error("No image URL in response");
+        setProcessedImageUrl(imageUrl);
+        setUploadState("confirming");
+        showSuccess("Background has been successfully removed");
+      } catch (error) {
+        showError(error.message || "Failed to process image. Please try again.");
+        setUploadState("error");
       }
-      
-      setProcessedImageUrl(imageUrl);
-      setUploadState('confirming');
-      showSuccess('Background has been successfully removed');
-    } catch (error) {
-      console.error('Image processing failed:', error);
-      showError(error.message || 'Failed to process image. Please try again.');
-      setUploadState('error');
-    }
-  }, [setOpenModal, showError]);
+    },
+    [setOpenModal, showError, showSuccess]
+  );
 
   const handleRetryProcessing = useCallback(async () => {
     if (!uploadedFile || retryCount >= 2) return;
-    
-    setUploadState('processing');
-    setRetryCount(prev => prev + 1);
-    
+    setUploadState("processing");
+    setRetryCount((prev) => prev + 1);
     try {
       const result = await apiService.processImage(uploadedFile);
-      const imageUrl = result.data?.processed_url || result.processed_url || result.image_url || result.processed_image_url;
+      const imageUrl =
+        result.data?.processed_url || result.processed_url || result.image_url || result.processed_image_url;
       setProcessedImageUrl(imageUrl);
-      setUploadState('confirming');
-      showSuccess('Background has been successfully removed');
+      setUploadState("confirming");
+      showSuccess("Background has been successfully removed");
     } catch (error) {
-      console.error('Image processing retry failed:', error);
-      showError(error.message || 'Processing failed. Please try again.');
-      setUploadState('error');
+      showError(error.message || "Processing failed. Please try again.");
+      setUploadState("error");
     }
-  }, [uploadedFile, retryCount, showError]);
+  }, [uploadedFile, retryCount, showError, showSuccess]);
 
   const handleUploadDifferent = useCallback(() => {
-    setUploadState('idle');
+    setUploadState("idle");
     setUploadedFile(null);
     setProcessedImageUrl(null);
     setRetryCount(0);
-    setOpenModal('upload');
+    setOpenModal("upload");
   }, [setOpenModal]);
 
   const handleCancelUpload = useCallback(() => {
-    setUploadState('idle');
+    setUploadState("idle");
     setUploadedFile(null);
     setProcessedImageUrl(null);
     setRetryCount(0);
@@ -145,73 +131,54 @@ const Wardrobe = () => {
   const handleConfirmImage = useCallback(async () => {
     if (!uploadedFile) return;
     try {
-      // Phase 1: Save item
-      setUploadState('saving');
-      const newItemId = await handlers.handleApply(uploadedFile, '', '');
+      setUploadState("saving");
+      const newItemId = await handlers.handleApply(uploadedFile, "", "");
       setUploadedFile(null);
       setProcessedImageUrl(null);
-
-      // Phase 2: AI analysis
       if (newItemId) {
-        setUploadState('analyzing');
+        setUploadState("analyzing");
         const { pollForAnalysis } = useWardrobeStore.getState();
         await pollForAnalysis(newItemId);
       }
-
-      // Phase 3: Done
       await useWardrobeStore.getState().fetchItems();
-      setUploadState('idle');
-      showSuccess('Item saved and analyzed!');
+      setUploadState("idle");
+      showSuccess("Item saved and analyzed!");
     } catch (error) {
-      showError(error.message || 'Failed to save item');
-      setUploadState('idle');
+      showError(error.message || "Failed to save item");
+      setUploadState("idle");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uploadedFile, handlers]);
 
-  // UI interaction handlers
-  const handleProcessEditImage = useCallback(async (file, tempEdits) => {
-    if (!selectedItem) return;
-    
-    // Preserve unsaved form field changes (name/weather) 
-    // before the ClothingDetail component unmounts for confirmation
-    if (tempEdits) {
-      setSelectedItem(prev => ({
-        ...prev,
-        name: tempEdits.name,
-        weather: tempEdits.weather
-      }));
-    }
-    
-    setUploadState('processing');
-    try {
-      const result = await apiService.processImage(file);
-      const imageUrl = result.data?.processed_url || result.processed_url || result.image_url || result.processed_image_url;
-      
-      if (!imageUrl) throw new Error('No image URL in response');
-      
-      setProcessedImageUrl(imageUrl);
-      setUploadedFile(file);
-      setUploadState('confirming');
-      showSuccess('Background has been successfully removed');
-    } catch (error) {
-      console.error('Image processing failed:', error);
-      showError(error.message || 'Failed to process image.');
-      setUploadState('error');
-    }
-  }, [selectedItem, showError, showSuccess]);
+  const handleProcessEditImage = useCallback(
+    async (file, tempEdits) => {
+      if (!selectedItem) return;
+      if (tempEdits) {
+        setSelectedItem((prev) => ({ ...prev, name: tempEdits.name, weather: tempEdits.weather }));
+      }
+      setUploadState("processing");
+      try {
+        const result = await apiService.processImage(file);
+        const imageUrl =
+          result.data?.processed_url || result.processed_url || result.image_url || result.processed_image_url;
+        if (!imageUrl) throw new Error("No image URL in response");
+        setProcessedImageUrl(imageUrl);
+        setUploadedFile(file);
+        setUploadState("confirming");
+        showSuccess("Background has been successfully removed");
+      } catch (error) {
+        showError(error.message || "Failed to process image.");
+        setUploadState("error");
+      }
+    },
+    [selectedItem, showError, showSuccess]
+  );
 
-  // Consolidated Confirmation Handlers
   const handleConfirmAction = useCallback(async () => {
     const isEditMode = !!(selectedItem && selectedItem.id);
-    
     if (isEditMode) {
-      setSelectedItem(prev => ({
-        ...prev,
-        image: processedImageUrl,
-        processedFile: uploadedFile
-      }));
-      setUploadState('idle');
+      setSelectedItem((prev) => ({ ...prev, image: processedImageUrl, processedFile: uploadedFile }));
+      setUploadState("idle");
       setIsEditingItem(true);
       setUploadedFile(null);
       setProcessedImageUrl(null);
@@ -221,58 +188,45 @@ const Wardrobe = () => {
   }, [selectedItem, processedImageUrl, uploadedFile, handleConfirmImage]);
 
   const handleCancelAction = useCallback(() => {
-    setUploadState('idle');
+    setUploadState("idle");
     setUploadedFile(null);
     setProcessedImageUrl(null);
     setRetryCount(0);
-    // If we were in the middle of a new upload, we might want to return to the upload modal
-    // but the user only asked to fix the edit flow, so we stay on current state.
   }, []);
 
   const handleUploadDifferentAction = useCallback(() => {
     const isEditMode = !!(selectedItem && selectedItem.id);
-    
-    setUploadState('idle');
+    setUploadState("idle");
     setUploadedFile(null);
     setProcessedImageUrl(null);
     setRetryCount(0);
-
-    if (isEditMode) {
-      // Stay in edit mode, let the user pick again (the input is in ClothingDetail)
-      // We don't need to do anything special here as ClothingDetail is already visible.
-    } else {
-      // Go back to the upload modal for new items
-      setOpenModal('upload');
-    }
+    if (!isEditMode) setOpenModal("upload");
   }, [selectedItem, setOpenModal]);
 
-  const handleSaveEdit = useCallback(async (itemId, updates) => {
-    // Check if anything actually changed before showing loader and sending request
-    const currentItems = useWardrobeStore.getState().items;
-    const originalItem = currentItems.find(i => i.id === itemId);
-    if (originalItem) {
-      const nameChanged = (updates.itemName || '').trim() !== (originalItem.name || '').trim();
-      const weatherChanged = (updates.weather || '').trim() !== (originalItem.weather || '').trim();
-      const imageChanged = !!updates.file;
-
-      if (!nameChanged && !weatherChanged && !imageChanged) {
-        setIsEditingItem(false);
-        return;
+  const handleSaveEdit = useCallback(
+    async (itemId, updates) => {
+      const currentItems = useWardrobeStore.getState().items;
+      const originalItem = currentItems.find((i) => i.id === itemId);
+      if (originalItem) {
+        const nameChanged = (updates.itemName || "").trim() !== (originalItem.name || "").trim();
+        const weatherChanged = (updates.weather || "").trim() !== (originalItem.weather || "").trim();
+        const imageChanged = !!updates.file;
+        if (!nameChanged && !weatherChanged && !imageChanged) { setIsEditingItem(false); return; }
       }
-    }
-
-    try {
-      setUploadState('updating');
-      await handlers.handleSaveEdit(itemId, updates);
-      await useWardrobeStore.getState().fetchItems();
-      setUploadState('idle');
-      showSuccess('Item updated successfully!');
-    } catch (error) {
-      showError(error.message || 'Failed to update item');
-      setUploadState('idle');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handlers]);
+      try {
+        setUploadState("updating");
+        await handlers.handleSaveEdit(itemId, updates);
+        await useWardrobeStore.getState().fetchItems();
+        setUploadState("idle");
+        showSuccess("Item updated successfully!");
+      } catch (error) {
+        showError(error.message || "Failed to update item");
+        setUploadState("idle");
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [handlers]
+  );
 
   const handleCardClick = useCallback((item) => {
     setSelectedItem(item);
@@ -285,109 +239,196 @@ const Wardrobe = () => {
   }, []);
 
   const handleDelete = useCallback(async () => {
-    modal.openConfirmModal('delete', currentSelectedItem, async () => {
+    modal.openConfirmModal("delete", currentSelectedItem, async () => {
       try {
-        setUploadState('deleting');
+        setUploadState("deleting");
         await handlers.confirmDelete(currentSelectedItem.id);
         await fetchItems();
         setSelectedItem(null);
-        setUploadState('idle');
-        showSuccess('Item deleted successfully!');
+        setUploadState("idle");
+        showSuccess("Item deleted successfully!");
       } catch (error) {
-        showError(error.message || 'Failed to delete item.');
-        setUploadState('idle');
+        showError(error.message || "Failed to delete item.");
+        setUploadState("idle");
       }
     });
   }, [modal, currentSelectedItem, handlers, showSuccess, showError, fetchItems]);
 
-  const handleAddClick = useCallback(() => {
-    setOpenModal('upload');
-  }, [setOpenModal]);
+  const handleAddClick = useCallback(() => setOpenModal("upload"), [setOpenModal]);
+  const handleCloseUpload = useCallback(() => setOpenModal(null), [setOpenModal]);
 
-  const handleCloseUpload = useCallback(() => {
-    setOpenModal(null);
-  }, [setOpenModal]);
-
-
-
-
-
-  const renderContent = () => {
-    if (isLoading) {
-      return <LoadingOverlay uploadState={uploadState} loading={loading} />;
-    }
-
-    if (uploadState === 'error') {
-      return (
-        <ProcessingError 
-          retryCount={retryCount}
-          onRetry={handleRetryProcessing}
-          onUploadDifferent={handleUploadDifferent}
-          onReturn={handleCancelUpload}
-        />
-      );
-    }
-
-    if (uploadState === 'confirming' && processedImageUrl) {
-      return (
-        <ImageConfirmation
-          imageUrl={processedImageUrl}
-          onConfirm={handleConfirmAction}
-          onUploadDifferent={handleUploadDifferentAction}
-          onCancel={handleCancelAction}
-          isEditMode={!!(selectedItem && selectedItem.id)}
-        />
-      );
-    }
-
-    if (!items.length) {
-      return <EmptyWardrobe onAddClick={handleAddClick} />;
-    }
-
-    return (
-      <ClothingGrid 
-        items={items}
-        selectedItem={currentSelectedItem}
-        onCardClick={handleCardClick}
-        onAddClick={handleAddClick}
-        onBack={handleBack}
-        onSave={handleSaveEdit}
-        onDelete={handleDelete}
-        onProcessImage={handleProcessEditImage}
-        isEditingItem={isEditingItem}
-        onEditToggle={setIsEditingItem}
-      />
-    );
+  const getLoadingMessage = () => {
+    if (uploadState === "processing") return "Removing background…";
+    if (uploadState === "saving") return "Saving item…";
+    if (uploadState === "analyzing") return "AI is analyzing…";
+    if (uploadState === "updating") return "Saving changes…";
+    if (uploadState === "deleting") return "Deleting item…";
+    return "Loading wardrobe…";
   };
 
+  const showDetailPanel =
+    !!currentSelectedItem &&
+    !isLoading &&
+    uploadState !== "confirming" &&
+    uploadState !== "error";
+
   return (
-    <div className="wardrobe-page-wrapper">
-      {renderContent()}
+    <div className="wardrobe-page">
+      {/* ── Dark purple header (hidden when empty) ── */}
+      <div className={`wardrobe-topbar-wrap${items.length === 0 && !isLoading ? " wardrobe-topbar-wrap--hidden" : ""}`}>
+        <motion.header
+          className="wardrobe-topbar"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <div className="wardrobe-topbar-inner">
+            <div className="wardrobe-topbar-left">
+              <h1 className="wardrobe-topbar-title">
+                <span className="wardrobe-topbar-name">{displayName}{"\u2019s"}</span>
+                {" Wardrobe"}
+              </h1>
+              {items.length > 0 && (
+                <span className="wardrobe-topbar-count">{items.length} piece{items.length !== 1 ? "s" : ""}</span>
+              )}
+            </div>
+            {items.length > 0 && (
+              <motion.button
+                className="wardrobe-topbar-add"
+                onClick={handleAddClick}
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
+              >
+                <span className="wardrobe-add-plus">+</span>
+                Add Item
+              </motion.button>
+            )}
+          </div>
+          {items.length > 0 && (
+            <p className="wardrobe-topbar-hint">Click any item to view or edit it</p>
+          )}
+        </motion.header>
+      </div>
 
-      <Modal
-        opened={openModal === 'upload'}
-        onClose={handleCloseUpload}
-        title="Upload Clothing Items"
-        size="lg"
-        centered
-      >
-        <ClothingDropzone
-          onFilesAccepted={handleFilesAccepted}
-          onFilesRejected={handleFilesRejected}
-          onApply={handleApplyUpload}
-          onCancel={handlers.handleCancel}
-        />
-      </Modal>
+      {/* ── Canvas ── */}
+      <div className={`wardrobe-canvas${items.length === 0 && !isLoading ? " wardrobe-canvas--empty" : ""}`}>
+        <AnimatePresence mode="wait">
+          {items.length === 0 && !isLoading ? (
+            <EmptyWardrobe key="empty" onAddClick={handleAddClick} userName={displayName} />
+          ) : (
+            <ClothingGrid key="grid" items={items} onCardClick={handleCardClick} />
+          )}
+        </AnimatePresence>
 
-      {/* Single Dynamic Confirmation Modal */}
+        {/* Canvas loading overlay */}
+        <AnimatePresence>
+          {isLoading && (
+            <motion.div
+              className="canvas-loading-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <LoadingScreen message={getLoadingMessage()} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Error overlay */}
+        <AnimatePresence>
+          {uploadState === "error" && (
+            <ProcessingError
+              retryCount={retryCount}
+              onRetry={handleRetryProcessing}
+              onUploadDifferent={handleUploadDifferent}
+              onReturn={handleCancelUpload}
+            />
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* ── Image confirmation ── */}
+      <AnimatePresence>
+        {uploadState === "confirming" && processedImageUrl && (
+          <ImageConfirmation
+            imageUrl={processedImageUrl}
+            onConfirm={handleConfirmAction}
+            onUploadDifferent={handleUploadDifferentAction}
+            onCancel={handleCancelAction}
+            isEditMode={!!(selectedItem && selectedItem.id)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── Upload overlay ── */}
+      <AnimatePresence>
+        {openModal === "upload" && (
+          <motion.div
+            className="upload-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+          >
+            <motion.div
+              className="upload-panel"
+              initial={{ opacity: 0, scale: 0.94, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 20 }}
+              transition={{ duration: 0.36, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <div className="upload-panel-header">
+                <h2 className="upload-panel-title">Add to Wardrobe</h2>
+                <button className="upload-panel-close" onClick={handleCloseUpload}>✕</button>
+              </div>
+              <div className="upload-panel-body">
+                <ClothingDropzone
+                  onFilesAccepted={handleFilesAccepted}
+                  onFilesRejected={handleFilesRejected}
+                  onApply={handleApplyUpload}
+                  onCancel={handlers.handleCancel}
+                />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Detail modal ── */}
+      <AnimatePresence>
+        {showDetailPanel && (
+          <motion.div
+            className="detail-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            onClick={handleBack}
+          >
+            <motion.div
+              className="detail-modal"
+              initial={{ opacity: 0, scale: 0.96, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 16 }}
+              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <ClothingDetail
+                item={currentSelectedItem}
+                onBack={handleBack}
+                onDelete={handleDelete}
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <ConfirmModal
         opened={modal.isConfirmModalOpen}
         onClose={modal.closeConfirmModal}
         onConfirm={modal.handleConfirm}
         {...modal.confirmModalConfig}
       />
-
-      {/* Toast Notification */}
       <Toast {...toast} />
     </div>
   );

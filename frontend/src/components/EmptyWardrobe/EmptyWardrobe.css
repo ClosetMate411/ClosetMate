@@ -1,60 +1,143 @@
-.wardrobe-hero {
-  padding: 3.5rem 1.5rem 3rem;
+/* ── Root — fills the flex canvas exactly, no extra scroll ── */
+.ew-root {
+  position: relative;
+  width: 100%;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
 }
 
-.wardrobe-container {
-  max-width: 68.75rem;
-  margin: 0 auto;
+/* ── Ambient blobs ── */
+.ew-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+  z-index: 0;
+}
+.ew-blob--1 {
+  width: min(560px, 90vw); height: min(560px, 90vw);
+  background: radial-gradient(circle, rgba(142,55,223,0.12) 0%, transparent 70%);
+  top: -10%; left: 50%; transform: translateX(-50%);
+}
+.ew-blob--2 {
+  width: min(380px, 70vw); height: min(380px, 70vw);
+  background: radial-gradient(circle, rgba(205,182,255,0.18) 0%, transparent 70%);
+  bottom: 0; left: 0;
+}
+.ew-blob--3 {
+  width: min(300px, 60vw); height: min(300px, 60vw);
+  background: radial-gradient(circle, rgba(91,33,182,0.1) 0%, transparent 70%);
+  top: 30%; right: 0;
 }
 
-.wardrobe-title {
-  font-size: 2rem;
-  font-weight: 800;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-  color: var(--text-primary);
+/* ── Dynamic floating emoji background ── */
+.ew-floats {
+  position: fixed;
+  top: 4rem; /* clear the navbar */
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+.ew-float {
+  position: absolute;
+  /* size / opacity / filter all set inline per-emoji */
+  line-height: 1;
+  user-select: none;
+  will-change: transform;
+}
+
+@media (max-width: 480px) {
+  .ew-float:nth-child(n+10) {
+    display: none;
+  }
+}
+
+/* ── Hero content ── */
+.ew-hero-content {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  max-width: 620px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 2rem 1.5rem;
+}
+
+.ew-headline {
+  font-size: clamp(2rem, 5vw, 3.25rem);
+  font-weight: 900;
+  color: #0f0820;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
   margin: 0;
 }
 
-.wardrobe-subtitle {
-  margin-top: 0.625rem;
+.ew-headline-accent {
+  background: linear-gradient(135deg, #8e37df 0%, #5b21b6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.ew-sub {
+  font-size: 1.0625rem;
+  color: #8b7fa8;
+  line-height: 1.65;
+  margin: 0;
+}
+
+/* ── CTA ── */
+.ew-cta-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.625rem;
+  margin-top: 0.5rem;
+}
+
+.ew-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 1rem 2.25rem;
+  background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
+  color: #ffffff;
   font-size: 1rem;
-  font-weight: 400;
-  line-height: 1.6;
-  color: var(--text-muted);
+  font-weight: 700;
+  border: none;
+  border-radius: 100px;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+  box-shadow: 0 8px 32px rgba(168,85,247,0.38);
+  font-family: inherit;
 }
 
-.empty-state {
-  padding: 4rem 1.5rem 7rem;
-  text-align: center;
+.ew-cta-plus {
+  font-size: 1.5rem;
+  font-weight: 300;
+  line-height: 1;
 }
 
-.empty-text {
-  font-size: 1rem;
-  color: var(--text-muted);
-  line-height: 1.6;
-  margin: 0 0 1.25rem;
+.ew-cta-hint {
+  font-size: 0.8125rem;
+  color: #b8a8d0;
+  margin: 0;
+  letter-spacing: 0.02em;
 }
 
-@media (max-width: 768px) {
-  .wardrobe-hero {
-    padding: 1.5rem 1.25rem 1rem;
-  }
+/* ── Responsive ── */
+@media (max-width: 480px) {
+  .ew-float { display: none; }
 
-  .wardrobe-title {
-    font-size: 1.625rem;
-  }
-
-  .wardrobe-subtitle {
-    font-size: 0.9375rem;
-  }
-
-  .empty-state {
-    padding: 2rem 1.5rem 4rem;
-  }
-
-  .empty-text {
-    font-size: 0.9375rem;
-    margin: 0 0 1rem;
+  .ew-cta {
+    width: 100%;
+    justify-content: center;
   }
 }

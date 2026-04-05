@@ -1,0 +1,23 @@
+.feb-layer {
+  position: fixed;
+  top: 4rem; /* below navbar */
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.feb-emoji {
+  position: absolute;
+  line-height: 1;
+  user-select: none;
+  will-change: transform;
+}
+
+@media (max-width: 480px) {
+  .feb-emoji:nth-child(n+10) {
+    display: none;
+  }
+}
