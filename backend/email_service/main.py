@@ -91,9 +91,9 @@ def get_db():
 
 
 def verify_internal_key(request: Request) -> bool:
-    """Verify service-to-service API key"""
+    """Verify service-to-service API key. Strict: always requires key match."""
     if not INTERNAL_API_KEY:
-        return True  # dev mode, no key required
+        return False
     api_key = request.headers.get("X-API-Key", "")
     return api_key == INTERNAL_API_KEY
 
@@ -178,11 +178,18 @@ app = FastAPI(
     title="ClosetMate Email Service",
     description="OTP management and email delivery microservice",
     version="1.0.0",
+    # Internal service — no public docs
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://closetmate.org.tr",
+        "https://www.closetmate.org.tr",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

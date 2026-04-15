@@ -71,6 +71,7 @@ class User(Base):
     comment_strike_count = Column(Integer, default=0)
     comment_banned_until = Column(DateTime, nullable=True)
     comment_ban_permanent = Column(Boolean, default=False)
+    role = Column(String(20), nullable=False, default="user")  # "user" | "admin"
 
     # Relationship
     items = relationship("ClothingItem", back_populates="owner", cascade="all, delete-orphan")
@@ -119,6 +120,7 @@ with engine.connect() as _conn:
         "ALTER TABLE users ADD COLUMN comment_strike_count INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN comment_banned_until TIMESTAMP DEFAULT NULL",
         "ALTER TABLE users ADD COLUMN comment_ban_permanent BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE users ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'user'",
     ):
         try:
             _conn.execute(sa_text(_stmt))
@@ -126,6 +128,54 @@ with engine.connect() as _conn:
             logger.info(f"Migration applied: {_stmt}")
         except Exception:
             _conn.rollback()
+
+
+# ============== ADMIN SEEDING (idempotent) ==============
+
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip().lower() or None
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD") or None
+ADMIN_FULL_NAME = os.getenv("ADMIN_FULL_NAME", "ClosetMate Admin")
+
+
+def _seed_admin() -> None:
+    """Create admin user from env if not exists. Fails silently on any error
+    so server always boots."""
+    if not ADMIN_EMAIL or not ADMIN_PASSWORD:
+        logger.info("Admin seed: ADMIN_EMAIL / ADMIN_PASSWORD not set, skipping")
+        return
+    try:
+        db = SessionLocal()
+        try:
+            existing = db.query(User).filter(User.email == ADMIN_EMAIL).first()
+            if existing:
+                # If the account already exists, ensure role is admin + verified
+                if existing.role != "admin" or not existing.is_verified:
+                    existing.role = "admin"
+                    existing.is_verified = True
+                    db.commit()
+                    logger.info(f"Admin seed: promoted existing {ADMIN_EMAIL} to admin")
+                else:
+                    logger.info(f"Admin seed: {ADMIN_EMAIL} already exists as admin")
+                return
+
+            admin = User(
+                id=str(uuid.uuid4()),
+                email=ADMIN_EMAIL,
+                password_hash=bcrypt.hashpw(ADMIN_PASSWORD.encode("utf-8"), bcrypt.gensalt()).decode("utf-8"),
+                full_name=ADMIN_FULL_NAME,
+                is_verified=True,
+                role="admin",
+            )
+            db.add(admin)
+            db.commit()
+            logger.info(f"Admin seed: created {ADMIN_EMAIL}")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"Admin seed failed (non-fatal): {e}")
+
+
+_seed_admin()
 
 
 # ============== VALIDATION HELPERS ==============
@@ -203,11 +253,12 @@ def verify_password(password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
 
 
-def create_token(user_id: str, email: str) -> str:
+def create_token(user_id: str, email: str, role: str = "user") -> str:
     """Create JWT token"""
     payload = {
         "user_id": user_id,
         "email": email,
+        "role": role,
         "iat": datetime.utcnow(),
         "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS)
     }
@@ -359,7 +410,10 @@ async def cleanup_image_file(file_name: str):
     """
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            await client.delete(f"{IMAGE_SERVICE_URL}/images/{file_name}")
+            await client.delete(
+                f"{IMAGE_SERVICE_URL}/images/{file_name}",
+                headers={"X-API-Key": INTERNAL_API_KEY or ""},
+            )
             logger.info(f"Image file cleanup triggered for {file_name}")
     except Exception as e:
         logger.warning(f"Failed to cleanup image file {file_name}: {e}")
@@ -371,11 +425,20 @@ app = FastAPI(
     title="ClosetMate Wardrobe Service",
     description="Wardrobe management with full authentication + AI analysis",
     version="3.0.0",
+    # Internal service — no public docs
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
+# CORS: only allow the public frontend origin. Internal service-to-service
+# traffic doesn't need CORS since Docker network bypasses the browser.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://closetmate.org.tr",
+        "https://www.closetmate.org.tr",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -412,38 +475,6 @@ async def health_check(db: Session = Depends(get_db)):
             status_code=503,
             content={"status": "unhealthy", "service": "wardrobe", "database": "disconnected", "error": str(e)}
         )
-
-
-@app.get("/debug/image-service")
-async def debug_image_service():
-    """Debug endpoint to test connectivity to image processing service"""
-    result = {
-        "image_service_url": IMAGE_SERVICE_URL,
-        "outfit_service_url": OUTFIT_SERVICE_URL,
-    }
-    
-    # Test image service health
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"{IMAGE_SERVICE_URL}/health")
-            result["image_service_health"] = resp.json()
-            result["image_service_status"] = "reachable"
-            result["image_service_response_time_ms"] = resp.elapsed.total_seconds() * 1000
-    except Exception as e:
-        result["image_service_status"] = "unreachable"
-        result["image_service_error"] = str(e)
-    
-    # Test outfit service health
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"{OUTFIT_SERVICE_URL}/health")
-            result["outfit_service_health"] = resp.json()
-            result["outfit_service_status"] = "reachable"
-    except Exception as e:
-        result["outfit_service_status"] = "unreachable"
-        result["outfit_service_error"] = str(e)
-    
-    return result
 
 
 # ============== AUTH ENDPOINTS ==============
@@ -591,7 +622,22 @@ async def login(
     user.lockout_until = None
     user.last_login = datetime.utcnow()
     db.commit()
-    logger.info(f"AUTH: Successful login — {email} (id={user.id})")
+    logger.info(f"AUTH: Successful login — {email} (id={user.id}, role={user.role})")
+
+    # Admin bypass: skip OTP, return JWT directly
+    if user.role == "admin":
+        token = create_token(user.id, user.email, role=user.role)
+        return {
+            "success": True,
+            "data": {
+                "user_id": user.id,
+                "email": user.email,
+                "full_name": user.full_name,
+                "avatar_url": user.avatar_url,
+                "role": user.role,
+                "token": token,
+            },
+        }
 
     # Send login OTP via Email Service
     otp_result = await call_email_service("/otp/send", {
@@ -603,7 +649,7 @@ async def login(
     # Graceful degradation: if email service is down, allow verified users through
     if not otp_result.get("success"):
         if user.is_verified:
-            token = create_token(user.id, user.email)
+            token = create_token(user.id, user.email, role=user.role)
             return {
                 "success": True,
                 "data": {
@@ -611,6 +657,7 @@ async def login(
                     "email": user.email,
                     "full_name": user.full_name,
                     "avatar_url": user.avatar_url,
+                    "role": user.role,
                     "token": token
                 }
             }
@@ -746,6 +793,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
             "email": current_user.email,
             "full_name": current_user.full_name,
             "avatar_url": current_user.avatar_url,
+            "role": current_user.role,
             "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
             "last_login": current_user.last_login.isoformat() if current_user.last_login else None
         }
@@ -782,7 +830,11 @@ async def update_avatar(
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             files = {"image": (avatar.filename, content, avatar.content_type)}
-            response = await client.post(f"{IMAGE_SERVICE_URL}/images/store", files=files)
+            response = await client.post(
+                f"{IMAGE_SERVICE_URL}/images/store",
+                files=files,
+                headers={"X-API-Key": INTERNAL_API_KEY or ""},
+            )
             if response.status_code != 200:
                 logger.error(f"Avatar upload: image service returned {response.status_code}: {response.text[:200]}")
                 return create_error_response("UPLOAD_FAILED", "Avatar upload failed.", 500)
@@ -885,7 +937,7 @@ async def verify_email(
     db.commit()
 
     # Issue JWT token
-    token = create_token(user.id, user.email)
+    token = create_token(user.id, user.email, role=user.role)
 
     return {
         "success": True,
@@ -895,6 +947,7 @@ async def verify_email(
             "email": user.email,
             "full_name": user.full_name,
             "avatar_url": user.avatar_url,
+            "role": user.role,
             "token": token
         }
     }
@@ -933,7 +986,7 @@ async def verify_login(
         )
 
     # Issue JWT token
-    token = create_token(user.id, user.email)
+    token = create_token(user.id, user.email, role=user.role)
 
     return {
         "success": True,
@@ -942,6 +995,7 @@ async def verify_login(
             "email": user.email,
             "full_name": user.full_name,
             "avatar_url": user.avatar_url,
+            "role": user.role,
             "token": token
         }
     }
@@ -1030,7 +1084,11 @@ async def create_item(
         logger.info(f"Create item: calling image service at {IMAGE_SERVICE_URL}/images/process")
         async with httpx.AsyncClient(timeout=60.0) as client:
             files = {"image": (image.filename, content, image.content_type)}
-            response = await client.post(f"{IMAGE_SERVICE_URL}/images/process", files=files)
+            response = await client.post(
+                f"{IMAGE_SERVICE_URL}/images/process",
+                files=files,
+                headers={"X-API-Key": INTERNAL_API_KEY or ""},
+            )
             logger.info(f"Create item: image service responded with status {response.status_code} in {response.elapsed.total_seconds():.2f}s")
             
             if response.status_code != 200:
@@ -1161,8 +1219,12 @@ async def update_item(
         try:
             async with httpx.AsyncClient(timeout=180.0) as client:
                 files = {"image": (image.filename, content, image.content_type)}
-                response = await client.post(f"{IMAGE_SERVICE_URL}/images/process", files=files)
-                
+                response = await client.post(
+                    f"{IMAGE_SERVICE_URL}/images/process",
+                    files=files,
+                    headers={"X-API-Key": INTERNAL_API_KEY or ""},
+                )
+
                 if response.status_code == 200:
                     image_data = response.json()
                     if image_data.get("success"):

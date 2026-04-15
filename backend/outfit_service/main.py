@@ -268,9 +268,10 @@ def create_error_response(code: str, message: str, status_code: int = 400):
 
 
 def verify_internal_request(api_key: Optional[str]) -> bool:
-    """Verify service-to-service requests using shared API key"""
-    if not INTERNAL_API_KEY:
-        return True  # Skip if not configured (dev mode)
+    """Verify service-to-service requests using shared API key.
+    Strict: if INTERNAL_API_KEY is not configured, reject all internal calls."""
+    if not INTERNAL_API_KEY or not api_key:
+        return False
     return api_key == INTERNAL_API_KEY
 
 
@@ -306,11 +307,18 @@ app = FastAPI(
     title="ClosetMate Outfit Service",
     description="AI-powered clothing analysis and outfit generation",
     version="1.0.0",
+    # Internal service — no public docs
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://closetmate.org.tr",
+        "https://www.closetmate.org.tr",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -351,11 +359,18 @@ async def health_check(db: Session = Depends(get_db)):
 # ============== TEXT MODERATION ==============
 
 @app.post("/moderate/text")
-async def moderate_text_endpoint(request: Request):
+async def moderate_text_endpoint(
+    request: Request,
+    x_api_key: Optional[str] = Header(None),
+):
     """
     Moderate user-submitted text content. Called by Community Service
     before saving comments. Returns {passed, internal_reason, severity}.
+    Requires X-API-Key matching INTERNAL_API_KEY.
     """
+    if not verify_internal_request(x_api_key):
+        return create_error_response("UNAUTHORIZED", "Invalid API key", 401)
+
     try:
         body = await request.json()
     except Exception:

@@ -19,12 +19,14 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Header, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 from rembg import remove, new_session
+
+import jwt
 from pillow_heif import register_heif_opener
 
 register_heif_opener()  # Enables PIL to open HEIC/HEIF files
@@ -35,6 +37,49 @@ logger = logging.getLogger(__name__)
 MAX_FILE_SIZE      = 10 * 1024 * 1024  # 10MB per SRS FReq2.1
 MAX_DIMENSION      = 1024
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
+
+# ── Auth config ──────────────────────────────────────────────────────────────
+JWT_SECRET = os.getenv("JWT_SECRET")
+JWT_ALGORITHM = "HS256"
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
+
+
+def require_user_or_internal(
+    authorization: Optional[str] = Header(None),
+    x_api_key: Optional[str] = Header(None),
+) -> str:
+    """
+    Accept either:
+      - X-API-Key matching INTERNAL_API_KEY (service-to-service), OR
+      - Authorization: Bearer <JWT> decoding successfully (logged-in user).
+    Returns a principal string for logging.
+    """
+    if INTERNAL_API_KEY and x_api_key and x_api_key == INTERNAL_API_KEY:
+        return "internal"
+
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1]
+        if not JWT_SECRET:
+            raise HTTPException(status_code=503, detail="JWT_SECRET not configured")
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            return f"user:{payload.get('user_id', 'unknown')}"
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=401, detail="Token expired")
+        except jwt.InvalidTokenError:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+    raise HTTPException(status_code=401, detail="Authorization or X-API-Key required")
+
+
+def require_internal_only(
+    x_api_key: Optional[str] = Header(None),
+) -> str:
+    """For DELETE: only internal services may remove files."""
+    if not INTERNAL_API_KEY or not x_api_key or x_api_key != INTERNAL_API_KEY:
+        raise HTTPException(status_code=401, detail="Valid X-API-Key required")
+    return "internal"
+
 
 # ── Storage config ───────────────────────────────────────────────────────────
 STORAGE_PATH = Path(os.getenv("STORAGE_PATH", "/app/storage"))
@@ -208,13 +253,20 @@ app = FastAPI(
     title="ClosetMate Image Processing Service",
     description="Background removal for wardrobe items",
     version="11.0.0",
+    # No public docs — endpoints are gated by JWT or X-API-Key
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
+# /files/* must be fetched directly by the browser from <img src>,
+# so CORS wildcard is fine for that specific static mount. Mutation
+# endpoints are gated by the auth dependency regardless of origin.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -256,7 +308,10 @@ async def health_check():
 
 
 @app.post("/images/process")
-async def process_image(image: UploadFile = File(...)):
+async def process_image(
+    image: UploadFile = File(...),
+    principal: str = Depends(require_user_or_internal),
+):
     if SESSION is None:
         return create_error_response(
             "MODEL_NOT_LOADED",
@@ -334,7 +389,10 @@ async def process_image(image: UploadFile = File(...)):
 
 
 @app.post("/images/store")
-async def store_image(image: UploadFile = File(...)):
+async def store_image(
+    image: UploadFile = File(...),
+    principal: str = Depends(require_user_or_internal),
+):
     """
     Store an image without background removal (for avatars, etc.).
     Resizes to max 256x256 and saves as WebP.
@@ -381,7 +439,10 @@ async def store_image(image: UploadFile = File(...)):
 
 
 @app.delete("/images/{file_name}")
-async def delete_image(file_name: str):
+async def delete_image(
+    file_name: str,
+    principal: str = Depends(require_internal_only),
+):
     """Delete a processed image file from storage."""
     file_path = STORAGE_PATH / file_name
     if not file_path.exists():

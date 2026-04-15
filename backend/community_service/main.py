@@ -420,6 +420,14 @@ def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depends(secu
     return payload["user_id"]
 
 
+def require_admin(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
+    """Decode JWT and require role=admin. Returns user_id on success."""
+    payload = decode_token(credentials.credentials)
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required")
+    return payload["user_id"]
+
+
 def create_error_response(code: str, message: str, status_code: int = 400):
     return JSONResponse(
         status_code=status_code,
@@ -454,11 +462,21 @@ class CommentRequest(BaseModel):
 
 # ============== APP ==============
 
-app = FastAPI(title="ClosetMate Community Service", version="1.0.0")
+app = FastAPI(
+    title="ClosetMate Community Service",
+    version="1.0.0",
+    # Internal service — no public docs
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://closetmate.org.tr",
+        "https://www.closetmate.org.tr",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1319,6 +1337,7 @@ async def add_comment(
             resp = await client.post(
                 f"{OUTFIT_SERVICE_URL}/moderate/text",
                 json={"text": body.text},
+                headers={"X-API-Key": INTERNAL_API_KEY or ""},
             )
             if resp.status_code == 200:
                 data = resp.json()
@@ -1456,13 +1475,12 @@ async def delete_comment(
 
 
 # ============== ADMIN ENDPOINTS ==============
-# NOTE: These endpoints are JWT-protected only. Add an admin role check
-# at the gateway or here once roles are introduced.
+# Protected by require_admin: JWT must decode cleanly AND carry role=admin.
 
 @app.post("/admin/users/{target_user_id}/reset-strikes")
 async def reset_user_strikes(
     target_user_id: str,
-    user_id: str = Depends(get_current_user_id),
+    admin_id: str = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """Admin-only: Reset strike count and lift any active or permanent ban."""
@@ -1475,13 +1493,13 @@ async def reset_user_strikes(
     user.comment_ban_permanent = False
     db.commit()
 
-    logger.info(f"Admin {user_id} reset strikes for user {target_user_id}")
+    logger.info(f"Admin {admin_id} reset strikes for user {target_user_id}")
     return {"success": True, "message": f"Strike'lar sıfırlandı: {target_user_id}"}
 
 
 @app.get("/admin/moderation-logs")
 async def get_moderation_logs(
-    user_id: str = Depends(get_current_user_id),
+    admin_id: str = Depends(require_admin),
     db: Session = Depends(get_db),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),

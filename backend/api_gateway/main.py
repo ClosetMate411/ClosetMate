@@ -2,14 +2,20 @@
 API Gateway - Routes requests to appropriate services
 Full authentication support + Image Processing + Outfit Service
 Accepts both JSON and Form data for auth endpoints
+
+Docs at /docs are public (discovery is allowed). Each endpoint's own
+auth dependency controls execution. /api/admin/* additionally requires
+role=admin in the JWT claims.
 """
 import os
 from typing import Optional
 
 import httpx
-from fastapi import FastAPI, UploadFile, File, Form, Header, Request
+import jwt
+from fastapi import FastAPI, UploadFile, File, Form, Header, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 # Service URLs
 WARDROBE_SERVICE_URL = os.getenv("WARDROBE_SERVICE_URL", "http://localhost:3001")
@@ -17,6 +23,10 @@ IMAGE_SERVICE_URL = os.getenv("IMAGE_SERVICE_URL", "http://localhost:3002")
 OUTFIT_SERVICE_URL = os.getenv("OUTFIT_SERVICE_URL", "http://localhost:3003")
 COMMUNITY_SERVICE_URL = os.getenv("COMMUNITY_SERVICE_URL", "http://localhost:3004")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://www.closetmate.org.tr")
+
+# Auth config — gateway decodes JWTs locally to enforce role-based access
+JWT_SECRET = os.getenv("JWT_SECRET")
+JWT_ALGORITHM = "HS256"
 
 ALLOWED_ORIGINS = [
     FRONTEND_URL,
@@ -64,6 +74,31 @@ async def get_body_data(request: Request) -> dict:
         return dict(form)
 
 
+# ============== AUTH DEPENDENCIES ==============
+
+_bearer = HTTPBearer(auto_error=False)
+
+
+def require_admin(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
+) -> dict:
+    """Decode JWT + require role=admin. Raises 401/403 on failure.
+    Used by /api/admin/* routes and shown with a lock icon in Swagger UI."""
+    if not credentials or not credentials.credentials:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+    if not JWT_SECRET:
+        raise HTTPException(status_code=503, detail="JWT_SECRET not configured")
+    try:
+        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required")
+    return payload
+
+
 # ============== HEALTH CHECKS ==============
 
 @app.get("/health")
@@ -97,13 +132,22 @@ async def health_all():
 # ============== IMAGE PROCESSING ROUTES ==============
 
 @app.post("/api/images/process")
-async def process_image(image: UploadFile = File(...)):
-    """Process image - remove background"""
+async def process_image(
+    image: UploadFile = File(...),
+    authorization: Optional[str] = Header(None),
+):
+    """Process image - remove background. Requires JWT from logged-in user."""
+    if not authorization:
+        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
     content = await image.read()
     try:
         async with httpx.AsyncClient(timeout=180.0) as client:
             files = {"image": (image.filename, content, image.content_type)}
-            response = await client.post(f"{IMAGE_SERVICE_URL}/images/process", files=files)
+            response = await client.post(
+                f"{IMAGE_SERVICE_URL}/images/process",
+                files=files,
+                headers={"Authorization": authorization},
+            )
             return JSONResponse(status_code=response.status_code, content=response.json())
     except httpx.RequestError as e:
         return create_error_response("SERVICE_UNAVAILABLE", f"Image service unavailable: {str(e)}", 503)
@@ -902,18 +946,18 @@ async def add_comment(
         return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
 
 
-# ============== ADMIN ROUTES (Protected) ==============
-# NOTE: These endpoints are JWT-protected only. An admin role check must be
-# added at the gateway or in community_service before these are safe in prod.
+# ============== ADMIN ROUTES (Protected: JWT + role=admin) ==============
+# Gateway enforces role check via require_admin(). Community service also
+# re-checks (defense-in-depth).
 
 @app.post("/api/admin/users/{target_user_id}/reset-strikes")
 async def admin_reset_strikes(
     target_user_id: str,
     authorization: Optional[str] = Header(None),
+    admin_claims: dict = Depends(require_admin),
 ):
-    """Reset a user's comment strikes + lift any active or permanent ban."""
-    if not authorization:
-        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    """Reset a user's comment strikes + lift any active or permanent ban.
+    Requires JWT with role=admin."""
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
@@ -930,10 +974,10 @@ async def admin_moderation_logs(
     authorization: Optional[str] = Header(None),
     limit: int = 50,
     offset: int = 0,
+    admin_claims: dict = Depends(require_admin),
 ):
-    """View paginated moderation logs (most recent first)."""
-    if not authorization:
-        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    """View paginated moderation logs (most recent first).
+    Requires JWT with role=admin."""
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(
