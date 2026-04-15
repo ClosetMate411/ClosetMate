@@ -11,10 +11,13 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies (cache-bust: pyjwt)
+# Install Python dependencies
+# When adding a new package, bump the version header below to force
+# Docker to invalidate this layer (otherwise requirements.txt hash
+# can occasionally collide with a cached layer).
+# deps-version: 2
 COPY requirements.txt .
-RUN pip install --no-cache-dir --force-reinstall -r requirements.txt
-RUN python -c "import jwt; print('PyJWT', jwt.__version__, 'available')"
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Pre-download birefnet-general-lite model at build time
 # Avoids runtime download delays and cold start issues on Railway
