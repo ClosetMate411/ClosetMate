@@ -11,9 +11,10 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Install Python dependencies (cache-bust: pyjwt)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --force-reinstall -r requirements.txt
+RUN python -c "import jwt; print('PyJWT', jwt.__version__, 'available')"
 
 # Pre-download birefnet-general-lite model at build time
 # Avoids runtime download delays and cold start issues on Railway
