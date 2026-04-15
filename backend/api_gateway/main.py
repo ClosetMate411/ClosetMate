@@ -230,6 +230,46 @@ async def logout(authorization: Optional[str] = Header(None)):
         return create_error_response("SERVICE_UNAVAILABLE", f"Auth service unavailable: {str(e)}", 503)
 
 
+# ============== AVATAR ROUTES (Protected) ==============
+
+@app.put("/api/auth/avatar")
+async def update_avatar(
+    authorization: Optional[str] = Header(None),
+    avatar: UploadFile = File(...),
+):
+    """Upload or replace the user's profile picture (proxied to wardrobe_service)"""
+    if not authorization:
+        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    content = await avatar.read()
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            files = {"avatar": (avatar.filename, content, avatar.content_type)}
+            response = await client.put(
+                f"{WARDROBE_SERVICE_URL}/auth/avatar",
+                files=files,
+                headers={"Authorization": authorization},
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Auth service unavailable: {str(e)}", 503)
+
+
+@app.delete("/api/auth/avatar")
+async def delete_avatar(authorization: Optional[str] = Header(None)):
+    """Remove the user's profile picture (proxied to wardrobe_service)"""
+    if not authorization:
+        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.delete(
+                f"{WARDROBE_SERVICE_URL}/auth/avatar",
+                headers={"Authorization": authorization},
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Auth service unavailable: {str(e)}", 503)
+
+
 @app.post("/api/auth/verify-email")
 async def verify_email(request: Request):
     """Verify email with OTP code (registration)"""
