@@ -11,11 +11,9 @@ import os
 from typing import Optional
 
 import httpx
-import jwt
 from fastapi import FastAPI, UploadFile, File, Form, Header, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 # Service URLs
 WARDROBE_SERVICE_URL = os.getenv("WARDROBE_SERVICE_URL", "http://localhost:3001")
@@ -24,9 +22,8 @@ OUTFIT_SERVICE_URL = os.getenv("OUTFIT_SERVICE_URL", "http://localhost:3003")
 COMMUNITY_SERVICE_URL = os.getenv("COMMUNITY_SERVICE_URL", "http://localhost:3004")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://www.closetmate.org.tr")
 
-# Auth config — gateway decodes JWTs locally to enforce role-based access
-JWT_SECRET = os.getenv("JWT_SECRET")
-JWT_ALGORITHM = "HS256"
+# Internal API key — guards /api/admin/* at the gateway edge.
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
 
 ALLOWED_ORIGINS = [
     FRONTEND_URL,
@@ -76,27 +73,13 @@ async def get_body_data(request: Request) -> dict:
 
 # ============== AUTH DEPENDENCIES ==============
 
-_bearer = HTTPBearer(auto_error=False)
-
-
-def require_admin(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
-) -> dict:
-    """Decode JWT + require role=admin. Raises 401/403 on failure.
-    Used by /api/admin/* routes and shown with a lock icon in Swagger UI."""
-    if not credentials or not credentials.credentials:
-        raise HTTPException(status_code=401, detail="Authorization header required")
-    if not JWT_SECRET:
-        raise HTTPException(status_code=503, detail="JWT_SECRET not configured")
-    try:
-        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    if payload.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin role required")
-    return payload
+def require_internal_key(x_api_key: Optional[str] = Header(None)) -> str:
+    """Require X-API-Key matching INTERNAL_API_KEY. Used by /api/admin/*.
+    Shown in Swagger as an APIKey security scheme — the Authorize dialog
+    lets you paste the key once and it's sent on every 'Try it out'."""
+    if not INTERNAL_API_KEY or not x_api_key or x_api_key != INTERNAL_API_KEY:
+        raise HTTPException(status_code=401, detail="Valid X-API-Key required")
+    return "internal"
 
 
 # ============== HEALTH CHECKS ==============
@@ -946,23 +929,22 @@ async def add_comment(
         return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
 
 
-# ============== ADMIN ROUTES (Protected: JWT + role=admin) ==============
-# Gateway enforces role check via require_admin(). Community service also
-# re-checks (defense-in-depth).
+# ============== PRIVILEGED ROUTES (X-API-Key gated) ==============
+# Gateway enforces X-API-Key match on /api/admin/*. Community service
+# re-checks the same key (defense-in-depth).
 
 @app.post("/api/admin/users/{target_user_id}/reset-strikes")
 async def admin_reset_strikes(
     target_user_id: str,
-    authorization: Optional[str] = Header(None),
-    admin_claims: dict = Depends(require_admin),
+    _: str = Depends(require_internal_key),
 ):
     """Reset a user's comment strikes + lift any active or permanent ban.
-    Requires JWT with role=admin."""
+    Requires X-API-Key header matching INTERNAL_API_KEY."""
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"{COMMUNITY_SERVICE_URL}/admin/users/{target_user_id}/reset-strikes",
-                headers={"Authorization": authorization},
+                headers={"X-API-Key": INTERNAL_API_KEY},
             )
             return JSONResponse(status_code=response.status_code, content=response.json())
     except httpx.RequestError as e:
@@ -971,19 +953,18 @@ async def admin_reset_strikes(
 
 @app.get("/api/admin/moderation-logs")
 async def admin_moderation_logs(
-    authorization: Optional[str] = Header(None),
     limit: int = 50,
     offset: int = 0,
-    admin_claims: dict = Depends(require_admin),
+    _: str = Depends(require_internal_key),
 ):
     """View paginated moderation logs (most recent first).
-    Requires JWT with role=admin."""
+    Requires X-API-Key header matching INTERNAL_API_KEY."""
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(
                 f"{COMMUNITY_SERVICE_URL}/admin/moderation-logs",
                 params={"limit": limit, "offset": offset},
-                headers={"Authorization": authorization},
+                headers={"X-API-Key": INTERNAL_API_KEY},
             )
             return JSONResponse(status_code=response.status_code, content=response.json())
     except httpx.RequestError as e:

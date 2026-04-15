@@ -130,52 +130,10 @@ with engine.connect() as _conn:
             _conn.rollback()
 
 
-# ============== ADMIN SEEDING (idempotent) ==============
-
-ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip().lower() or None
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD") or None
-ADMIN_FULL_NAME = os.getenv("ADMIN_FULL_NAME", "ClosetMate Admin")
-
-
-def _seed_admin() -> None:
-    """Create admin user from env if not exists. Fails silently on any error
-    so server always boots."""
-    if not ADMIN_EMAIL or not ADMIN_PASSWORD:
-        logger.info("Admin seed: ADMIN_EMAIL / ADMIN_PASSWORD not set, skipping")
-        return
-    try:
-        db = SessionLocal()
-        try:
-            existing = db.query(User).filter(User.email == ADMIN_EMAIL).first()
-            if existing:
-                # If the account already exists, ensure role is admin + verified
-                if existing.role != "admin" or not existing.is_verified:
-                    existing.role = "admin"
-                    existing.is_verified = True
-                    db.commit()
-                    logger.info(f"Admin seed: promoted existing {ADMIN_EMAIL} to admin")
-                else:
-                    logger.info(f"Admin seed: {ADMIN_EMAIL} already exists as admin")
-                return
-
-            admin = User(
-                id=str(uuid.uuid4()),
-                email=ADMIN_EMAIL,
-                password_hash=bcrypt.hashpw(ADMIN_PASSWORD.encode("utf-8"), bcrypt.gensalt()).decode("utf-8"),
-                full_name=ADMIN_FULL_NAME,
-                is_verified=True,
-                role="admin",
-            )
-            db.add(admin)
-            db.commit()
-            logger.info(f"Admin seed: created {ADMIN_EMAIL}")
-        finally:
-            db.close()
-    except Exception as e:
-        logger.warning(f"Admin seed failed (non-fatal): {e}")
-
-
-_seed_admin()
+# Admin is no longer a user role. Privileged operations (reset-strikes,
+# moderation-logs) are gated by X-API-Key matching INTERNAL_API_KEY,
+# not by a JWT role. The users.role column is kept for future use but
+# is always "user" for human accounts.
 
 
 # ============== VALIDATION HELPERS ==============
@@ -253,12 +211,11 @@ def verify_password(password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
 
 
-def create_token(user_id: str, email: str, role: str = "user") -> str:
+def create_token(user_id: str, email: str) -> str:
     """Create JWT token"""
     payload = {
         "user_id": user_id,
         "email": email,
-        "role": role,
         "iat": datetime.utcnow(),
         "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS)
     }
@@ -622,22 +579,7 @@ async def login(
     user.lockout_until = None
     user.last_login = datetime.utcnow()
     db.commit()
-    logger.info(f"AUTH: Successful login — {email} (id={user.id}, role={user.role})")
-
-    # Admin bypass: skip OTP, return JWT directly
-    if user.role == "admin":
-        token = create_token(user.id, user.email, role=user.role)
-        return {
-            "success": True,
-            "data": {
-                "user_id": user.id,
-                "email": user.email,
-                "full_name": user.full_name,
-                "avatar_url": user.avatar_url,
-                "role": user.role,
-                "token": token,
-            },
-        }
+    logger.info(f"AUTH: Successful login — {email} (id={user.id})")
 
     # Send login OTP via Email Service
     otp_result = await call_email_service("/otp/send", {
@@ -649,7 +591,7 @@ async def login(
     # Graceful degradation: if email service is down, allow verified users through
     if not otp_result.get("success"):
         if user.is_verified:
-            token = create_token(user.id, user.email, role=user.role)
+            token = create_token(user.id, user.email)
             return {
                 "success": True,
                 "data": {
@@ -657,7 +599,6 @@ async def login(
                     "email": user.email,
                     "full_name": user.full_name,
                     "avatar_url": user.avatar_url,
-                    "role": user.role,
                     "token": token
                 }
             }
@@ -793,7 +734,6 @@ async def get_me(current_user: User = Depends(get_current_user)):
             "email": current_user.email,
             "full_name": current_user.full_name,
             "avatar_url": current_user.avatar_url,
-            "role": current_user.role,
             "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
             "last_login": current_user.last_login.isoformat() if current_user.last_login else None
         }
@@ -937,7 +877,7 @@ async def verify_email(
     db.commit()
 
     # Issue JWT token
-    token = create_token(user.id, user.email, role=user.role)
+    token = create_token(user.id, user.email)
 
     return {
         "success": True,
@@ -947,7 +887,6 @@ async def verify_email(
             "email": user.email,
             "full_name": user.full_name,
             "avatar_url": user.avatar_url,
-            "role": user.role,
             "token": token
         }
     }
@@ -986,7 +925,7 @@ async def verify_login(
         )
 
     # Issue JWT token
-    token = create_token(user.id, user.email, role=user.role)
+    token = create_token(user.id, user.email)
 
     return {
         "success": True,
@@ -995,7 +934,6 @@ async def verify_login(
             "email": user.email,
             "full_name": user.full_name,
             "avatar_url": user.avatar_url,
-            "role": user.role,
             "token": token
         }
     }
