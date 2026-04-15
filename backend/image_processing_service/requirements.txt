@@ -7,5 +7,6 @@ pillow-heif==0.18.0
 aiofiles==23.2.1
 numpy==1.26.4
 transformers>=4.36.0
+PyJWT==2.8.0
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch
