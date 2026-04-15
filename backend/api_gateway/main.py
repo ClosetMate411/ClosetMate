@@ -902,6 +902,50 @@ async def add_comment(
         return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
 
 
+# ============== ADMIN ROUTES (Protected) ==============
+# NOTE: These endpoints are JWT-protected only. An admin role check must be
+# added at the gateway or in community_service before these are safe in prod.
+
+@app.post("/api/admin/users/{target_user_id}/reset-strikes")
+async def admin_reset_strikes(
+    target_user_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    """Reset a user's comment strikes + lift any active or permanent ban."""
+    if not authorization:
+        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{COMMUNITY_SERVICE_URL}/admin/users/{target_user_id}/reset-strikes",
+                headers={"Authorization": authorization},
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
+
+
+@app.get("/api/admin/moderation-logs")
+async def admin_moderation_logs(
+    authorization: Optional[str] = Header(None),
+    limit: int = 50,
+    offset: int = 0,
+):
+    """View paginated moderation logs (most recent first)."""
+    if not authorization:
+        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{COMMUNITY_SERVICE_URL}/admin/moderation-logs",
+                params={"limit": limit, "offset": offset},
+                headers={"Authorization": authorization},
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Community service unavailable: {str(e)}", 503)
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 3000))
