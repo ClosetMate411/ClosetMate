@@ -67,7 +67,11 @@ class User(Base):
     failed_login_attempts = Column(Integer, default=0)
     lockout_until = Column(DateTime, nullable=True)
     is_verified = Column(Boolean, default=False)
-    
+    avatar_url = Column(String(500), nullable=True, default=None)
+    comment_strike_count = Column(Integer, default=0)
+    comment_banned_until = Column(DateTime, nullable=True)
+    comment_ban_permanent = Column(Boolean, default=False)
+
     # Relationship
     items = relationship("ClothingItem", back_populates="owner", cascade="all, delete-orphan")
     reset_tokens = relationship("PasswordResetToken", back_populates="user", cascade="all, delete-orphan")
@@ -107,6 +111,21 @@ class ClothingItem(Base):
 
 # Create tables
 Base.metadata.create_all(bind=engine)
+
+# Idempotent migrations for existing databases
+with engine.connect() as _conn:
+    for _stmt in (
+        "ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500) DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN comment_strike_count INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN comment_banned_until TIMESTAMP DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN comment_ban_permanent BOOLEAN DEFAULT FALSE",
+    ):
+        try:
+            _conn.execute(sa_text(_stmt))
+            _conn.commit()
+            logger.info(f"Migration applied: {_stmt}")
+        except Exception:
+            _conn.rollback()
 
 
 # ============== VALIDATION HELPERS ==============
@@ -591,6 +610,7 @@ async def login(
                     "user_id": user.id,
                     "email": user.email,
                     "full_name": user.full_name,
+                    "avatar_url": user.avatar_url,
                     "token": token
                 }
             }
@@ -725,10 +745,88 @@ async def get_me(current_user: User = Depends(get_current_user)):
             "user_id": current_user.id,
             "email": current_user.email,
             "full_name": current_user.full_name,
+            "avatar_url": current_user.avatar_url,
             "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
             "last_login": current_user.last_login.isoformat() if current_user.last_login else None
         }
     }
+
+
+# ============== AVATAR ENDPOINTS ==============
+
+_AVATAR_ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+_AVATAR_MAX_BYTES = 2 * 1024 * 1024  # 2MB
+
+
+@app.put("/auth/avatar")
+async def update_avatar(
+    current_user: User = Depends(get_current_user),
+    avatar: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Upload or replace the user's profile picture."""
+    content = await avatar.read()
+
+    if len(content) > _AVATAR_MAX_BYTES:
+        return create_error_response("FILE_TOO_LARGE", "Avatar must be under 2MB.", 400)
+
+    ext = os.path.splitext(avatar.filename or "")[1].lower()
+    if ext not in _AVATAR_ALLOWED_EXTS:
+        return create_error_response(
+            "INVALID_FILE_TYPE",
+            f"Allowed formats: {', '.join(sorted(_AVATAR_ALLOWED_EXTS))}",
+            400,
+        )
+
+    # Send to image processing service for storage (no bg removal)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            files = {"image": (avatar.filename, content, avatar.content_type)}
+            response = await client.post(f"{IMAGE_SERVICE_URL}/images/store", files=files)
+            if response.status_code != 200:
+                logger.error(f"Avatar upload: image service returned {response.status_code}: {response.text[:200]}")
+                return create_error_response("UPLOAD_FAILED", "Avatar upload failed.", 500)
+            data = response.json()
+            if not data.get("success") or "data" not in data:
+                return create_error_response("UPLOAD_FAILED", "Avatar upload failed.", 500)
+    except httpx.TimeoutException:
+        return create_error_response("SERVICE_TIMEOUT", "Avatar upload timed out.", 504)
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Image service unavailable: {str(e)}", 503)
+
+    # Cleanup old avatar (fire-and-forget)
+    if current_user.avatar_url:
+        old_file = current_user.avatar_url.rsplit("/", 1)[-1]
+        if old_file:
+            asyncio.create_task(cleanup_image_file(old_file))
+
+    current_user.avatar_url = data["data"]["url"]
+    db.commit()
+    db.refresh(current_user)
+
+    return {
+        "success": True,
+        "data": {"avatar_url": current_user.avatar_url},
+    }
+
+
+@app.delete("/auth/avatar")
+async def delete_avatar(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Remove the user's profile picture."""
+    if not current_user.avatar_url:
+        return create_error_response("NO_AVATAR", "No avatar to delete.", 404)
+
+    old_file = current_user.avatar_url.rsplit("/", 1)[-1]
+    if old_file:
+        asyncio.create_task(cleanup_image_file(old_file))
+
+    current_user.avatar_url = None
+    db.commit()
+
+    return {"success": True, "message": "Avatar removed."}
 
 
 @app.post("/auth/logout")
@@ -796,6 +894,7 @@ async def verify_email(
             "user_id": user.id,
             "email": user.email,
             "full_name": user.full_name,
+            "avatar_url": user.avatar_url,
             "token": token
         }
     }
@@ -842,6 +941,7 @@ async def verify_login(
             "user_id": user.id,
             "email": user.email,
             "full_name": user.full_name,
+            "avatar_url": user.avatar_url,
             "token": token
         }
     }
@@ -951,33 +1051,84 @@ async def create_item(
     except httpx.RequestError as e:
         logger.error(f"Create item: image service connection error: {e}")
         return create_error_response("SERVICE_UNAVAILABLE", f"Image service unavailable: {str(e)}", 503)
-    
-    # Create database record
+
+    processed_url = image_data["data"]["processed_url"]
+    file_name = image_data["data"]["file_name"]
+    file_size = image_data["data"]["file_size"]
+
+    # >>> SYNCHRONOUS Gemini analysis + content moderation
+    # If moderation rejects, we must reject the upload BEFORE persisting the item.
+    # If Gemini is unavailable, we fall back to "Untitled" so the user is not blocked.
+    ai_name = "Untitled"
+    ai_season = "Untitled"
+    analysis_attrs = None
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"{OUTFIT_SERVICE_URL}/analyze",
+                json={
+                    "item_id": "pending",  # signals: validate-only, do not persist
+                    "user_id": current_user.id,
+                    "image_url": processed_url,
+                    "x_api_key": INTERNAL_API_KEY,
+                },
+            )
+
+            if resp.status_code == 400:
+                data = resp.json()
+                error_info = data.get("error", {}) if isinstance(data, dict) else {}
+                if error_info.get("code") == "MODERATION_REJECTED":
+                    # Cleanup the processed image since we're rejecting the upload
+                    asyncio.create_task(cleanup_image_file(file_name))
+                    logger.warning(f"Create item: moderation rejected for user {current_user.id}: {error_info.get('message')}")
+                    return create_error_response(
+                        "MODERATION_REJECTED",
+                        error_info.get("message", "The uploaded image was not recognized as a valid clothing item."),
+                        400,
+                    )
+
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("success") and data.get("data"):
+                    analysis_attrs = data["data"]
+                    ai_name = analysis_attrs.get("name") or "Untitled"
+                    seasons = analysis_attrs.get("seasons", [])
+                    ai_season = _seasons_to_display(seasons)
+            else:
+                logger.warning(f"Create item: outfit_service returned {resp.status_code}, proceeding with Untitled")
+
+    except Exception as e:
+        # Fail-open on transient Gemini/outfit_service issues — moderation is best-effort
+        logger.warning(f"Create item: synchronous analysis failed, proceeding without: {e}")
+
+    # Create database record (with AI-derived name/season already populated)
     item = ClothingItem(
         id=str(uuid.uuid4()),
         user_id=current_user.id,
-        item_name="Untitled",
-        season="Untitled",
-        image_url=image_data["data"]["processed_url"],
-        original_image_url=None,  # v7.0: original no longer stored
-        file_name=image_data["data"]["file_name"],
-        file_size=image_data["data"]["file_size"],
+        item_name=ai_name,
+        season=ai_season,
+        image_url=processed_url,
+        original_image_url=None,
+        file_name=file_name,
+        file_size=file_size,
     )
-    
+
     db.add(item)
     db.commit()
     db.refresh(item)
-    logger.info(f"Create item: saved to DB with id {item.id}")
-    
-    # >>> GEMINI INTEGRATION: Trigger async AI analysis (fire-and-forget)
-    asyncio.create_task(
-        trigger_clothing_analysis(
-            item_id=item.id,
-            user_id=current_user.id,
-            image_url=item.image_url,
+    logger.info(f"Create item: saved to DB with id {item.id} (name='{ai_name}', season='{ai_season}')")
+
+    # If we got a full analysis, persist attributes to the outfit_service so
+    # future outfit generation works without another Gemini call
+    if analysis_attrs:
+        asyncio.create_task(
+            trigger_clothing_analysis(
+                item_id=item.id,
+                user_id=current_user.id,
+                image_url=item.image_url,
+            )
         )
-    )
-    
+
     return {"success": True, "data": serialize_item(item)}
 
 

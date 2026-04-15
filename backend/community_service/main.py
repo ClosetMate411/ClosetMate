@@ -19,7 +19,7 @@ Endpoints:
 import os
 import uuid
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Query, Header, Request
@@ -197,18 +197,198 @@ class CommunityFavorite(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-# Only create community tables — never touch outfit tables
+# ── User reference (owned by wardrobe_service, accessed read/write here) ─────
+# Only the columns this service touches are mapped.
+class UserRef(Base):
+    __tablename__ = "users"
+    __table_args__ = {"extend_existing": True}
+
+    id = Column(String, primary_key=True)
+    full_name = Column(String(100))
+    avatar_url = Column(String(500), nullable=True)
+    comment_strike_count = Column(Integer, default=0)
+    comment_banned_until = Column(DateTime, nullable=True)
+    comment_ban_permanent = Column(Boolean, default=False)
+
+
+class ModerationLog(Base):
+    __tablename__ = "moderation_logs"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, nullable=False, index=True)
+    action_type = Column(String(20), nullable=False)            # "comment", "image", "post"
+    content_preview = Column(String(200), nullable=True)        # first 200 chars of offending content
+    internal_reason = Column(String(500), nullable=True)        # Gemini's detailed reason (NOT shown to user)
+    severity = Column(String(10), nullable=True)                # "low" | "medium" | "high"
+    detection_layer = Column(String(20), nullable=True)         # "pre_filter" | "gemini" | "output_validation" | "gemini_fallback"
+    strike_number = Column(Integer, nullable=False)
+    punishment = Column(String(50), nullable=False)             # "warning" | "ban_1h" | "ban_24h" | "ban_permanent"
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# Only create community tables — never touch outfit/wardrobe tables
 SharedOutfit.__table__.create(bind=engine, checkfirst=True)
 Rating.__table__.create(bind=engine, checkfirst=True)
 Reaction.__table__.create(bind=engine, checkfirst=True)
 Comment.__table__.create(bind=engine, checkfirst=True)
 Notification.__table__.create(bind=engine, checkfirst=True)
 CommunityFavorite.__table__.create(bind=engine, checkfirst=True)
+ModerationLog.__table__.create(bind=engine, checkfirst=True)
+
+# Idempotent migrations for strike columns on users (owned by wardrobe_service,
+# but applied here too for safety in case wardrobe_service hasn't run yet).
+# Also adds detection_layer to moderation_logs in case the table existed before
+# the column was introduced.
+with engine.connect() as _conn:
+    for _stmt in (
+        "ALTER TABLE users ADD COLUMN comment_strike_count INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN comment_banned_until TIMESTAMP DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN comment_ban_permanent BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE moderation_logs ADD COLUMN detection_layer VARCHAR(20) DEFAULT NULL",
+    ):
+        try:
+            _conn.execute(sa_text(_stmt))
+            _conn.commit()
+        except Exception:
+            _conn.rollback()
+
+    # v4 emoji migration: legacy emoji_type → new spec set.
+    # Idempotent — once a row is migrated, the WHERE clause matches nothing.
+    # The NOT EXISTS guard prevents UNIQUE(shared_outfit_id, user_id, emoji_type)
+    # violations when the same user already has both legacy and new variants.
+    for _old, _new in (("like", "heart"), ("love", "love_eyes"), ("cool", "clap"), ("wow", "idea")):
+        try:
+            _conn.execute(sa_text(
+                "UPDATE reactions SET emoji_type = :new "
+                "WHERE emoji_type = :old "
+                "AND NOT EXISTS ("
+                "  SELECT 1 FROM reactions r2 "
+                "  WHERE r2.shared_outfit_id = reactions.shared_outfit_id "
+                "    AND r2.user_id = reactions.user_id "
+                "    AND r2.emoji_type = :new"
+                ")"
+            ), {"old": _old, "new": _new})
+            _conn.commit()
+        except Exception as _e:
+            _conn.rollback()
+            logger.warning(f"Emoji migration {_old}->{_new} skipped: {_e}")
 
 
 # ============== CONSTANTS ==============
 
-VALID_EMOJI_TYPES = ["like", "love", "fire", "cool", "wow"]
+# v4: 5-emoji engagement system. Existing reactions in DB with the legacy
+# emoji set (like/love/cool/wow) are preserved but no longer surfaced.
+EMOJI_WEIGHTS = {
+    "heart":     0.3,  # ❤️
+    "fire":      0.3,  # 🔥
+    "clap":      0.2,  # 👏
+    "love_eyes": 0.2,  # 😍
+    "idea":      0.1,  # 💡
+}
+VALID_EMOJI_TYPES = set(EMOJI_WEIGHTS.keys())
+
+
+# ============== STRIKE / BAN SYSTEM ==============
+
+STRIKE_PUNISHMENTS = {
+    1: {"punishment": "warning",  "ban_duration": None},
+    2: {"punishment": "ban_1h",   "ban_duration": timedelta(hours=1)},
+    3: {"punishment": "ban_24h",  "ban_duration": timedelta(hours=24)},
+}
+
+
+def get_punishment(strike_count: int) -> dict:
+    """Map a strike count to a punishment policy."""
+    if strike_count >= 4:
+        return {"punishment": "ban_permanent", "ban_duration": None, "permanent": True}
+    config = STRIKE_PUNISHMENTS.get(strike_count, STRIKE_PUNISHMENTS[3])
+    return {**config, "permanent": False}
+
+
+def is_user_banned(user) -> tuple[bool, "str | None"]:
+    """Return (is_banned, user-facing Turkish message)."""
+    if getattr(user, "comment_ban_permanent", False):
+        return True, "Hesabınız topluluk kurallarını ihlal ettiği için kalıcı olarak yorum yazma yasağı almıştır."
+
+    banned_until = getattr(user, "comment_banned_until", None)
+    if banned_until and banned_until > datetime.utcnow():
+        remaining = banned_until - datetime.utcnow()
+        if remaining.total_seconds() > 3600:
+            time_str = f"{int(remaining.total_seconds() / 3600)} saat"
+        else:
+            time_str = f"{max(1, int(remaining.total_seconds() / 60))} dakika"
+        return True, f"Yorum yazma yasağınız devam ediyor. Kalan süre: {time_str}."
+
+    return False, None
+
+
+USER_FACING_MESSAGES = {
+    "warning":       "Yorumunuz topluluk kurallarına aykırı bulundu. Lütfen kurallara uygun yorum yazın.",
+    "ban_1h":        "Yorumunuz topluluk kurallarına aykırı bulundu. 1 saat süreyle yorum yazma yasağı uygulandı.",
+    "ban_24h":       "Yorumunuz topluluk kurallarına aykırı bulundu. 24 saat süreyle yorum yazma yasağı uygulandı.",
+    "ban_permanent": "Tekrarlanan ihlaller nedeniyle hesabınıza kalıcı yorum yazma yasağı uygulandı.",
+}
+
+
+# ============== ENGAGEMENT SCORING ==============
+
+def calculate_post_scores(db: Session, shared_outfit_id: str) -> dict:
+    """
+    Compute star_score + emoji_bonus + sort_score for a single shared outfit (post).
+
+      star_score   = avg_rating × min(rating_count, 10)        # max 50.0
+      emoji_bonus  = min(Σ count×weight, 5.0) × 0.5            # max 2.5
+      sort_score   = star_score + emoji_bonus
+    """
+    # Star score
+    star_stats = db.query(
+        func.avg(Rating.score).label("avg_rating"),
+        func.count(Rating.id).label("rating_count"),
+    ).filter(Rating.shared_outfit_id == shared_outfit_id).first()
+
+    avg_rating = round(float(star_stats.avg_rating or 0), 2)
+    rating_count = int(star_stats.rating_count or 0)
+    star_score = round(avg_rating * min(rating_count, 10), 2)
+
+    # Emoji bonus (only counts current-spec emojis; legacy ones are ignored)
+    emoji_rows = db.query(
+        Reaction.emoji_type,
+        func.count(Reaction.id).label("cnt"),
+    ).filter(
+        Reaction.shared_outfit_id == shared_outfit_id,
+        Reaction.emoji_type.in_(list(VALID_EMOJI_TYPES)),
+    ).group_by(Reaction.emoji_type).all()
+
+    emoji_breakdown: dict = {}
+    raw_emoji_bonus = 0.0
+    for emoji_type, cnt in emoji_rows:
+        weight = EMOJI_WEIGHTS.get(emoji_type, 0.1)
+        raw_emoji_bonus += cnt * weight
+        emoji_breakdown[emoji_type] = int(cnt)
+
+    emoji_bonus = round(min(raw_emoji_bonus, 5.0) * 0.5, 2)
+    total_reactions = sum(emoji_breakdown.values())
+    sort_score = round(star_score + emoji_bonus, 2)
+
+    return {
+        "avg_rating": avg_rating,
+        "rating_count": rating_count,
+        "star_score": star_score,
+        "emoji_bonus": emoji_bonus,
+        "sort_score": sort_score,
+        "total_reactions": total_reactions,
+        "emoji_counts": emoji_breakdown,
+    }
+
+
+def get_user_reactions(db: Session, shared_outfit_id: str, user_id: str) -> list:
+    """Which spec-emojis the given user has currently active on this post."""
+    rows = db.query(Reaction.emoji_type).filter(
+        Reaction.shared_outfit_id == shared_outfit_id,
+        Reaction.user_id == user_id,
+        Reaction.emoji_type.in_(list(VALID_EMOJI_TYPES)),
+    ).all()
+    return [r[0] for r in rows]
 
 
 # ============== DEPENDENCIES ==============
@@ -560,6 +740,10 @@ def _assemble_feed_item(shared: SharedOutfit, user_id: str, db: Session) -> dict
         for iid in item_ids
     ]
 
+    # v4 engagement scores (star_score + emoji_bonus → sort_score)
+    scores = calculate_post_scores(db, shared.id)
+    my_reactions_v4 = get_user_reactions(db, shared.id, user_id)
+
     return {
         "id": shared.id,
         "outfit": {
@@ -580,6 +764,7 @@ def _assemble_feed_item(shared: SharedOutfit, user_id: str, db: Session) -> dict
         },
         "description": shared.description,
         "shared_at": shared.shared_at.isoformat() + "Z" if shared.shared_at else None,
+        # Legacy blocks (kept for backward compatibility with existing frontend)
         "ratings": {
             "average": round(float(avg_rating), 1) if avg_rating else None,
             "count": rating_count,
@@ -594,6 +779,18 @@ def _assemble_feed_item(shared: SharedOutfit, user_id: str, db: Session) -> dict
             "count": favorite_count,
             "user_has_favorited": user_has_favorited,
         },
+        # v4 engagement system: full scoring + spec-emoji-only counts
+        "engagement": {
+            "avg_rating":      scores["avg_rating"],
+            "rating_count":    scores["rating_count"],
+            "star_score":      scores["star_score"],
+            "emoji_bonus":     scores["emoji_bonus"],
+            "sort_score":      scores["sort_score"],
+            "total_reactions": scores["total_reactions"],
+            "emoji_counts":    scores["emoji_counts"],
+            "my_reactions":    my_reactions_v4,
+            "my_rating":       user_rating.score if user_rating else None,
+        },
     }
 
 
@@ -606,23 +803,46 @@ async def get_community_feed(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """Get the community feed with shared outfits"""
+    """
+    Get the community feed ranked by v4 engagement: sort_score = star_score + emoji_bonus,
+    tie-broken by recency. Two-stage ranking: SQL pre-sort by star_score over a wider
+    candidate window, then exact re-rank in Python by sort_score before slicing the page.
+    """
     offset = (page - 1) * limit
 
     total = db.query(SharedOutfit).count()
-    shared_outfits = (
+
+    # Pre-sort coarse window by star_score (cheap SQL).
+    star_score_sql = (
+        func.coalesce(func.avg(Rating.score), 0.0)
+        * func.least(func.count(Rating.id), 10)
+    )
+    candidate_window = max(limit * 3, offset + limit + 20)
+    candidates = (
         db.query(SharedOutfit)
-        .order_by(SharedOutfit.shared_at.desc())
-        .offset(offset)
-        .limit(limit)
+        .outerjoin(Rating, Rating.shared_outfit_id == SharedOutfit.id)
+        .group_by(SharedOutfit.id)
+        .order_by(star_score_sql.desc(), SharedOutfit.shared_at.desc())
+        .limit(candidate_window)
         .all()
     )
 
-    feed = []
-    for shared in shared_outfits:
+    # Assemble + exact re-rank by sort_score (star_score + emoji_bonus).
+    feed: list = []
+    for shared in candidates:
         item = _assemble_feed_item(shared, user_id, db)
         if item:
             feed.append(item)
+
+    feed.sort(
+        key=lambda it: (
+            it["engagement"]["sort_score"],
+            it["shared_at"] or "",
+        ),
+        reverse=True,
+    )
+
+    feed = feed[offset:offset + limit]
 
     return {
         "success": True,
@@ -913,22 +1133,19 @@ async def rate_outfit(
         ))
         db.commit()
 
-    # Calculate fresh average and count
-    avg_rating = db.query(func.avg(Rating.score)).filter(
-        Rating.shared_outfit_id == shared_outfit_id,
-    ).scalar()
-    rating_count = db.query(Rating).filter(
-        Rating.shared_outfit_id == shared_outfit_id,
-    ).count()
+    # Full engagement scores for optimistic UI re-sort
+    scores = calculate_post_scores(db, shared_outfit_id)
+    my_reactions = get_user_reactions(db, shared_outfit_id, user_id)
 
     logger.info(f"User {user_id} rated shared outfit {shared_outfit_id}: {body.score}/5")
     return {
         "success": True,
         "data": {
-            "score": body.score,
-            "average": round(float(avg_rating), 1) if avg_rating else body.score,
-            "count": rating_count,
-        }
+            "post_id": shared_outfit_id,
+            "user_score": body.score,
+            "my_reactions": my_reactions,
+            **scores,
+        },
     }
 
 
@@ -965,28 +1182,42 @@ async def react_to_outfit(
     if existing:
         db.delete(existing)
         db.commit()
-        return {"success": True, "data": {"action": "removed", "emoji_type": body.emoji_type}}
-
-    reaction = Reaction(
-        shared_outfit_id=shared_outfit_id,
-        user_id=user_id,
-        emoji_type=body.emoji_type,
-    )
-    db.add(reaction)
-    db.commit()
-
-    # Create notification for reaction (skip self)
-    if shared.user_id != user_id:
-        db.add(Notification(
-            recipient_user_id=shared.user_id,
-            actor_user_id=user_id,
+        action = "removed"
+    else:
+        reaction = Reaction(
             shared_outfit_id=shared_outfit_id,
-            type="reaction",
-            detail=body.emoji_type,
-        ))
+            user_id=user_id,
+            emoji_type=body.emoji_type,
+        )
+        db.add(reaction)
         db.commit()
+        action = "added"
 
-    return {"success": True, "data": {"action": "added", "emoji_type": body.emoji_type}}
+        # Notify owner only on add (skip self)
+        if shared.user_id != user_id:
+            db.add(Notification(
+                recipient_user_id=shared.user_id,
+                actor_user_id=user_id,
+                shared_outfit_id=shared_outfit_id,
+                type="reaction",
+                detail=body.emoji_type,
+            ))
+            db.commit()
+
+    # Full updated scores + which emojis the user has active for optimistic UI
+    scores = calculate_post_scores(db, shared_outfit_id)
+    my_reactions = get_user_reactions(db, shared_outfit_id, user_id)
+
+    return {
+        "success": True,
+        "data": {
+            "post_id": shared_outfit_id,
+            "action": action,
+            "emoji_type": body.emoji_type,
+            "my_reactions": my_reactions,
+            **scores,
+        },
+    }
 
 
 # ── 6. Get comments ──────────────────────────────────────────────────────────
@@ -1057,11 +1288,97 @@ async def add_comment(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """Add a comment to a shared outfit"""
+    """Add a comment to a shared outfit (with moderation + strike system)."""
     shared = db.query(SharedOutfit).filter(SharedOutfit.id == shared_outfit_id).first()
     if not shared:
         return create_error_response("NOT_FOUND", "Shared outfit not found", 404)
 
+    # ── Step 1: Load user and check if currently banned ──
+    user = db.query(UserRef).filter(UserRef.id == user_id).first()
+    if not user:
+        return create_error_response("USER_NOT_FOUND", "Kullanıcı bulunamadı.", 404)
+
+    is_banned, ban_message = is_user_banned(user)
+    if is_banned:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "success": False,
+                "error": {"code": "USER_BANNED", "message": ban_message},
+            },
+        )
+
+    # ── Step 2: Moderation pipeline (regex → Gemini → output validation) ──
+    moderation_failed = False
+    internal_reason: "str | None" = None
+    severity: "str | None" = None
+    detection_layer: "str | None" = None
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{OUTFIT_SERVICE_URL}/moderate/text",
+                json={"text": body.text},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if not data.get("passed", True):
+                    moderation_failed = True
+                    internal_reason = data.get("internal_reason") or "Unknown"
+                    severity = data.get("severity") or "medium"
+                    detection_layer = data.get("layer") or "unknown"
+    except Exception as e:
+        logger.warning(f"Moderation service unavailable, allowing comment: {e}")
+
+    # ── Step 3: If failed, apply strike + punishment + log ──
+    if moderation_failed:
+        user.comment_strike_count = (user.comment_strike_count or 0) + 1
+        strike = user.comment_strike_count
+        punishment_info = get_punishment(strike)
+
+        if punishment_info.get("permanent"):
+            user.comment_ban_permanent = True
+        elif punishment_info.get("ban_duration"):
+            user.comment_banned_until = datetime.utcnow() + punishment_info["ban_duration"]
+
+        log = ModerationLog(
+            user_id=user.id,
+            action_type="comment",
+            content_preview=body.text[:200],
+            internal_reason=internal_reason,
+            severity=severity,
+            detection_layer=detection_layer,
+            strike_number=strike,
+            punishment=punishment_info["punishment"],
+        )
+        db.add(log)
+        db.commit()
+
+        logger.warning(
+            f"Comment moderation: user={user.id}, strike={strike}, "
+            f"punishment={punishment_info['punishment']}, reason={internal_reason}"
+        )
+
+        user_message = USER_FACING_MESSAGES.get(
+            punishment_info["punishment"],
+            "Yorumunuz topluluk kurallarına aykırı bulundu.",
+        )
+
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": {
+                    "code": "COMMENT_REJECTED",
+                    "message": user_message,
+                    "strike_count": strike,
+                    "banned_until": user.comment_banned_until.isoformat() + "Z" if user.comment_banned_until else None,
+                    "permanent_ban": bool(user.comment_ban_permanent),
+                },
+            },
+        )
+
+    # ── Step 4: Save comment ──
     comment = Comment(
         shared_outfit_id=shared_outfit_id,
         user_id=user_id,
@@ -1136,3 +1453,62 @@ async def delete_comment(
 
     logger.info(f"Comment {comment_id} deleted by user {user_id}")
     return {"success": True, "message": "Comment deleted successfully"}
+
+
+# ============== ADMIN ENDPOINTS ==============
+# NOTE: These endpoints are JWT-protected only. Add an admin role check
+# at the gateway or here once roles are introduced.
+
+@app.post("/admin/users/{target_user_id}/reset-strikes")
+async def reset_user_strikes(
+    target_user_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Admin-only: Reset strike count and lift any active or permanent ban."""
+    user = db.query(UserRef).filter(UserRef.id == target_user_id).first()
+    if not user:
+        return create_error_response("USER_NOT_FOUND", "Kullanıcı bulunamadı.", 404)
+
+    user.comment_strike_count = 0
+    user.comment_banned_until = None
+    user.comment_ban_permanent = False
+    db.commit()
+
+    logger.info(f"Admin {user_id} reset strikes for user {target_user_id}")
+    return {"success": True, "message": f"Strike'lar sıfırlandı: {target_user_id}"}
+
+
+@app.get("/admin/moderation-logs")
+async def get_moderation_logs(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    """Admin-only: View moderation logs (most recent first)."""
+    logs = (
+        db.query(ModerationLog)
+        .order_by(ModerationLog.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return {
+        "success": True,
+        "data": [
+            {
+                "id": log.id,
+                "user_id": log.user_id,
+                "action_type": log.action_type,
+                "content_preview": log.content_preview,
+                "internal_reason": log.internal_reason,
+                "severity": log.severity,
+                "detection_layer": log.detection_layer,
+                "strike_number": log.strike_number,
+                "punishment": log.punishment,
+                "created_at": log.created_at.isoformat() + "Z" if log.created_at else None,
+            }
+            for log in logs
+        ],
+    }

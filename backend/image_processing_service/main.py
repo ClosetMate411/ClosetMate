@@ -333,6 +333,53 @@ async def process_image(image: UploadFile = File(...)):
         return create_error_response("PROCESSING_FAILED", str(e), 500)
 
 
+@app.post("/images/store")
+async def store_image(image: UploadFile = File(...)):
+    """
+    Store an image without background removal (for avatars, etc.).
+    Resizes to max 256x256 and saves as WebP.
+    """
+    error = validate_image_file(image)
+    if error:
+        return create_error_response("INVALID_FILE_TYPE", error)
+
+    content = await image.read()
+    if len(content) > 2 * 1024 * 1024:
+        return create_error_response("FILE_TOO_LARGE", "File exceeds 2MB limit")
+
+    try:
+        file_id = str(uuid.uuid4())
+        img = Image.open(io.BytesIO(content)).convert("RGB")
+
+        # Resize for avatar use case
+        img.thumbnail((256, 256), Image.LANCZOS)
+
+        file_name = f"avatar_{file_id}.webp"
+        file_path = STORAGE_PATH / file_name
+
+        buf = io.BytesIO()
+        img.save(buf, format="WEBP", quality=85)
+        buf_bytes = buf.getvalue()
+
+        with open(file_path, "wb") as f:
+            f.write(buf_bytes)
+
+        url = f"{BASE_URL}/files/{file_name}"
+        logger.info(f"Stored avatar: {file_name} ({len(buf_bytes)} bytes)")
+
+        return {
+            "success": True,
+            "data": {
+                "url": url,
+                "file_name": file_name,
+                "file_size": len(buf_bytes),
+            },
+        }
+    except Exception as e:
+        logger.error(f"Avatar storage failed: {e}", exc_info=True)
+        return create_error_response("PROCESSING_FAILED", str(e), 500)
+
+
 @app.delete("/images/{file_name}")
 async def delete_image(file_name: str):
     """Delete a processed image file from storage."""

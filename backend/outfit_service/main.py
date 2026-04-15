@@ -34,7 +34,13 @@ from sqlalchemy.orm import sessionmaker, Session, relationship
 import jwt
 import httpx
 
-from gemini_analyzer import analyzer, VALID_CATEGORIES, VALID_STYLES, VALID_OCCASIONS
+from gemini_analyzer import (
+    analyzer,
+    VALID_CATEGORIES,
+    VALID_STYLES,
+    VALID_OCCASIONS,
+    ContentModerationError,
+)
 
 # ============== FILTER MAPS ==============
 
@@ -342,6 +348,37 @@ async def health_check(db: Session = Depends(get_db)):
 
 
 
+# ============== TEXT MODERATION ==============
+
+@app.post("/moderate/text")
+async def moderate_text_endpoint(request: Request):
+    """
+    Moderate user-submitted text content. Called by Community Service
+    before saving comments. Returns {passed, internal_reason, severity}.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return create_error_response("INVALID_BODY", "Invalid JSON body", 400)
+
+    text = (body.get("text") or "").strip()
+    if not text:
+        return {"success": True, "passed": True, "internal_reason": None, "severity": None, "layer": None}
+
+    # Hard cap to keep prompts cheap
+    if len(text) > 2000:
+        text = text[:2000]
+
+    result = await analyzer.moderate_text(text)
+    return {
+        "success": True,
+        "passed": result["passed"],
+        "internal_reason": result.get("internal_reason"),
+        "severity": result.get("severity"),
+        "layer": result.get("layer"),
+    }
+
+
 # ============== CLOTHING ANALYSIS ==============
 
 @app.post("/analyze")
@@ -365,13 +402,17 @@ async def analyze_clothing_item(
     if not verify_internal_request(body.x_api_key):
         return create_error_response("UNAUTHORIZED", "Invalid API key", 401)
 
-    # Check if already analyzed
-    existing = db.query(ClothingAttribute).filter(
-        ClothingAttribute.item_id == body.item_id
-    ).first()
+    # "pending" sentinel = pre-save moderation pass; skip DB cache lookup + write
+    is_pending = body.item_id == "pending"
 
-    if existing:
-        return {"success": True, "data": existing.to_dict(), "cached": True}
+    # Check if already analyzed (skip for pending)
+    if not is_pending:
+        existing = db.query(ClothingAttribute).filter(
+            ClothingAttribute.item_id == body.item_id
+        ).first()
+
+        if existing:
+            return {"success": True, "data": existing.to_dict(), "cached": True}
 
     # Download the processed image (supports both HTTP URLs and data: URLs)
     try:
@@ -381,15 +422,22 @@ async def analyze_clothing_item(
     except httpx.RequestError as e:
         return create_error_response("IMAGE_FETCH_FAILED", f"Image service unreachable: {str(e)}", 503)
 
-    # Analyze with Gemini
+    # Analyze with Gemini (also performs content moderation)
     try:
         attributes = await analyzer.analyze_clothing(image_bytes, content_type)
+    except ContentModerationError as e:
+        logger.warning(f"Moderation rejected item {body.item_id}: {e.internal_reason}")
+        return create_error_response("MODERATION_REJECTED", e.user_message, 400)
     except ValueError as e:
         logger.error(f"Gemini analysis validation failed for item {body.item_id}: {e}")
         return create_error_response("ANALYSIS_FAILED", str(e), 500)
     except Exception as e:
         logger.error(f"Gemini API error for item {body.item_id}: {e}")
         return create_error_response("ANALYSIS_FAILED", f"AI analysis failed: {str(e)}", 500)
+
+    # Pending mode: return analysis without persisting (caller will create the item)
+    if is_pending:
+        return {"success": True, "data": attributes, "cached": False, "pending": True}
 
     # Store attributes in database
     clothing_attr = ClothingAttribute(
@@ -460,9 +508,12 @@ async def reanalyze_clothing_item(
     except httpx.RequestError as e:
         return create_error_response("IMAGE_FETCH_FAILED", str(e), 503)
 
-    # Re-analyze
+    # Re-analyze (with moderation gate)
     try:
         attributes = await analyzer.analyze_clothing(image_bytes, content_type)
+    except ContentModerationError as e:
+        logger.warning(f"Moderation rejected reanalyze for item {item_id}: {e.internal_reason}")
+        return create_error_response("MODERATION_REJECTED", e.user_message, 400)
     except Exception as e:
         return create_error_response("ANALYSIS_FAILED", str(e), 500)
 
