@@ -762,7 +762,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
 
 # ============== AVATAR ENDPOINTS ==============
 
-_AVATAR_ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+_AVATAR_ALLOWED_EXTS = {".jpg", ".jpeg", ".png"}
 _AVATAR_MAX_BYTES = 2 * 1024 * 1024  # 2MB
 
 
