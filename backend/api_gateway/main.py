@@ -43,9 +43,6 @@ app = FastAPI(
     title="ClosetMate API Gateway",
     description="API Gateway for ClosetMate microservices",
     version="3.0.0",
-    docs_url=None,
-    redoc_url=None,
-    openapi_url=None,
 )
 
 app.add_middleware(

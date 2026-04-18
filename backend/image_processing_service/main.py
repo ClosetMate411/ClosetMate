@@ -336,10 +336,9 @@ async def process_image(
 
         input_image = Image.open(io.BytesIO(content)).convert("RGBA")
 
-        # Dimension validation per SRS FReq2.1
+        # Dimension validation — only reject oversized images.
+        # Small images are accepted and upscaled after bg removal.
         w, h = input_image.size
-        if w < 200 or h < 200:
-            return create_error_response("IMAGE_TOO_SMALL", "Image must be at least 200×200 pixels")
         if w > 4000 or h > 4000:
             return create_error_response("IMAGE_TOO_LARGE", "Image must not exceed 4000×4000 pixels")
 
@@ -361,6 +360,15 @@ async def process_image(
             SESSION,
             difficulty,
         )
+
+        # ── Upscale small images to minimum 200×200 ─────────────────────────
+        out_w, out_h = output_image.size
+        if out_w < 200 or out_h < 200:
+            scale = max(200 / out_w, 200 / out_h)
+            new_w = int(out_w * scale)
+            new_h = int(out_h * scale)
+            output_image = output_image.resize((new_w, new_h), Image.LANCZOS)
+            logger.info(f"Upscaled {out_w}×{out_h} → {new_w}×{new_h}")
 
         # ── Save to disk ──────────────────────────────────────────────────────
         file_name = f"{file_id}.webp"
