@@ -38,6 +38,10 @@ from sqlalchemy.orm import sessionmaker, Session
 import jwt
 import httpx
 
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+
 
 # ============== CONFIGURATION ==============
 
@@ -292,46 +296,14 @@ EMOJI_WEIGHTS = {
 VALID_EMOJI_TYPES = set(EMOJI_WEIGHTS.keys())
 
 
-# ============== STRIKE / BAN SYSTEM ==============
-
-STRIKE_PUNISHMENTS = {
-    1: {"punishment": "warning",  "ban_duration": None},
-    2: {"punishment": "ban_1h",   "ban_duration": timedelta(hours=1)},
-    3: {"punishment": "ban_24h",  "ban_duration": timedelta(hours=24)},
-}
-
-
-def get_punishment(strike_count: int) -> dict:
-    """Map a strike count to a punishment policy."""
-    if strike_count >= 4:
-        return {"punishment": "ban_permanent", "ban_duration": None, "permanent": True}
-    config = STRIKE_PUNISHMENTS.get(strike_count, STRIKE_PUNISHMENTS[3])
-    return {**config, "permanent": False}
-
-
-def is_user_banned(user) -> tuple[bool, "str | None"]:
-    """Return (is_banned, user-facing Turkish message)."""
-    if getattr(user, "comment_ban_permanent", False):
-        return True, "Hesabınız topluluk kurallarını ihlal ettiği için kalıcı olarak yorum yazma yasağı almıştır."
-
-    banned_until = getattr(user, "comment_banned_until", None)
-    if banned_until and banned_until > datetime.utcnow():
-        remaining = banned_until - datetime.utcnow()
-        if remaining.total_seconds() > 3600:
-            time_str = f"{int(remaining.total_seconds() / 3600)} saat"
-        else:
-            time_str = f"{max(1, int(remaining.total_seconds() / 60))} dakika"
-        return True, f"Yorum yazma yasağınız devam ediyor. Kalan süre: {time_str}."
-
-    return False, None
-
-
-USER_FACING_MESSAGES = {
-    "warning":       "Yorumunuz topluluk kurallarına aykırı bulundu. Lütfen kurallara uygun yorum yazın.",
-    "ban_1h":        "Yorumunuz topluluk kurallarına aykırı bulundu. 1 saat süreyle yorum yazma yasağı uygulandı.",
-    "ban_24h":       "Yorumunuz topluluk kurallarına aykırı bulundu. 24 saat süreyle yorum yazma yasağı uygulandı.",
-    "ban_permanent": "Tekrarlanan ihlaller nedeniyle hesabınıza kalıcı yorum yazma yasağı uygulandı.",
-}
+# ============== COMMENT MODERATION POLICY ==============
+#
+# Every comment is checked by the Gemini moderation pipeline on every submit.
+# Failing comments are rejected with a 400 response and a generic Turkish
+# "topluluk kurallarına aykırı" message. No strike counting, no banning — the
+# per-user rate limit on POST /comments handles spam/abuse, and Gemini
+# handles content filtering. The legacy User.comment_* fields are kept on
+# the schema for backwards compatibility but no longer written to.
 
 
 # ============== ENGAGEMENT SCORING ==============
@@ -475,6 +447,31 @@ app = FastAPI(
     redoc_url=None,
     openapi_url=None,
 )
+
+# Rate limiting — per-user throttle keyed off the JWT user_id.
+#
+# Per-IP limiting is trivially bypassed by VPNs and residential proxies, so
+# we key on the authenticated user instead. To change identity an attacker
+# needs a full register + OTP verification flow, which is itself rate-limited
+# on the wardrobe service.  For unauthenticated callers (there shouldn't be
+# any on limited endpoints, but better safe than sorry) we fall back to IP.
+def _rate_limit_key(request: Request) -> str:
+    auth = request.headers.get("authorization") or request.headers.get("Authorization")
+    if auth and auth.startswith("Bearer "):
+        token = auth.split(" ", 1)[1]
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            uid = payload.get("user_id")
+            if uid:
+                return f"user:{uid}"
+        except Exception:
+            pass
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=_rate_limit_key)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -1335,31 +1332,23 @@ async def get_comments(
 # ── 7. Add comment ───────────────────────────────────────────────────────────
 
 @app.post("/community/{shared_outfit_id}/comments")
+@limiter.limit("10/minute")
 async def add_comment(
+    request: Request,
     shared_outfit_id: str,
     body: CommentRequest,
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """Add a comment to a shared outfit (with moderation + strike system)."""
+    """Add a comment to a shared outfit (Gemini-moderated, rate-limited)."""
     shared = db.query(SharedOutfit).filter(SharedOutfit.id == shared_outfit_id).first()
     if not shared:
         return create_error_response("NOT_FOUND", "Shared outfit not found", 404)
 
-    # ── Step 1: Load user and check if currently banned ──
+    # ── Step 1: Load user ──
     user = db.query(UserRef).filter(UserRef.id == user_id).first()
     if not user:
         return create_error_response("USER_NOT_FOUND", "Kullanıcı bulunamadı.", 404)
-
-    is_banned, ban_message = is_user_banned(user)
-    if is_banned:
-        return JSONResponse(
-            status_code=403,
-            content={
-                "success": False,
-                "error": {"code": "USER_BANNED", "message": ban_message},
-            },
-        )
 
     # ── Step 2: Moderation pipeline (regex → Gemini → output validation) ──
     moderation_failed = False
@@ -1384,17 +1373,11 @@ async def add_comment(
     except Exception as e:
         logger.warning(f"Moderation service unavailable, allowing comment: {e}")
 
-    # ── Step 3: If failed, apply strike + punishment + log ──
+    # ── Step 3: If failed, log the incident and reject the comment ──
+    # No strike count, no ban: Gemini has already filtered the harmful text
+    # and the rate limiter handles spam abuse. The moderation log is kept as
+    # a lightweight audit trail in case the DB needs to be inspected later.
     if moderation_failed:
-        user.comment_strike_count = (user.comment_strike_count or 0) + 1
-        strike = user.comment_strike_count
-        punishment_info = get_punishment(strike)
-
-        if punishment_info.get("permanent"):
-            user.comment_ban_permanent = True
-        elif punishment_info.get("ban_duration"):
-            user.comment_banned_until = datetime.utcnow() + punishment_info["ban_duration"]
-
         log = ModerationLog(
             user_id=user.id,
             action_type="comment",
@@ -1402,20 +1385,14 @@ async def add_comment(
             internal_reason=internal_reason,
             severity=severity,
             detection_layer=detection_layer,
-            strike_number=strike,
-            punishment=punishment_info["punishment"],
+            strike_number=0,
+            punishment="warning",
         )
         db.add(log)
         db.commit()
 
         logger.warning(
-            f"Comment moderation: user={user.id}, strike={strike}, "
-            f"punishment={punishment_info['punishment']}, reason={internal_reason}"
-        )
-
-        user_message = USER_FACING_MESSAGES.get(
-            punishment_info["punishment"],
-            "Yorumunuz topluluk kurallarına aykırı bulundu.",
+            f"Comment moderation: user={user.id}, reason={internal_reason}"
         )
 
         return JSONResponse(
@@ -1424,10 +1401,7 @@ async def add_comment(
                 "success": False,
                 "error": {
                     "code": "COMMENT_REJECTED",
-                    "message": user_message,
-                    "strike_count": strike,
-                    "banned_until": user.comment_banned_until.isoformat() + "Z" if user.comment_banned_until else None,
-                    "permanent_ban": bool(user.comment_ban_permanent),
+                    "message": "Yorumunuz topluluk kurallarına aykırı bulundu.",
                 },
             },
         )

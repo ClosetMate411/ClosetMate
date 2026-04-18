@@ -397,9 +397,13 @@ app = FastAPI(
     openapi_url=None,
 )
 
-# Rate limiting — in-memory per-IP throttle. Keeps auth endpoints safe from
-# brute force / credential stuffing. Limits apply per container, which is
-# acceptable because Railway runs a single instance per service.
+# Rate limiting — per-IP throttle on auth endpoints. These run *before* a
+# JWT exists so we cannot key on user_id; the per-user layer is provided by
+# ``failed_login_attempts`` + ``lockout_until`` on the User model (5 bad
+# password attempts → 15 min lockout) and by the 5-attempt cap enforced by
+# the email service on OTP verification. IP limiting is weaker (VPNs can
+# rotate addresses) but combined with those user-scoped counters it raises
+# the cost of brute force / credential stuffing considerably.
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)

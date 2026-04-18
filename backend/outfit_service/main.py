@@ -336,8 +336,25 @@ app = FastAPI(
     openapi_url=None,
 )
 
-# Rate limiting — Gemini calls are expensive, throttle generate + analyze.
-limiter = Limiter(key_func=get_remote_address)
+# Rate limiting — Gemini calls are expensive. We key on the authenticated
+# user instead of IP so a VPN/proxy cannot be used to multiply the quota.
+# Unauthenticated callers (shouldn't happen on /outfits/generate) fall back
+# to IP so slowapi always has a non-None key.
+def _rate_limit_key(request: Request) -> str:
+    auth = request.headers.get("authorization") or request.headers.get("Authorization")
+    if auth and auth.startswith("Bearer "):
+        token = auth.split(" ", 1)[1]
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            uid = payload.get("user_id")
+            if uid:
+                return f"user:{uid}"
+        except Exception:
+            pass
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=_rate_limit_key)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
