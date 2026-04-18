@@ -26,19 +26,30 @@ import jwt
 import bcrypt
 import httpx
 
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+
 # ============== CONFIGURATION ==============
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/closetmate")
+DATABASE_URL = os.getenv("DATABASE_URL")
 IMAGE_SERVICE_URL = os.getenv("IMAGE_SERVICE_URL", "http://localhost:3002")
 OUTFIT_SERVICE_URL = os.getenv("OUTFIT_SERVICE_URL", "http://localhost:3003")
 EMAIL_SERVICE_URL = os.getenv("EMAIL_SERVICE_URL", "http://localhost:3005")
-JWT_SECRET = os.getenv("JWT_SECRET", "your-super-secret-key-change-in-production")
+JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 0.5  # 30 minutes per SRS 6.3a
 PASSWORD_RESET_EXPIRY_MINUTES = 60  # 1 hour per SRS FReq1.3
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
-INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
+
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL environment variable is required")
+if not JWT_SECRET:
+    raise RuntimeError("JWT_SECRET environment variable is required")
+if not INTERNAL_API_KEY:
+    raise RuntimeError("INTERNAL_API_KEY environment variable is required")
 
 # Logging
 logging.basicConfig(level=logging.INFO)
@@ -100,7 +111,6 @@ class ClothingItem(Base):
     item_name = Column(String(255), default="Untitled")
     season = Column(String(50), default="Untitled")
     image_url = Column(String, nullable=False)
-    original_image_url = Column(String)
     file_name = Column(String(255))
     file_size = Column(Integer)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -265,7 +275,6 @@ def serialize_item(item: ClothingItem) -> dict:
         "item_name": item.item_name,
         "season": item.season,
         "image_url": item.image_url,
-        "original_image_url": item.original_image_url,
         "file_name": item.file_name,
         "file_size": item.file_size,
         "created_at": item.created_at.isoformat() + "Z" if item.created_at else None,
@@ -388,6 +397,13 @@ app = FastAPI(
     openapi_url=None,
 )
 
+# Rate limiting — in-memory per-IP throttle. Keeps auth endpoints safe from
+# brute force / credential stuffing. Limits apply per container, which is
+# acceptable because Railway runs a single instance per service.
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # CORS: only allow the public frontend origin. Internal service-to-service
 # traffic doesn't need CORS since Docker network bypasses the browser.
 app.add_middleware(
@@ -437,7 +453,9 @@ async def health_check(db: Session = Depends(get_db)):
 # ============== AUTH ENDPOINTS ==============
 
 @app.post("/auth/register")
+@limiter.limit("5/minute")
 async def register(
+    request: Request,
     email: str = Form(...),
     password: str = Form(...),
     confirm_password: str = Form(...),
@@ -518,7 +536,9 @@ async def register(
 
 
 @app.post("/auth/login")
+@limiter.limit("10/minute")
 async def login(
+    request: Request,
     email: str = Form(...),
     password: str = Form(...),
     db: Session = Depends(get_db)
@@ -588,21 +608,15 @@ async def login(
         "purpose": "login"
     })
 
-    # Graceful degradation: if email service is down, allow verified users through
+    # If OTP delivery fails we MUST NOT issue a session token — that would
+    # reduce the login to single-factor. Fail closed and let the user retry.
     if not otp_result.get("success"):
-        if user.is_verified:
-            token = create_token(user.id, user.email)
-            return {
-                "success": True,
-                "data": {
-                    "user_id": user.id,
-                    "email": user.email,
-                    "full_name": user.full_name,
-                    "avatar_url": user.avatar_url,
-                    "token": token
-                }
-            }
-        return create_error_response("SERVICE_UNAVAILABLE", "Email service unavailable. Please try again.", 503)
+        logger.warning(f"AUTH: OTP send failed for {email} — refusing to issue token")
+        return create_error_response(
+            "SERVICE_UNAVAILABLE",
+            "Unable to send verification code right now. Please try again in a moment.",
+            503,
+        )
 
     # OTP sent — client must now call /auth/verify-login
     return {
@@ -618,7 +632,9 @@ async def login(
 
 
 @app.post("/auth/forgot-password")
+@limiter.limit("3/minute")
 async def forgot_password(
+    request: Request,
     email: str = Form(...),
     db: Session = Depends(get_db)
 ):
@@ -893,7 +909,9 @@ async def verify_email(
 
 
 @app.post("/auth/verify-login")
+@limiter.limit("10/minute")
 async def verify_login(
+    request: Request,
     email: str = Form(...),
     code: str = Form(...),
     db: Session = Depends(get_db)
@@ -940,7 +958,9 @@ async def verify_login(
 
 
 @app.post("/auth/resend-code")
+@limiter.limit("3/minute")
 async def resend_code(
+    request: Request,
     email: str = Form(...),
     purpose: str = Form("register"),
     db: Session = Depends(get_db)
@@ -1104,7 +1124,6 @@ async def create_item(
         item_name=ai_name,
         season=ai_season,
         image_url=processed_url,
-        original_image_url=None,
         file_name=file_name,
         file_size=file_size,
     )
@@ -1167,7 +1186,6 @@ async def update_item(
                     image_data = response.json()
                     if image_data.get("success"):
                         item.image_url = image_data["data"]["processed_url"]
-                        item.original_image_url = None
                         item.file_name = image_data["data"]["file_name"]
                         item.file_size = image_data["data"]["file_size"]
                         image_updated = True

@@ -43,6 +43,9 @@ app = FastAPI(
     title="ClosetMate API Gateway",
     description="API Gateway for ClosetMate microservices",
     version="3.0.0",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 app.add_middleware(
@@ -91,25 +94,26 @@ async def health_check():
 
 @app.get("/api/health/all")
 async def health_all():
-    """Check health of all services"""
-    results = {"gateway": {"status": "healthy"}}
+    """Aggregate health check.
 
-    services = {
-        "wardrobe": WARDROBE_SERVICE_URL,
-        "image_processing": IMAGE_SERVICE_URL,
-        "outfit": OUTFIT_SERVICE_URL,
-    }
-
-    for name, url in services.items():
+    Intentionally does NOT expose service names, versions, database status,
+    or error messages to unauthenticated callers — only a boolean aggregate.
+    """
+    service_urls = [WARDROBE_SERVICE_URL, IMAGE_SERVICE_URL, OUTFIT_SERVICE_URL]
+    all_healthy = True
+    for url in service_urls:
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(f"{url}/health")
-                results[name] = response.json()
-        except Exception as e:
-            results[name] = {"status": "unhealthy", "error": str(e)}
+                payload = response.json()
+                if payload.get("status") != "healthy":
+                    all_healthy = False
+                    break
+        except Exception:
+            all_healthy = False
+            break
 
-    all_healthy = all(s.get("status") == "healthy" for s in results.values())
-    return {"success": True, "all_healthy": all_healthy, "services": results}
+    return {"success": True, "all_healthy": all_healthy}
 
 
 # ============== IMAGE PROCESSING ROUTES ==============

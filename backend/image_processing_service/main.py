@@ -259,12 +259,15 @@ app = FastAPI(
     openapi_url=None,
 )
 
-# /files/* must be fetched directly by the browser from <img src>,
-# so CORS wildcard is fine for that specific static mount. Mutation
-# endpoints are gated by the auth dependency regardless of origin.
+# Mutation endpoints are gated by the auth dependency regardless of origin,
+# but we still restrict browser-origin requests to the known frontend domains.
+# <img src> fetches do not trigger CORS, so /files/* remains publicly viewable.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://closetmate.org.tr",
+        "https://www.closetmate.org.tr",
+    ],
     allow_credentials=False,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["*"],

@@ -79,24 +79,32 @@ const useCommunityStore = create((set, get) => ({
     }));
   },
 
-  // Optimistic: toggle reaction counts immediately
+  // Apply reaction change based on backend action: added | removed | switched
   reactToOutfit: async (sharedOutfitId, emojiType) => {
     const response = await apiService.reactToOutfit(sharedOutfitId, emojiType);
-    const { action } = response.data;
+    const { action, previous_emoji_type: previousEmojiType } = response.data;
 
     set((state) => ({
       feed: state.feed.map((item) => {
         if (item.id !== sharedOutfitId) return item;
         const counts = { ...item.reactions.counts };
-        let userReactions;
+        let userReactions = [...item.reactions.user_reactions];
+
         if (action === 'added') {
           counts[emojiType] = (counts[emojiType] || 0) + 1;
-          userReactions = [...item.reactions.user_reactions, emojiType];
-        } else {
+          userReactions = [...userReactions, emojiType];
+        } else if (action === 'removed') {
           counts[emojiType] = Math.max(0, (counts[emojiType] || 1) - 1);
           if (!counts[emojiType]) delete counts[emojiType];
-          userReactions = item.reactions.user_reactions.filter((r) => r !== emojiType);
+          userReactions = userReactions.filter((r) => r !== emojiType);
+        } else if (action === 'switched' && previousEmojiType) {
+          counts[previousEmojiType] = Math.max(0, (counts[previousEmojiType] || 1) - 1);
+          if (!counts[previousEmojiType]) delete counts[previousEmojiType];
+          counts[emojiType] = (counts[emojiType] || 0) + 1;
+          userReactions = userReactions.filter((r) => r !== previousEmojiType);
+          userReactions.push(emojiType);
         }
+
         return { ...item, reactions: { counts, user_reactions: userReactions } };
       }),
     }));

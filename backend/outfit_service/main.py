@@ -16,7 +16,7 @@ import uuid
 import base64
 import logging
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Literal
 
 from fastapi import FastAPI, Depends, HTTPException, Header, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,6 +33,10 @@ from sqlalchemy.orm import sessionmaker, Session, relationship
 
 import jwt
 import httpx
+
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from gemini_analyzer import (
     analyzer,
@@ -89,14 +93,18 @@ async def fetch_image_bytes(image_url: str) -> tuple[bytes, str]:
 
 # ============== CONFIGURATION ==============
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/closetmate")
+DATABASE_URL = os.getenv("DATABASE_URL")
 JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGORITHM = "HS256"
 WARDROBE_SERVICE_URL = os.getenv("WARDROBE_SERVICE_URL", "http://localhost:3001")
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")  # For service-to-service auth
 
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL environment variable is required")
 if not JWT_SECRET:
     raise RuntimeError("JWT_SECRET environment variable is required")
+if not INTERNAL_API_KEY:
+    raise RuntimeError("INTERNAL_API_KEY environment variable is required")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -286,10 +294,25 @@ class AnalyzeRequest(BaseModel):
 class ReanalyzeRequest(BaseModel):
     image_url: str
 
+AllowedOccasion = Literal[
+    "everyday", "work", "formal-event", "date-night", "party",
+    "outdoor", "gym", "beach", "travel", "lounging", "wedding",
+]
+
+AllowedStyle = Literal[
+    "any", "casual", "formal", "business-casual", "smart-casual",
+    "sporty", "streetwear", "bohemian", "minimalist", "preppy",
+    "vintage", "classic", "athleisure",
+]
+
+AllowedSeason = Literal["all", "spring", "summer", "fall", "winter"]
+
+
 class GenerateOutfitsRequest(BaseModel):
-    count: int = 3
-    occasion: str = "everyday"
-    style: str = "any"
+    count: int = Field(default=3, ge=1, le=10)
+    occasion: AllowedOccasion = "everyday"
+    style: AllowedStyle = "any"
+    season: AllowedSeason = "all"
 
 class SaveOutfitRequest(BaseModel):
     name: str
@@ -312,6 +335,11 @@ app = FastAPI(
     redoc_url=None,
     openapi_url=None,
 )
+
+# Rate limiting — Gemini calls are expensive, throttle generate + analyze.
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -597,7 +625,9 @@ async def delete_clothing_attributes(
 # ============== OUTFIT GENERATION ==============
 
 @app.post("/outfits/generate")
+@limiter.limit("20/hour")
 async def generate_outfits(
+    request: Request,
     body: GenerateOutfitsRequest,
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
@@ -711,10 +741,6 @@ async def generate_outfits(
         "data": {
             "outfits": enriched_outfits,
             "total_items_analyzed": len(attributes),
-            "filters": {
-                "occasion": body.occasion,
-                "style": body.style,
-            }
         }
     }
 

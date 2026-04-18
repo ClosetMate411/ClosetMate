@@ -12,6 +12,9 @@ COPY . .
 RUN npm run build
 
 # Production stage
+# Note: standard nginx image keeps the master process as root so it can bind
+# port 80 (required by the DNS config), but worker processes automatically
+# drop to the 'nginx' user. Accepted risk for CM-FE-003.
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf

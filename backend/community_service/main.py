@@ -41,15 +41,19 @@ import httpx
 
 # ============== CONFIGURATION ==============
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/closetmate")
+DATABASE_URL = os.getenv("DATABASE_URL")
 JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGORITHM = "HS256"
 OUTFIT_SERVICE_URL = os.getenv("OUTFIT_SERVICE_URL", "http://localhost:3003")
 WARDROBE_SERVICE_URL = os.getenv("WARDROBE_SERVICE_URL", "http://localhost:3001")
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL environment variable is required")
 if not JWT_SECRET:
     raise RuntimeError("JWT_SECRET environment variable is required")
+if not INTERNAL_API_KEY:
+    raise RuntimeError("INTERNAL_API_KEY environment variable is required")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -152,7 +156,7 @@ class Rating(Base):
 class Reaction(Base):
     __tablename__ = "reactions"
     __table_args__ = (
-        UniqueConstraint("shared_outfit_id", "user_id", "emoji_type", name="uq_reaction_user_emoji"),
+        UniqueConstraint("shared_outfit_id", "user_id", name="uq_reaction_user"),
     )
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -700,11 +704,8 @@ def _assemble_feed_item(shared: SharedOutfit, user_id: str, db: Session) -> dict
         .all()
     )
 
-    result = db.execute(
-        sa_text("SELECT full_name FROM users WHERE id = :uid"),
-        {"uid": shared.user_id},
-    ).fetchone()
-    user_name = result[0] if result else "Unknown"
+    user_ref = db.query(UserRef).filter(UserRef.id == shared.user_id).first()
+    user_name = user_ref.full_name if user_ref else "Unknown"
 
     avg_rating = db.query(func.avg(Rating.score)).filter(
         Rating.shared_outfit_id == shared.id,
@@ -884,27 +885,53 @@ async def get_top_rated(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """Get top-rated shared outfits (avg rating >= 4.0, at least 1 rating)"""
+    """Get top-rated shared outfits.
+
+    Score formula: SUM(rating.score) * 10 + COUNT(reactions) * 10
+    (each star = 10 points, each emoji reaction = 10 points)
+    """
     offset = (page - 1) * limit
 
-    # Subquery: shared_outfit_ids with avg >= 4.0 and at least 1 rating
-    top_ids_q = (
+    # Per-outfit rating points: SUM(score) * 10
+    rating_points_q = (
         db.query(
-            Rating.shared_outfit_id,
-            func.avg(Rating.score).label("avg_score"),
+            Rating.shared_outfit_id.label("sid"),
+            (func.coalesce(func.sum(Rating.score), 0) * 10).label("rating_points"),
         )
         .group_by(Rating.shared_outfit_id)
-        .having(func.avg(Rating.score) >= 4.0)
-        .having(func.count(Rating.id) >= 1)
         .subquery()
     )
 
-    total = db.query(func.count()).select_from(top_ids_q).scalar()
+    # Per-outfit reaction points: COUNT(*) * 10
+    reaction_points_q = (
+        db.query(
+            Reaction.shared_outfit_id.label("sid"),
+            (func.count(Reaction.id) * 10).label("reaction_points"),
+        )
+        .group_by(Reaction.shared_outfit_id)
+        .subquery()
+    )
+
+    # Combine: total_score per shared_outfit
+    total_score = (
+        func.coalesce(rating_points_q.c.rating_points, 0)
+        + func.coalesce(reaction_points_q.c.reaction_points, 0)
+    ).label("total_score")
+
+    # Base query across SharedOutfit with LEFT JOINs so outfits with only ratings
+    # or only reactions are both included. Filter out outfits with zero engagement.
+    scored_q = (
+        db.query(SharedOutfit, total_score)
+        .outerjoin(rating_points_q, SharedOutfit.id == rating_points_q.c.sid)
+        .outerjoin(reaction_points_q, SharedOutfit.id == reaction_points_q.c.sid)
+        .filter(total_score > 0)
+    )
+
+    total = scored_q.count()
 
     top_rows = (
-        db.query(SharedOutfit, top_ids_q.c.avg_score)
-        .join(top_ids_q, SharedOutfit.id == top_ids_q.c.shared_outfit_id)
-        .order_by(top_ids_q.c.avg_score.desc(), SharedOutfit.shared_at.desc())
+        scored_q
+        .order_by(total_score.desc(), SharedOutfit.shared_at.desc())
         .offset(offset)
         .limit(limit)
         .all()
@@ -961,11 +988,8 @@ async def get_notifications(
     items = []
     for n in notifications:
         # Resolve actor name
-        actor_row = db.execute(
-            sa_text("SELECT full_name FROM users WHERE id = :uid"),
-            {"uid": n.actor_user_id},
-        ).fetchone()
-        actor_name = actor_row[0] if actor_row else "Someone"
+        actor_ref = db.query(UserRef).filter(UserRef.id == n.actor_user_id).first()
+        actor_name = actor_ref.full_name if actor_ref else "Someone"
 
         # Resolve outfit name
         shared = db.query(SharedOutfit).filter(SharedOutfit.id == n.shared_outfit_id).first()
@@ -1177,7 +1201,7 @@ async def react_to_outfit(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """Toggle an emoji reaction on a shared outfit"""
+    """Toggle/switch an emoji reaction on a shared outfit (1 emoji per user per outfit)"""
     if body.emoji_type not in VALID_EMOJI_TYPES:
         return create_error_response(
             "INVALID_EMOJI",
@@ -1191,17 +1215,29 @@ async def react_to_outfit(
     if shared.user_id == user_id:
         return create_error_response("SELF_REACT", "You cannot react to your own outfit", 403)
 
-    # Toggle: if exists remove, else add
+    # Find any existing reaction by this user on this outfit (regardless of emoji_type)
     existing = db.query(Reaction).filter(
         Reaction.shared_outfit_id == shared_outfit_id,
         Reaction.user_id == user_id,
-        Reaction.emoji_type == body.emoji_type,
     ).first()
 
-    if existing:
+    previous_emoji: Optional[str] = None
+
+    # Case 1: same emoji already exists → remove (toggle off)
+    if existing and existing.emoji_type == body.emoji_type:
         db.delete(existing)
         db.commit()
         action = "removed"
+
+    # Case 2: different emoji exists → switch (update in place)
+    elif existing and existing.emoji_type != body.emoji_type:
+        previous_emoji = existing.emoji_type
+        existing.emoji_type = body.emoji_type
+        existing.created_at = datetime.utcnow()
+        db.commit()
+        action = "switched"
+
+    # Case 3: no reaction yet → add
     else:
         reaction = Reaction(
             shared_outfit_id=shared_outfit_id,
@@ -1233,6 +1269,7 @@ async def react_to_outfit(
             "post_id": shared_outfit_id,
             "action": action,
             "emoji_type": body.emoji_type,
+            "previous_emoji_type": previous_emoji,
             "my_reactions": my_reactions,
             **scores,
         },
@@ -1268,12 +1305,8 @@ async def get_comments(
 
     result = []
     for c in comments:
-        # TODO: Replace raw SQL with internal API call to wardrobe_service /users/{id} endpoint
-        user_result = db.execute(
-            sa_text("SELECT full_name FROM users WHERE id = :uid"),
-            {"uid": c.user_id},
-        ).fetchone()
-        user_name = user_result[0] if user_result else "Unknown"
+        commenter_ref = db.query(UserRef).filter(UserRef.id == c.user_id).first()
+        user_name = commenter_ref.full_name if commenter_ref else "Unknown"
 
         result.append({
             "id": c.id,
@@ -1426,13 +1459,14 @@ async def add_comment(
         mention_name = mention_name.strip()
         if not mention_name:
             continue
-        mentioned_user = db.execute(
-            sa_text("SELECT id FROM users WHERE LOWER(full_name) = LOWER(:name)"),
-            {"name": mention_name},
-        ).fetchone()
-        if mentioned_user and mentioned_user[0] != user_id:
+        mentioned_user = (
+            db.query(UserRef)
+            .filter(func.lower(UserRef.full_name) == func.lower(mention_name))
+            .first()
+        )
+        if mentioned_user and mentioned_user.id != user_id:
             db.add(Notification(
-                recipient_user_id=mentioned_user[0],
+                recipient_user_id=mentioned_user.id,
                 actor_user_id=user_id,
                 shared_outfit_id=shared_outfit_id,
                 type="reply",

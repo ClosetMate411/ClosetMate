@@ -4,7 +4,7 @@ Uses Resend API for sending, PostgreSQL for OTP storage
 """
 import os
 import uuid
-import random
+import secrets
 import logging
 from datetime import datetime, timedelta
 
@@ -18,14 +18,19 @@ from sqlalchemy.orm import sessionmaker, Session
 
 # ============== CONFIGURATION ==============
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/closetmate")
+DATABASE_URL = os.getenv("DATABASE_URL")
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 EMAIL_FROM = os.getenv("EMAIL_FROM", "ClosetMate <noreply@closetmate.org.tr>")
-INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://www.closetmate.org.tr")
 
 OTP_EXPIRY_MINUTES = 10
 MAX_OTP_REQUESTS_PER_HOUR = 5
+
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL environment variable is required")
+if not INTERNAL_API_KEY:
+    raise RuntimeError("INTERNAL_API_KEY environment variable is required")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -99,8 +104,8 @@ def verify_internal_key(request: Request) -> bool:
 
 
 def generate_otp() -> str:
-    """Generate 6-digit numeric OTP"""
-    return f"{random.randint(100000, 999999)}"
+    """Generate 6-digit numeric OTP using a CSPRNG (secrets module)."""
+    return f"{secrets.randbelow(900000) + 100000}"
 
 
 def _send_email(to_email: str, subject: str, html_body: str) -> bool:

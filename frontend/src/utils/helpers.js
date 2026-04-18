@@ -16,7 +16,7 @@ export const transformItemsForDisplay = (items) => {
   
   return items.map((item) => {
     // Use processed image (PNG with background removed) as primary
-    const imageUrl = item.image_url || item.original_image_url || item.image || item.preview;
+    const imageUrl = item.image_url || item.image || item.preview;
     
     return {
       image: imageUrl,
