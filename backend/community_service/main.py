@@ -888,7 +888,8 @@ async def get_top_rated(
     """Get top-rated shared outfits.
 
     Score formula: SUM(rating.score) * 10 + COUNT(reactions) * 10
-    (each star = 10 points, each emoji reaction = 10 points)
+    (each star across all voters × 10 + each emoji reaction × 10).
+    Example: 5 voters giving (4,5,5,4,5) + 1 emoji = 23×10 + 1×10 = 240 points.
     """
     offset = (page - 1) * limit
 
