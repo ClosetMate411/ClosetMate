@@ -14,7 +14,6 @@ import httpx
 from fastapi import FastAPI, UploadFile, File, Form, Header, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.openapi.utils import get_openapi
 
 # Service URLs
 WARDROBE_SERVICE_URL = os.getenv("WARDROBE_SERVICE_URL", "http://localhost:3001")
@@ -42,52 +41,12 @@ if _extra:
 
 app = FastAPI(
     title="ClosetMate API Gateway",
-    description=(
-        "Public entry point for the ClosetMate backend.\n\n"
-        "**Authorization:** Click the **Authorize** button (top-right), paste your JWT token "
-        "to unlock protected endpoints. Public endpoints (register, login, verify, health) "
-        "work without a token.\n\n"
-        "**Admin endpoints** (`/api/admin/*`) require `X-API-Key` header instead of JWT."
-    ),
+    description="API Gateway for ClosetMate microservices",
     version="3.0.0",
-    # /docs and /openapi.json are public — Swagger shows the Authorize button
-    # for Bearer JWT + API Key. Endpoints themselves enforce auth.
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
-
-
-def custom_openapi():
-    """Inject securitySchemes so Swagger UI shows Authorize dialog with
-    both Bearer JWT and X-API-Key inputs."""
-    if app.openapi_schema:
-        return app.openapi_schema
-    schema = get_openapi(
-        title=app.title,
-        version=app.version,
-        description=app.description,
-        routes=app.routes,
-    )
-    schema["components"] = schema.get("components", {})
-    schema["components"]["securitySchemes"] = {
-        "BearerAuth": {
-            "type": "http",
-            "scheme": "bearer",
-            "bearerFormat": "JWT",
-            "description": "Paste your JWT token (from /api/auth/login or /api/auth/verify-login)",
-        },
-        "ApiKeyAuth": {
-            "type": "apiKey",
-            "in": "header",
-            "name": "X-API-Key",
-            "description": "Internal API key for /api/admin/* endpoints",
-        },
-    }
-    # Apply BearerAuth globally so every endpoint shows the lock icon
-    schema["security"] = [{"BearerAuth": []}, {"ApiKeyAuth": []}]
-    app.openapi_schema = schema
-    return schema
-
-
-app.openapi = custom_openapi
 
 app.add_middleware(
     CORSMiddleware,
