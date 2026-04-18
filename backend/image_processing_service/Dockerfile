@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     libsm6 \
     libxrender1 \
     libxext6 \
+    su-exec \
     && rm -rf /var/lib/apt/lists/*
 
 # Create unprivileged user BEFORE model download so the cached files
@@ -38,9 +39,10 @@ print('birefnet-general-lite cached successfully')"
 
 USER root
 COPY --chown=appuser:appgroup main.py .
-
-USER appuser
+COPY --chown=root:root entrypoint.sh .
+RUN chmod +x entrypoint.sh
 
 EXPOSE 3002
 
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "3002"]
+# Entrypoint starts as root to fix volume ownership, then drops to appuser.
+ENTRYPOINT ["./entrypoint.sh"]
