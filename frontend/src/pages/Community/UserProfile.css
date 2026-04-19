@@ -33,6 +33,13 @@
   margin-bottom: 28px;
 }
 
+.profile-avatar-wrapper {
+  position: relative;
+  flex-shrink: 0;
+  width: 72px;
+  height: 72px;
+}
+
 .profile-avatar-large {
   width: 72px;
   height: 72px;
@@ -44,8 +51,96 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
   box-shadow: 0 4px 16px rgba(108, 92, 231, 0.3);
+  overflow: hidden;
+}
+
+.profile-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.profile-avatar-edit-btn {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: transparent;
+  font-size: 0.55rem;
+  font-weight: 700;
+  font-family: inherit;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.profile-avatar-edit-btn svg {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.profile-avatar-edit-btn:hover {
+  background: rgba(0, 0, 0, 0.48);
+  color: #fff;
+}
+
+.profile-avatar-edit-btn:hover svg {
+  opacity: 1;
+}
+
+.profile-avatar-delete-btn {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #dc2626;
+  color: #fff;
+  border: 2px solid #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  transition: background 0.15s ease, transform 0.15s ease;
+  padding: 0;
+}
+
+.profile-avatar-delete-btn:hover {
+  background: #b91c1c;
+  transform: scale(1.1);
+}
+
+.profile-avatar-uploading {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.profile-avatar-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2.5px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: profile-spin 0.7s linear infinite;
+}
+
+@keyframes profile-spin {
+  to { transform: rotate(360deg); }
 }
 
 .profile-info {

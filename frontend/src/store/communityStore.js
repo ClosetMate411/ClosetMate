@@ -69,14 +69,21 @@ const useCommunityStore = create((set, get) => ({
     const { average, count } = response.data;
     const newRatings = { average, count, user_rating: score };
 
-    set((state) => ({
-      feed: state.feed.map((item) =>
-        item.id === sharedOutfitId ? { ...item, ratings: newRatings } : item
-      ),
-      topRated: state.topRated.map((item) =>
-        item.id === sharedOutfitId ? { ...item, ratings: newRatings } : item
-      ),
-    }));
+    set((state) => {
+      const updatedTopRated = state.topRated
+        .map((item) => (item.id === sharedOutfitId ? { ...item, ratings: newRatings } : item))
+        .sort((a, b) => {
+          const avgDiff = (b.ratings.average || 0) - (a.ratings.average || 0);
+          return avgDiff !== 0 ? avgDiff : (b.ratings.count || 0) - (a.ratings.count || 0);
+        });
+
+      return {
+        feed: state.feed.map((item) =>
+          item.id === sharedOutfitId ? { ...item, ratings: newRatings } : item
+        ),
+        topRated: updatedTopRated,
+      };
+    });
   },
 
   // Apply reaction change based on backend action: added | removed | switched

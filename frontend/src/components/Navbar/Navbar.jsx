@@ -54,7 +54,10 @@ const Navbar = () => {
         {user && (
           <Link to={`/profile/${user.user_id || user.id}`} className="drawer-profile-card" onClick={toggleDrawer}>
             <div className="drawer-profile-avatar">
-              {(user.full_name || user.name || 'U').charAt(0).toUpperCase()}
+              {user.avatar_url
+                ? <img src={user.avatar_url} alt={user.full_name || user.name} referrerPolicy="no-referrer" />
+                : (user.full_name || user.name || 'U').charAt(0).toUpperCase()
+              }
             </div>
             <div className="drawer-profile-info">
               <span className="drawer-profile-name">{user.full_name || user.name}</span>

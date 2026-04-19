@@ -75,6 +75,57 @@
   cursor: not-allowed;
 }
 
+/* ── Warnings ────────────────────────────────────────── */
+
+.comment-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  font-size: 0.825rem;
+  line-height: 1.45;
+}
+
+.comment-warning--moderation {
+  background: #fffbeb;
+  border: 1px solid #f5c842;
+  color: #7a5200;
+}
+
+.comment-warning--rate-limit {
+  background: #f0f0ff;
+  border: 1px solid #a0a0e0;
+  color: #3a3a8a;
+}
+
+.comment-warning-icon {
+  font-size: 15px;
+  flex-shrink: 0;
+  line-height: 1.45;
+}
+
+.comment-warning-text {
+  flex: 1;
+}
+
+.comment-warning-dismiss {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 2px;
+  color: inherit;
+  opacity: 0.55;
+  font-size: 17px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: opacity 0.15s ease;
+}
+
+.comment-warning-dismiss:hover {
+  opacity: 1;
+}
+
 /* ── Error ───────────────────────────────────────────── */
 
 .comments-error {

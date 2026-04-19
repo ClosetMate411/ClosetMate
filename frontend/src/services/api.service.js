@@ -87,6 +87,7 @@ axiosInstance.interceptors.response.use(
       const message = extractErrorMessage(errorData) || `Error: ${status}`;
       const newError = new Error(message);
       newError.data = errorData;
+      newError.status = status;
       throw newError;
     }
 
@@ -120,6 +121,19 @@ class APIService {
 
   async logout() { return axiosInstance.post(API_ENDPOINTS.logout); }
   async getCurrentUser() { return axiosInstance.get(API_ENDPOINTS.me); }
+
+  async updateAvatar(file) {
+    const formData = new FormData();
+    formData.append('avatar', file);
+    return axiosInstance.put(API_ENDPOINTS.avatar, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
+    });
+  }
+
+  async deleteAvatar() {
+    return axiosInstance.delete(API_ENDPOINTS.avatar);
+  }
   
   async forgotPassword(email) {
     return axiosInstance.post(API_ENDPOINTS.forgotPassword, { email });

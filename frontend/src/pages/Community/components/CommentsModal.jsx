@@ -16,17 +16,24 @@ const formatCommentDate = (isoString) => {
   });
 };
 
+const RATE_LIMIT_MAX = 5;
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+
 const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDeleted }) => {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [text, setText] = useState('');
   const [error, setError] = useState(null);
+  const [warning, setWarning] = useState(null); // 'moderation' | 'rate_limit' | null
+  const [rateLimitSecondsLeft, setRateLimitSecondsLeft] = useState(0);
   const [replyingTo, setReplyingTo] = useState(null);
   const [mentionQuery, setMentionQuery] = useState(null);
   const [mentionResults, setMentionResults] = useState([]);
   const [mentionIndex, setMentionIndex] = useState(0);
   const mentionTimerRef = useRef(null);
+  const commentTimestampsRef = useRef([]);
+  const countdownRef = useRef(null);
   const user = useAuthStore((state) => state.user);
   const inputRef = useRef(null);
 
@@ -49,9 +56,30 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
       fetchComments();
       setText('');
       setError(null);
+      setWarning(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened, feedItem]);
+
+  useEffect(() => () => {
+    if (countdownRef.current) clearInterval(countdownRef.current);
+  }, []);
+
+  const startRateLimitCountdown = useCallback((seconds) => {
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    setWarning('rate_limit');
+    setRateLimitSecondsLeft(seconds);
+    countdownRef.current = setInterval(() => {
+      setRateLimitSecondsLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(countdownRef.current);
+          setWarning(null);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
 
   const handleSubmit = useCallback(
     async (e) => {
@@ -59,11 +87,24 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
       const trimmed = text.trim();
       if (!trimmed || submitting) return;
 
+      // Client-side rate limit — prevents hammering Gemini moderation API
+      const now = Date.now();
+      commentTimestampsRef.current = commentTimestampsRef.current.filter(
+        (t) => now - t < RATE_LIMIT_WINDOW_MS
+      );
+      if (commentTimestampsRef.current.length >= RATE_LIMIT_MAX) {
+        const oldest = Math.min(...commentTimestampsRef.current);
+        const secsLeft = Math.ceil((oldest + RATE_LIMIT_WINDOW_MS - now) / 1000);
+        startRateLimitCountdown(secsLeft);
+        return;
+      }
+
       setSubmitting(true);
       setError(null);
+      setWarning(null);
       try {
         const response = await apiService.addComment(feedItem.id, trimmed);
-        // Backend doesn't return user info in comment response, so we enrich locally
+        commentTimestampsRef.current.push(Date.now());
         const newComment = {
           ...response.data,
           user: {
@@ -77,12 +118,19 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
         setReplyingTo(null);
         onCommentAdded(feedItem.id);
       } catch (err) {
-        setError(err.message || 'Failed to post comment.');
+        const code = err.data?.error?.code;
+        if (code === 'COMMENT_REJECTED') {
+          setWarning('moderation');
+        } else if (code === 'RATE_LIMIT_EXCEEDED' || err.status === 429) {
+          startRateLimitCountdown(60);
+        } else {
+          setError(err.message || 'Failed to post comment.');
+        }
       } finally {
         setSubmitting(false);
       }
     },
-    [text, submitting, feedItem, user, onCommentAdded]
+    [text, submitting, feedItem, user, onCommentAdded, startRateLimitCountdown]
   );
 
   const handleDelete = useCallback(
@@ -231,7 +279,7 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
             <button
               className="comment-submit-btn"
               type="submit"
-              disabled={!text.trim() || submitting}
+              disabled={!text.trim() || submitting || warning === 'rate_limit'}
               aria-label="Post comment"
             >
               <IconSend size={17} />
@@ -255,6 +303,25 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
             </div>
           )}
         </div>
+
+        {/* Warnings */}
+        {warning === 'moderation' && (
+          <div className="comment-warning comment-warning--moderation" role="alert">
+            <span className="comment-warning-icon">⚠️</span>
+            <span className="comment-warning-text">
+              Your comment appears to violate our community guidelines. Please keep the conversation respectful and revise before reposting.
+            </span>
+            <button className="comment-warning-dismiss" onClick={() => setWarning(null)} aria-label="Dismiss">&times;</button>
+          </div>
+        )}
+        {warning === 'rate_limit' && (
+          <div className="comment-warning comment-warning--rate-limit" role="alert">
+            <span className="comment-warning-icon">🕐</span>
+            <span className="comment-warning-text">
+              You're posting too fast. Please wait <strong>{rateLimitSecondsLeft}s</strong> before commenting again.
+            </span>
+          </div>
+        )}
 
         {/* Error */}
         {error && <p className="comments-error">{error}</p>}

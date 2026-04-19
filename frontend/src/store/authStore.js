@@ -171,6 +171,18 @@ const useAuthStore = create((set, get) => ({
     });
   },
 
+  updateAvatar: async (file) => {
+    const response = await apiService.updateAvatar(file);
+    const { avatar_url } = response.data;
+    set((state) => ({ user: { ...state.user, avatar_url } }));
+    return avatar_url;
+  },
+
+  deleteAvatar: async () => {
+    await apiService.deleteAvatar();
+    set((state) => ({ user: { ...state.user, avatar_url: null } }));
+  },
+
   clearError: () => set({ error: null })
 }));
 

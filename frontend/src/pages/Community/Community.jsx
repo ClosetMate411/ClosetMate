@@ -10,7 +10,6 @@ import FeedCard from './components/FeedCard';
 import NotificationList from './components/NotificationList';
 import CommentsModal from './components/CommentsModal';
 import ShareOutfitModal from './components/ShareOutfitModal';
-import CompareModal from './components/CompareModal';
 import './Community.css';
 
 const TABS = [
@@ -56,9 +55,6 @@ const Community = () => {
   const [selectedFeedItem, setSelectedFeedItem] = useState(null);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
-  const [compareOpen, setCompareOpen] = useState(false);
-  const [compareFeedItem, setCompareFeedItem] = useState(null);
-
   useEffect(() => {
     fetchFeed(1);
     fetchOutfits();
@@ -101,17 +97,6 @@ const Community = () => {
     (sharedOutfitId) => decrementCommentCount(sharedOutfitId),
     [decrementCommentCount]
   );
-
-  // ── Compare ──────────────────────────────────────────
-  const handleOpenCompare = useCallback((item) => {
-    setCompareFeedItem(item);
-    setCompareOpen(true);
-  }, []);
-
-  const handleCloseCompare = useCallback(() => {
-    setCompareOpen(false);
-    setTimeout(() => setCompareFeedItem(null), 300);
-  }, []);
 
   // ── Unshare ───────────────────────────────────────────
   const handleUnshareClick = useCallback(
@@ -192,7 +177,6 @@ const Community = () => {
             wardrobeItems={wardrobeItems}
             onCommentClick={handleOpenComments}
             onUnshare={handleUnshareClick}
-            onCompareClick={handleOpenCompare}
           />
         )}
       />
@@ -289,16 +273,6 @@ const Community = () => {
           outfits={outfits}
           wardrobeItems={wardrobeItems}
           onShare={handleShare}
-        />
-      )}
-
-      {compareOpen && (
-        <CompareModal
-          opened={compareOpen}
-          onClose={handleCloseCompare}
-          feedItem={compareFeedItem}
-          outfits={outfits}
-          wardrobeItems={wardrobeItems}
         />
       )}
 

@@ -1,7 +1,7 @@
 import React, { memo, useState, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { Link } from 'react-router-dom';
-import { IconTrash, IconMessageCircle, IconArrowsExchange } from '@tabler/icons-react';
+import { IconTrash, IconMessageCircle } from '@tabler/icons-react';
 import useCommunityStore from '../../../store/communityStore';
 import './FeedCard.css';
 
@@ -20,7 +20,7 @@ const formatRelativeTime = (isoString) => {
   return new Date(isoString).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
-const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare, onCompareClick }) => {
+const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare }) => {
   const { outfit, shared_by, description, shared_at, ratings, reactions, comment_count, favorites } = item;
   const rateOutfit = useCommunityStore((s) => s.rateOutfit);
   const reactToOutfit = useCommunityStore((s) => s.reactToOutfit);
@@ -221,18 +221,6 @@ const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare, onCompareCli
             {(favorites?.count || 0) > 0 && <span className="feed-favorite-count">{favorites.count}</span>}
           </button>
 
-          {/* Compare */}
-          {!shared_by.is_self && (
-            <button
-              className="feed-compare-btn"
-              onClick={() => onCompareClick(item)}
-              title="Compare with mine"
-              aria-label="Compare with my outfit"
-            >
-              <IconArrowsExchange size={15} />
-            </button>
-          )}
-
           {/* Comments */}
           <button
             className="feed-comments-btn"
@@ -281,7 +269,6 @@ FeedCard.propTypes = {
   wardrobeItems: PropTypes.array.isRequired,
   onCommentClick: PropTypes.func.isRequired,
   onUnshare: PropTypes.func.isRequired,
-  onCompareClick: PropTypes.func.isRequired,
 };
 
 export default memo(FeedCard);

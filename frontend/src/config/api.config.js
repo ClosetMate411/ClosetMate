@@ -19,6 +19,7 @@ export const API_ENDPOINTS = {
   processImage: '/api/images/process',
 
   // Auth
+  avatar: '/api/auth/avatar',
   register: '/api/auth/register',
   login: '/api/auth/login',
   logout: '/api/auth/logout',
