@@ -5,8 +5,8 @@ import { IconTrash, IconMessageCircle } from '@tabler/icons-react';
 import useCommunityStore from '../../../store/communityStore';
 import './FeedCard.css';
 
-const EMOJI_MAP = { like: '👍', love: '❤️', fire: '🔥', cool: '😎', wow: '😮' };
-const EMOJI_TYPES = ['like', 'love', 'fire', 'cool', 'wow'];
+const EMOJI_MAP = { heart: '❤️', fire: '🔥', clap: '👏', love_eyes: '😍', idea: '💡' };
+const EMOJI_TYPES = ['heart', 'fire', 'clap', 'love_eyes', 'idea'];
 
 const formatRelativeTime = (isoString) => {
   const diff = Date.now() - new Date(isoString).getTime();
@@ -59,18 +59,12 @@ const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare }) => {
       if (isReacting) return;
       setIsReacting(true);
       try {
-        // Remove any other active reactions first (single-select enforcement)
-        const otherReactions = reactions.user_reactions.filter(r => r !== emojiType);
-        for (const r of otherReactions) {
-          await reactToOutfit(item.id, r);
-        }
-        // Toggle the clicked emoji
         await reactToOutfit(item.id, emojiType);
       } finally {
         setIsReacting(false);
       }
     },
-    [item.id, reactToOutfit, isReacting, reactions.user_reactions]
+    [item.id, reactToOutfit, isReacting]
   );
 
   const handleRate = useCallback(

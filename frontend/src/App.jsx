@@ -67,6 +67,12 @@ const Navigation = () => {
 function App() {
   useEffect(() => {
     useAuthStore.getState().init();
+
+    const handleSessionExpired = () => {
+      useAuthStore.getState().clearAuth();
+    };
+    window.addEventListener('auth:session-expired', handleSessionExpired);
+    return () => window.removeEventListener('auth:session-expired', handleSessionExpired);
   }, []);
 
   return (

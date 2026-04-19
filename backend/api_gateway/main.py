@@ -31,6 +31,7 @@ ALLOWED_ORIGINS = [
     "https://closetmate.org.tr",
     "https://apigateway-production-b91d.up.railway.app",  # Railway public gateway
     "http://localhost:5173",      # Vite dev server
+    "http://127.0.0.1:5173",     # Vite dev server (IP form)
     "http://localhost:3000",
 ]
 

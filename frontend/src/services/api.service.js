@@ -72,9 +72,8 @@ axiosInstance.interceptors.response.use(
     // Global session expiry check
     if (status === 401 || status === 403) {
       const code = errorData?.error?.code || errorData?.code;
-      // Don't wipe for login errors, only for expired sessions
       if (code !== 'INVALID_CREDENTIALS' && code !== 'ACCOUNT_LOCKED') {
-         // The authStore.init() or subsequent requests will handle the cleanup
+        window.dispatchEvent(new CustomEvent('auth:session-expired'));
       }
     }
 

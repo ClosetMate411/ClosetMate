@@ -86,34 +86,19 @@ const useCommunityStore = create((set, get) => ({
     });
   },
 
-  // Apply reaction change based on backend action: added | removed | switched
+  // Use backend's authoritative emoji_counts + my_reactions for accuracy
   reactToOutfit: async (sharedOutfitId, emojiType) => {
     const response = await apiService.reactToOutfit(sharedOutfitId, emojiType);
-    const { action, previous_emoji_type: previousEmojiType } = response.data;
+    const { emoji_counts, my_reactions } = response.data;
+    const newReactions = { counts: emoji_counts, user_reactions: my_reactions };
+
+    const applyUpdate = (item) =>
+      item.id === sharedOutfitId ? { ...item, reactions: newReactions } : item;
 
     set((state) => ({
-      feed: state.feed.map((item) => {
-        if (item.id !== sharedOutfitId) return item;
-        const counts = { ...item.reactions.counts };
-        let userReactions = [...item.reactions.user_reactions];
-
-        if (action === 'added') {
-          counts[emojiType] = (counts[emojiType] || 0) + 1;
-          userReactions = [...userReactions, emojiType];
-        } else if (action === 'removed') {
-          counts[emojiType] = Math.max(0, (counts[emojiType] || 1) - 1);
-          if (!counts[emojiType]) delete counts[emojiType];
-          userReactions = userReactions.filter((r) => r !== emojiType);
-        } else if (action === 'switched' && previousEmojiType) {
-          counts[previousEmojiType] = Math.max(0, (counts[previousEmojiType] || 1) - 1);
-          if (!counts[previousEmojiType]) delete counts[previousEmojiType];
-          counts[emojiType] = (counts[emojiType] || 0) + 1;
-          userReactions = userReactions.filter((r) => r !== previousEmojiType);
-          userReactions.push(emojiType);
-        }
-
-        return { ...item, reactions: { counts, user_reactions: userReactions } };
-      }),
+      feed: state.feed.map(applyUpdate),
+      topRated: state.topRated.map(applyUpdate),
+      favorites: state.favorites.map(applyUpdate),
     }));
   },
 
