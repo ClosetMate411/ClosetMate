@@ -248,15 +248,42 @@ async def get_me(authorization: Optional[str] = Header(None)):
 
 
 @app.post("/api/auth/logout")
-async def logout(authorization: Optional[str] = Header(None)):
-    """Logout user"""
+async def logout(request: Request, authorization: Optional[str] = Header(None)):
+    """Logout user. Forwards optional refresh_token so wardrobe_service can revoke it."""
     if not authorization:
         return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
     try:
+        data = await get_body_data(request)
+    except Exception:
+        data = {}
+    try:
         async with httpx.AsyncClient(timeout=30.0) as client:
+            form: dict = {}
+            if data.get("refresh_token"):
+                form["refresh_token"] = data["refresh_token"]
             response = await client.post(
                 f"{WARDROBE_SERVICE_URL}/auth/logout",
+                data=form or None,
                 headers={"Authorization": authorization}
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Auth service unavailable: {str(e)}", 503)
+
+
+@app.post("/api/auth/refresh")
+async def refresh_token(request: Request):
+    """Exchange a refresh token for a new access + refresh pair."""
+    try:
+        data = await get_body_data(request)
+        refresh_token_value = data.get("refresh_token") or data.get("refreshToken")
+        if not refresh_token_value:
+            return create_error_response("MISSING_FIELDS", "refresh_token is required", 400)
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{WARDROBE_SERVICE_URL}/auth/refresh",
+                data={"refresh_token": refresh_token_value},
             )
             return JSONResponse(status_code=response.status_code, content=response.json())
     except httpx.RequestError as e:

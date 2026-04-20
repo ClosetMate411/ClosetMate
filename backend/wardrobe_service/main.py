@@ -6,6 +6,7 @@ Based on requirements: Registration, Login, Password Reset, Logout
 import os
 import re
 import uuid
+import hashlib
 import secrets
 import asyncio
 import logging
@@ -39,6 +40,10 @@ EMAIL_SERVICE_URL = os.getenv("EMAIL_SERVICE_URL", "http://localhost:3005")
 JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 0.5  # 30 minutes per SRS 6.3a
+# Idle-timeout window: each refresh rotation resets this counter. 30+ min of
+# inactivity invalidates the refresh token, forcing full re-authentication.
+# Mirrors SRS 6.3a (30-min session) as an idle-based session.
+REFRESH_TOKEN_EXPIRY_MINUTES = 30
 PASSWORD_RESET_EXPIRY_MINUTES = 60  # 1 hour per SRS FReq1.3
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
@@ -101,6 +106,35 @@ class PasswordResetToken(Base):
     
     # Relationship
     user = relationship("User", back_populates="reset_tokens")
+
+
+class RefreshToken(Base):
+    """
+    Revocable refresh tokens implementing a 30-min idle timeout.
+
+    Session model (idle timeout, rolling):
+      - Login creates a token with expires_at = now + 30 min.
+      - Each rotation resets the window to `now + 30 min` — active user
+        keeps a continuous session. 30+ min of inactivity → refresh expires.
+
+    Security model:
+      - Raw token is returned to the client ONCE (on login / verify / refresh).
+      - Only the SHA256 hash is stored — DB dump leak cannot reconstruct tokens.
+      - `revoked_at` marks a token as unusable (logout, rotation, compromise).
+      - `replaced_by` points at the new hash after rotation; if a revoked
+        token is later presented, we log the reuse attempt as a signal that
+        the token was stolen and revoke the whole family.
+    """
+    __tablename__ = "refresh_tokens"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    token_hash = Column(String(64), unique=True, nullable=False, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    revoked_at = Column(DateTime, nullable=True)
+    replaced_by = Column(String(64), nullable=True)  # next token_hash after rotation
+    user_agent = Column(String(255), nullable=True)
 
 
 class ClothingItem(Base):
@@ -256,6 +290,116 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
 def generate_reset_token() -> str:
     """Generate secure password reset token"""
     return secrets.token_urlsafe(32)
+
+
+# ============== REFRESH TOKEN HELPERS ==============
+#
+# Access tokens remain 30-min stateless JWTs (SRS 6.3a). Refresh tokens are
+# long-lived opaque random strings with server-side state so they can be
+# rotated and revoked. Only the SHA256 hash lives in the DB; the raw value
+# is returned to the client once and never stored by this service.
+
+def _hash_refresh_token(raw: str) -> str:
+    """Stable SHA256 hex of a refresh token — used as DB primary lookup."""
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def issue_refresh_token(
+    db: Session,
+    user_id: str,
+    user_agent: Optional[str] = None,
+    expires_at: Optional[datetime] = None,
+) -> str:
+    """
+    Mint a new refresh token, persist its hash, return the RAW token.
+    Caller must give the raw token to the client exactly once.
+
+    If `expires_at` is None, a fresh 30-min window starts (new login).
+    Rotation passes the old token's expires_at so the session cannot be
+    extended beyond the original 30-min cap.
+    """
+    raw = secrets.token_urlsafe(48)  # ~64 chars, 384 bits of entropy
+    if expires_at is None:
+        expires_at = datetime.utcnow() + timedelta(minutes=REFRESH_TOKEN_EXPIRY_MINUTES)
+    row = RefreshToken(
+        user_id=user_id,
+        token_hash=_hash_refresh_token(raw),
+        expires_at=expires_at,
+        user_agent=(user_agent or "")[:255] or None,
+    )
+    db.add(row)
+    db.commit()
+    return raw
+
+
+def rotate_refresh_token(
+    db: Session,
+    raw_token: str,
+    user_agent: Optional[str] = None,
+) -> tuple[User, str]:
+    """
+    Validate + rotate a refresh token. Raises HTTPException(401) on any
+    failure (expired, revoked, unknown). Returns (user, new_raw_refresh).
+
+    Session model (idle timeout):
+      - Every successful rotation RESETS the 30-min window.
+      - Active user rotating within 30 min → stays logged in indefinitely.
+      - User idle for 30+ min → refresh expired → must re-authenticate.
+
+    Rotation semantics:
+      - Old token is marked revoked and its replaced_by set to the new hash.
+      - If a REVOKED token is reused (replay attack), we revoke *all* active
+        refresh tokens for this user and reject. The legit user is forced to
+        re-authenticate, which surfaces the compromise.
+    """
+    token_hash = _hash_refresh_token(raw_token)
+    row = db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash).first()
+
+    if not row:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    if row.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=401, detail="Refresh token expired")
+
+    if row.revoked_at is not None:
+        # Replay of a revoked token → likely theft. Revoke everything.
+        logger.warning(
+            f"AUTH: refresh token replay detected for user {row.user_id} — "
+            f"revoking all active refresh tokens"
+        )
+        db.query(RefreshToken).filter(
+            RefreshToken.user_id == row.user_id,
+            RefreshToken.revoked_at.is_(None),
+        ).update({"revoked_at": datetime.utcnow()})
+        db.commit()
+        raise HTTPException(status_code=401, detail="Refresh token reuse detected")
+
+    user = db.query(User).filter(User.id == row.user_id).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    # Fresh 30-min window — idle timeout, rolling. expires_at left None so
+    # issue_refresh_token recalculates it from `now`.
+    new_raw = issue_refresh_token(db, user.id, user_agent=user_agent)
+    row.revoked_at = datetime.utcnow()
+    row.replaced_by = _hash_refresh_token(new_raw)
+    db.commit()
+    return user, new_raw
+
+
+def revoke_refresh_token(db: Session, raw_token: str) -> bool:
+    """Mark a specific refresh token revoked. Idempotent. Returns success flag."""
+    if not raw_token:
+        return False
+    row = db.query(RefreshToken).filter(
+        RefreshToken.token_hash == _hash_refresh_token(raw_token)
+    ).first()
+    if not row:
+        return False
+    if row.revoked_at is None:
+        row.revoked_at = datetime.utcnow()
+        db.commit()
+    return True
 
 
 def create_error_response(code: str, message: str, status_code: int = 400, field: str = None):
@@ -842,16 +986,32 @@ async def delete_avatar(
 
 
 @app.post("/auth/logout")
-async def logout(current_user: User = Depends(get_current_user)):
+async def logout(
+    current_user: User = Depends(get_current_user),
+    refresh_token: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
     """
-    Logout user
-    - In JWT, logout is client-side (delete token)
-    - This endpoint is for logging/confirmation
+    Logout user.
+
+    - Access JWT is stateless, so the client must discard it locally.
+    - If `refresh_token` is supplied, it is revoked server-side so it
+      cannot be used to mint new access tokens after logout. Supplying
+      the refresh token is optional (compat with older clients) but
+      strongly encouraged.
     """
-    logger.info(f"AUTH: User logged out — {current_user.email} (id={current_user.id})")
+    revoked = False
+    if refresh_token:
+        revoked = revoke_refresh_token(db, refresh_token)
+
+    logger.info(
+        f"AUTH: User logged out — {current_user.email} (id={current_user.id}) "
+        f"refresh_revoked={revoked}"
+    )
     return {
         "success": True,
-        "message": "You have been logged out successfully."
+        "message": "You have been logged out successfully.",
+        "data": {"refresh_revoked": revoked},
     }
 
 
@@ -896,8 +1056,9 @@ async def verify_email(
     user.is_verified = True
     db.commit()
 
-    # Issue JWT token
+    # Issue access + refresh token pair
     token = create_token(user.id, user.email)
+    refresh = issue_refresh_token(db, user.id)
 
     return {
         "success": True,
@@ -907,7 +1068,9 @@ async def verify_email(
             "email": user.email,
             "full_name": user.full_name,
             "avatar_url": user.avatar_url,
-            "token": token
+            "token": token,
+            "refresh_token": refresh,
+            "refresh_token_expires_in_seconds": REFRESH_TOKEN_EXPIRY_MINUTES * 60,
         }
     }
 
@@ -946,8 +1109,9 @@ async def verify_login(
             }
         )
 
-    # Issue JWT token
+    # Issue access + refresh token pair
     token = create_token(user.id, user.email)
+    refresh = issue_refresh_token(db, user.id)
 
     return {
         "success": True,
@@ -956,8 +1120,50 @@ async def verify_login(
             "email": user.email,
             "full_name": user.full_name,
             "avatar_url": user.avatar_url,
-            "token": token
+            "token": token,
+            "refresh_token": refresh,
+            "refresh_token_expires_in_seconds": REFRESH_TOKEN_EXPIRY_MINUTES * 60,
         }
+    }
+
+
+@app.post("/auth/refresh")
+@limiter.limit("20/minute")
+async def refresh_access_token(
+    request: Request,
+    refresh_token: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """
+    Exchange a valid refresh token for a new access+refresh pair.
+
+    Rotating refresh tokens: each refresh invalidates the old refresh token
+    and issues a new one. Replay of an already-used token revokes the whole
+    family — a strong signal of token theft.
+
+    Body (form): refresh_token=...
+    """
+    try:
+        user, new_refresh = rotate_refresh_token(
+            db,
+            refresh_token,
+            user_agent=request.headers.get("user-agent"),
+        )
+    except HTTPException as e:
+        return create_error_response("INVALID_REFRESH_TOKEN", e.detail, 401)
+
+    access = create_token(user.id, user.email)
+    return {
+        "success": True,
+        "data": {
+            "user_id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "avatar_url": user.avatar_url,
+            "token": access,
+            "refresh_token": new_refresh,
+            "refresh_token_expires_in_seconds": REFRESH_TOKEN_EXPIRY_MINUTES * 60,
+        },
     }
 
 

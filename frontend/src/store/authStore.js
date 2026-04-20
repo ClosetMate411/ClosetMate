@@ -52,13 +52,14 @@ const useAuthStore = create((set, get) => ({
         // like `requires_otp`, which a man-in-the-middle could flip in the
         // response. A token cannot be forged client-side because it must be
         // signed by the server's JWT secret.
-        const { token, ...userData } = response.data;
+        const { token, refresh_token, ...userData } = response.data;
         if (!token) {
           set({ isLoading: false });
           return { success: true, requires_otp: true, email: response.data.email };
         }
 
         localStorage.setItem('token', token);
+        if (refresh_token) localStorage.setItem('refresh_token', refresh_token);
 
         set({
           user: userData,
@@ -116,8 +117,9 @@ const useAuthStore = create((set, get) => ({
     try {
       const response = await apiService.verifyLogin(email, code);
       if (response.success && response.data) {
-        const { token, ...userData } = response.data;
+        const { token, refresh_token, ...userData } = response.data;
         localStorage.setItem('token', token);
+        if (refresh_token) localStorage.setItem('refresh_token', refresh_token);
         set({ user: userData, isAuthenticated: true, isLoading: false });
         return { success: true };
       }
@@ -164,10 +166,11 @@ const useAuthStore = create((set, get) => ({
    */
   clearAuth: () => {
     localStorage.removeItem('token');
-    set({ 
-      user: null, 
+    localStorage.removeItem('refresh_token');
+    set({
+      user: null,
       isAuthenticated: false,
-      error: null 
+      error: null
     });
   },
 

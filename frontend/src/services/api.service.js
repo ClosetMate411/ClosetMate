@@ -30,6 +30,45 @@ axiosInstance.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+// ─── REFRESH-TOKEN STATE ──────────────────────────────────────────────────
+// Single-flight refresh: if multiple requests hit 401 concurrently, only
+// ONE /auth/refresh is issued and the rest wait on this promise.
+let refreshInFlight = null;
+
+const REFRESH_EXEMPT_PATHS = [
+  API_ENDPOINTS.refresh,
+  API_ENDPOINTS.login,
+  API_ENDPOINTS.register,
+  API_ENDPOINTS.verifyLogin,
+  API_ENDPOINTS.verifyEmail,
+  API_ENDPOINTS.resendCode,
+  API_ENDPOINTS.forgotPassword,
+  API_ENDPOINTS.resetPassword,
+];
+
+const urlIsRefreshExempt = (url = '') => REFRESH_EXEMPT_PATHS.some((p) => url.includes(p));
+
+/** Run a /auth/refresh call, returning the new access token or throwing. */
+const performRefresh = async () => {
+  const refreshToken = localStorage.getItem('refresh_token');
+  if (!refreshToken) throw new Error('No refresh token available');
+
+  // Use a bare axios instance so the refresh call itself is NEVER intercepted.
+  const resp = await axios.post(
+    `${API_CONFIG.baseURL}${API_ENDPOINTS.refresh}`,
+    { refresh_token: refreshToken },
+    { timeout: 15000, headers: { Accept: 'application/json' } },
+  );
+  const payload = resp.data?.data || resp.data || {};
+  const newAccess = payload.token;
+  const newRefresh = payload.refresh_token;
+  if (!newAccess) throw new Error('Refresh response missing access token');
+
+  localStorage.setItem('token', newAccess);
+  if (newRefresh) localStorage.setItem('refresh_token', newRefresh);
+  return newAccess;
+};
+
 /**
  * Error Extractor Helper
  */
@@ -60,16 +99,44 @@ axiosInstance.interceptors.response.use(
     if (response.data && response.data.success === false) {
       const msg = extractErrorMessage(response.data) || 'Operation failed';
       const error = new Error(msg);
-      error.data = response.data; 
+      error.data = response.data;
       throw error;
     }
     return response.data;
   },
-  (error) => {
+  async (error) => {
     const status = error.response?.status;
     const errorData = error.response?.data;
+    const originalRequest = error.config || {};
+    const requestUrl = originalRequest.url || '';
 
-    // Global session expiry check
+    // ── Try to silently refresh on 401 before giving up ──
+    const canTryRefresh =
+      status === 401 &&
+      !originalRequest._retriedAfterRefresh &&
+      !urlIsRefreshExempt(requestUrl) &&
+      !!localStorage.getItem('refresh_token');
+
+    if (canTryRefresh) {
+      try {
+        if (!refreshInFlight) {
+          refreshInFlight = performRefresh().finally(() => {
+            refreshInFlight = null;
+          });
+        }
+        const newAccess = await refreshInFlight;
+        originalRequest._retriedAfterRefresh = true;
+        originalRequest.headers = originalRequest.headers || {};
+        originalRequest.headers['Authorization'] = `Bearer ${newAccess}`;
+        return axiosInstance(originalRequest);
+      } catch (_refreshErr) {
+        // Refresh itself failed → fall through to the session-expired path
+        localStorage.removeItem('token');
+        localStorage.removeItem('refresh_token');
+      }
+    }
+
+    // Global session expiry (refresh either not attempted or failed)
     if (status === 401 || status === 403) {
       const code = errorData?.error?.code || errorData?.code;
       if (code !== 'INVALID_CREDENTIALS' && code !== 'ACCOUNT_LOCKED') {
@@ -78,7 +145,6 @@ axiosInstance.interceptors.response.use(
     }
 
     if (error.response) {
-      // Service unavailable / DB down
       if (status === 503) {
         const msg = extractErrorMessage(errorData) || 'Service temporarily unavailable. Please try again in a moment.';
         throw new Error(msg);
@@ -90,7 +156,6 @@ axiosInstance.interceptors.response.use(
       throw newError;
     }
 
-    // Network error (no response at all — internet cut, server unreachable)
     if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
       throw new Error('Request timed out. Please check your connection and try again.');
     }
@@ -118,7 +183,10 @@ class APIService {
     return axiosInstance.post(API_ENDPOINTS.login, body);
   }
 
-  async logout() { return axiosInstance.post(API_ENDPOINTS.logout); }
+  async logout() {
+    const refresh_token = localStorage.getItem('refresh_token') || undefined;
+    return axiosInstance.post(API_ENDPOINTS.logout, refresh_token ? { refresh_token } : {});
+  }
   async getCurrentUser() { return axiosInstance.get(API_ENDPOINTS.me); }
 
   async updateAvatar(file) {
