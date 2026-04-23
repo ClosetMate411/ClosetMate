@@ -27,9 +27,19 @@ from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 from rembg import remove, new_session
 
 import jwt
+import mimetypes
 from pillow_heif import register_heif_opener
 
 register_heif_opener()  # Enables PIL to open HEIC/HEIF files
+
+# python:3.11-slim ships with an incomplete mime.types DB; StaticFiles serves
+# /files/*.webp with content-type: text/plain otherwise, which makes some
+# browsers refuse to render the file as an <img> (CORB / MIME sniffing).
+# Register the image MIME types explicitly so the static mount returns the
+# correct Content-Type header.
+mimetypes.add_type("image/webp", ".webp")
+mimetypes.add_type("image/heic", ".heic")
+mimetypes.add_type("image/heif", ".heif")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
