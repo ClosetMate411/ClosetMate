@@ -296,7 +296,13 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
                   onClick={() => insertMention(u)}
                   type="button"
                 >
-                  <span className="mention-avatar">{u.name.charAt(0).toUpperCase()}</span>
+                  <span className="mention-avatar">
+                    {u.avatar_url ? (
+                      <img src={u.avatar_url} alt="" loading="lazy" referrerPolicy="no-referrer" />
+                    ) : (
+                      u.name.charAt(0).toUpperCase()
+                    )}
+                  </span>
                   <span className="mention-name">{u.name}</span>
                 </button>
               ))}
@@ -344,7 +350,11 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
             comments.map((comment) => (
               <div key={comment.id} className="comment-item">
                 <div className="comment-avatar" aria-hidden="true">
-                  {comment.user.name.charAt(0).toUpperCase()}
+                  {comment.user.avatar_url ? (
+                    <img src={comment.user.avatar_url} alt="" loading="lazy" referrerPolicy="no-referrer" />
+                  ) : (
+                    comment.user.name.charAt(0).toUpperCase()
+                  )}
                 </div>
                 <div className="comment-body">
                   <div className="comment-meta">
