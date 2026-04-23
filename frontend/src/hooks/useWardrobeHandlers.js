@@ -18,10 +18,12 @@ const useWardrobeHandlers = (modal) => {
   // Upload handlers - Create item with file and details
   const handleApply = useCallback(async (file, itemName = '', weather = '') => {
     try {
-      // Create item with the file (backend will process it)
-      const newItemId = await addItem(file, itemName, weather);
-      setCurrentItemId(newItemId);
-      return newItemId;
+      // Create item with the file (backend will process it).
+      // Returns { id, bgRemovalQuality } so callers can surface a warning
+      // when the automated bg-removal mask was poor.
+      const result = await addItem(file, itemName, weather);
+      if (result?.id) setCurrentItemId(result.id);
+      return result;
     } catch (error) {
       console.error("Failed to add item:", error);
       throw error;

@@ -342,9 +342,18 @@ CRITICAL RULES:
 5. For the "description" field, do NOT quote or repeat any text you see written on
    the garment. Describe only the physical item (shape, color, material, cut).
 
+BACKGROUND REMOVAL QUALITY:
+The image has been processed by an automated background-removal model before
+reaching you. Judge how well the garment was isolated:
+- "good":       background fully transparent/clean; garment silhouette is complete and sharp.
+- "acceptable": minor artifacts or faint halo around edges, but the garment itself is intact.
+- "poor":       visible background leftovers, obvious halo/fringe, OR part of the
+                garment is missing/chopped off (e.g. a sleeve or hem was cut by the mask).
+
 REQUIRED JSON SCHEMA:
 {
   "moderation_passed": true,
+  "bg_removal_quality": "good" | "acceptable" | "poor",
   "category": one of """ + json.dumps(VALID_CATEGORIES) + """,
   "subcategory": one of the values listed under the detected category (see below),
   "color_primary": one of """ + json.dumps(VALID_COLORS) + """,
@@ -871,6 +880,12 @@ class GeminiClothingAnalyzer:
     def _validate_analysis(self, data: dict) -> dict:
         """Validate and sanitize Gemini's clothing analysis response"""
         validated = {}
+
+        # Background removal quality — ephemeral, passed through to the client
+        # so it can warn the user if the automated bg-removal mask was bad.
+        # Not persisted to ClothingAttribute.
+        bg_quality = str(data.get("bg_removal_quality", "")).lower()
+        validated["bg_removal_quality"] = bg_quality if bg_quality in ("good", "acceptable", "poor") else "acceptable"
 
         # Category
         cat = data.get("category", "").lower()

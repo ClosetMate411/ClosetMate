@@ -185,6 +185,10 @@ class APIService {
     return axiosInstance.post(API_ENDPOINTS.processImage, f, { headers: {'Content-Type': 'multipart/form-data'} });
   }
 
+  async verifyImageQuality(imageUrl) {
+    return axiosInstance.post(API_ENDPOINTS.verifyImage, { image_url: imageUrl });
+  }
+
   // --- OUTFITS ---
   async generateOutfits(params) {
     return axiosInstance.post(API_ENDPOINTS.generateOutfits, params);

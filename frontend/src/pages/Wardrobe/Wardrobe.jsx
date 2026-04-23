@@ -73,6 +73,35 @@ const Wardrobe = () => {
     [showError]
   );
 
+  // Gemini-verify an already-processed image URL. Returns true if it passed
+  // moderation + bg-removal quality gates; false (and surfaces the right
+  // user-facing error) otherwise.
+  const verifyProcessedImage = useCallback(
+    async (imageUrl) => {
+      try {
+        const res = await apiService.verifyImageQuality(imageUrl);
+        const quality = res?.bg_removal_quality || res?.data?.bg_removal_quality;
+        if (quality === "poor") {
+          showError(
+            "The background couldn't be cleanly removed — the cutout looks off. Try a cleaner, well-lit photo on a plain background."
+          );
+          return false;
+        }
+        return true;
+      } catch (error) {
+        const code = error?.response?.data?.error?.code;
+        const message = error?.response?.data?.error?.message;
+        if (code === "MODERATION_REJECTED") {
+          showError(message || "This image wasn't recognized as a clothing item.");
+          return false;
+        }
+        // Fail-open for transient errors — let the user proceed to confirm.
+        return true;
+      }
+    },
+    [showError]
+  );
+
   const handleApplyUpload = useCallback(
     async (uploadedFiles) => {
       const file = uploadedFiles[0].file;
@@ -85,6 +114,16 @@ const Wardrobe = () => {
         const imageUrl =
           result.data?.processed_url || result.processed_url || result.image_url || result.processed_image_url;
         if (!imageUrl) throw new Error("No image URL in response");
+
+        setUploadState("analyzing");
+        const ok = await verifyProcessedImage(imageUrl);
+        if (!ok) {
+          setUploadedFile(null);
+          setProcessedImageUrl(null);
+          setUploadState("idle");
+          return;
+        }
+
         setProcessedImageUrl(imageUrl);
         setUploadState("confirming");
         showSuccess("Background has been successfully removed");
@@ -93,7 +132,7 @@ const Wardrobe = () => {
         setUploadState("error");
       }
     },
-    [setOpenModal, showError, showSuccess]
+    [setOpenModal, showError, showSuccess, verifyProcessedImage]
   );
 
   const handleRetryProcessing = useCallback(async () => {
@@ -104,6 +143,16 @@ const Wardrobe = () => {
       const result = await apiService.processImage(uploadedFile);
       const imageUrl =
         result.data?.processed_url || result.processed_url || result.image_url || result.processed_image_url;
+
+      setUploadState("analyzing");
+      const ok = await verifyProcessedImage(imageUrl);
+      if (!ok) {
+        setUploadedFile(null);
+        setProcessedImageUrl(null);
+        setUploadState("idle");
+        return;
+      }
+
       setProcessedImageUrl(imageUrl);
       setUploadState("confirming");
       showSuccess("Background has been successfully removed");
@@ -111,7 +160,7 @@ const Wardrobe = () => {
       showError(error.message || "Processing failed. Please try again.");
       setUploadState("error");
     }
-  }, [uploadedFile, retryCount, showError, showSuccess]);
+  }, [uploadedFile, retryCount, showError, showSuccess, verifyProcessedImage]);
 
   const handleUploadDifferent = useCallback(() => {
     setUploadState("idle");
@@ -132,7 +181,8 @@ const Wardrobe = () => {
     if (!uploadedFile) return;
     try {
       setUploadState("saving");
-      const newItemId = await handlers.handleApply(uploadedFile, "", "");
+      const result = await handlers.handleApply(uploadedFile, "", "");
+      const newItemId = result?.id;
       setUploadedFile(null);
       setProcessedImageUrl(null);
       if (newItemId) {

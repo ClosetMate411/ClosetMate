@@ -33,6 +33,7 @@ export const API_ENDPOINTS = {
   // Wardrobe
   items: '/api/wardrobe/items',
   item: (id) => `/api/wardrobe/items/${id}`,
+  verifyImage: '/api/wardrobe/verify-image',
 
   // Outfits
   generateOutfits: '/api/outfits/generate',

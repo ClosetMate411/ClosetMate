@@ -51,7 +51,11 @@ const useToast = () => {
     showToast(message, 'error');
   }, [showToast]);
 
-  return { toast, showSuccess, showError };
+  const showWarning = useCallback((message) => {
+    showToast(message, 'warning');
+  }, [showToast]);
+
+  return { toast, showSuccess, showError, showWarning };
 };
 
 export default useToast;

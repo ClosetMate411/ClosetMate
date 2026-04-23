@@ -1030,6 +1030,70 @@ async def get_item(
     return {"success": True, "data": serialize_item(item)}
 
 
+@app.post("/items/verify")
+async def verify_processed_image(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
+    """Quality-check a bg-removed image BEFORE the user confirms it.
+
+    Runs a synchronous Gemini analysis on the already-processed image URL so
+    we can reject bad masks (garment clipped, leftover objects, halo, etc.)
+    and images that aren't clothing at all, before the user is asked to
+    confirm the preview.
+
+    Body: {"image_url": "..."}
+    Returns: {success, bg_removal_quality: "good"|"acceptable"|"poor"}
+             or 400 MODERATION_REJECTED if Gemini says it's not clothing.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return create_error_response("INVALID_BODY", "Invalid JSON body", 400)
+
+    image_url = body.get("image_url")
+    if not image_url:
+        return create_error_response("MISSING_IMAGE_URL", "image_url is required", 400)
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"{OUTFIT_SERVICE_URL}/analyze",
+                json={
+                    "item_id": "pending",
+                    "user_id": current_user.id,
+                    "image_url": image_url,
+                    "x_api_key": INTERNAL_API_KEY,
+                },
+            )
+    except httpx.RequestError as e:
+        logger.warning(f"verify_processed_image: outfit_service unreachable: {e}")
+        # Fail-open — don't block user if Gemini is down.
+        return {"success": True, "bg_removal_quality": "acceptable", "skipped": True}
+
+    if resp.status_code == 400:
+        data = resp.json() if resp.content else {}
+        err = data.get("error", {}) if isinstance(data, dict) else {}
+        if err.get("code") == "MODERATION_REJECTED":
+            return create_error_response(
+                "MODERATION_REJECTED",
+                err.get("message", "The uploaded image was not recognized as a valid clothing item."),
+                400,
+            )
+
+    if resp.status_code != 200:
+        logger.warning(f"verify_processed_image: outfit_service returned {resp.status_code}")
+        # Fail-open on unexpected statuses.
+        return {"success": True, "bg_removal_quality": "acceptable", "skipped": True}
+
+    data = resp.json()
+    attrs = data.get("data", {}) if isinstance(data, dict) else {}
+    return {
+        "success": True,
+        "bg_removal_quality": attrs.get("bg_removal_quality", "acceptable"),
+    }
+
+
 @app.post("/items")
 async def create_item(
     current_user: User = Depends(get_current_user),
@@ -1081,6 +1145,7 @@ async def create_item(
     # If Gemini is unavailable, we fall back to "Untitled" so the user is not blocked.
     ai_name = "Untitled"
     ai_season = "Untitled"
+    bg_removal_quality = None
     analysis_attrs = None
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -1114,6 +1179,7 @@ async def create_item(
                     ai_name = analysis_attrs.get("name") or "Untitled"
                     seasons = analysis_attrs.get("seasons", [])
                     ai_season = _seasons_to_display(seasons)
+                    bg_removal_quality = analysis_attrs.get("bg_removal_quality")
             else:
                 logger.warning(f"Create item: outfit_service returned {resp.status_code}, proceeding with Untitled")
 
@@ -1148,7 +1214,10 @@ async def create_item(
             )
         )
 
-    return {"success": True, "data": serialize_item(item)}
+    payload = serialize_item(item)
+    if bg_removal_quality:
+        payload["bg_removal_quality"] = bg_removal_quality
+    return {"success": True, "data": payload}
 
 
 @app.put("/items/{item_id}")

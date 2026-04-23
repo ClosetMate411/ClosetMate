@@ -64,6 +64,7 @@ const useWardrobeStore = create((set, get) => ({
 
       // Sync with Backend: Response is { success: true, data: { ...item... } }
       const rawItem = response.data || response;
+      const bgRemovalQuality = rawItem?.bg_removal_quality || null;
       const newItem = transformItemsForDisplay([rawItem])[0];
 
       set((state) => ({
@@ -74,7 +75,7 @@ const useWardrobeStore = create((set, get) => ({
       // Poll for AI-generated name and season (non-blocking)
       get().pollForAnalysis(newItem.id);
 
-      return newItem.id;
+      return { id: newItem.id, bgRemovalQuality };
     } catch (error) {
       set({ error: error.message, loading: false });
       console.error('Failed to add item:', error);

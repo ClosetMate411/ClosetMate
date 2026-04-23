@@ -390,6 +390,28 @@ async def get_item(item_id: str, authorization: Optional[str] = Header(None)):
         return create_error_response("SERVICE_UNAVAILABLE", f"Wardrobe service unavailable: {str(e)}", 503)
 
 
+@app.post("/api/wardrobe/verify-image")
+async def verify_image(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+):
+    """Gemini-check an already-processed image URL before the user confirms it.
+    Rejects non-clothing images and poor bg-removal masks up front."""
+    if not authorization:
+        return create_error_response("UNAUTHORIZED", "Authorization header required", 401)
+    try:
+        body = await get_body_data(request)
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{WARDROBE_SERVICE_URL}/items/verify",
+                json=body,
+                headers={"Authorization": authorization},
+            )
+            return JSONResponse(status_code=response.status_code, content=response.json())
+    except httpx.RequestError as e:
+        return create_error_response("SERVICE_UNAVAILABLE", f"Wardrobe service unavailable: {str(e)}", 503)
+
+
 @app.post("/api/wardrobe/items")
 async def create_item(
     authorization: Optional[str] = Header(None),
