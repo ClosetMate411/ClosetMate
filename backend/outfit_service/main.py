@@ -97,6 +97,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGORITHM = "HS256"
 WARDROBE_SERVICE_URL = os.getenv("WARDROBE_SERVICE_URL", "http://localhost:3001")
+COMMUNITY_SERVICE_URL = os.getenv("COMMUNITY_SERVICE_URL", "http://localhost:3004")
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")  # For service-to-service auth
 
 if not DATABASE_URL:
@@ -916,6 +917,17 @@ async def delete_outfit(
 
     if not outfit:
         return create_error_response("OUTFIT_NOT_FOUND", "Outfit not found", 404)
+
+    # Purge community-side data first. Non-blocking on failure — the startup
+    # cleanup in community_service will mop up any stragglers.
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.delete(
+                f"{COMMUNITY_SERVICE_URL}/community/internal/outfits/{outfit_id}/purge",
+                headers={"X-API-Key": INTERNAL_API_KEY or ""},
+            )
+    except Exception as e:
+        logger.warning(f"Could not purge community data for outfit {outfit_id}: {e}")
 
     db.delete(outfit)
     db.commit()

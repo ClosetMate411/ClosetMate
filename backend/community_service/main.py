@@ -260,6 +260,44 @@ with engine.connect() as _conn:
         except Exception:
             _conn.rollback()
 
+    # One-shot orphan cleanup: delete community rows whose parent outfit or
+    # parent SharedOutfit is gone. Runs on every boot; idempotent (deletes
+    # nothing once the DB is clean). Handles historical inconsistencies
+    # that pre-date the cascading-delete fixes in unshare_outfit and the
+    # new /community/internal/outfits/{id}/purge endpoint.
+    _orphan_cleanups = (
+        # Children of SharedOutfits whose parent Outfit row no longer exists.
+        "DELETE FROM notifications WHERE shared_outfit_id IN ("
+        "  SELECT so.id FROM shared_outfits so "
+        "  LEFT JOIN outfits o ON o.id = so.outfit_id WHERE o.id IS NULL)",
+        "DELETE FROM ratings WHERE shared_outfit_id IN ("
+        "  SELECT so.id FROM shared_outfits so "
+        "  LEFT JOIN outfits o ON o.id = so.outfit_id WHERE o.id IS NULL)",
+        "DELETE FROM reactions WHERE shared_outfit_id IN ("
+        "  SELECT so.id FROM shared_outfits so "
+        "  LEFT JOIN outfits o ON o.id = so.outfit_id WHERE o.id IS NULL)",
+        "DELETE FROM comments WHERE shared_outfit_id IN ("
+        "  SELECT so.id FROM shared_outfits so "
+        "  LEFT JOIN outfits o ON o.id = so.outfit_id WHERE o.id IS NULL)",
+        "DELETE FROM community_favorites WHERE shared_outfit_id IN ("
+        "  SELECT so.id FROM shared_outfits so "
+        "  LEFT JOIN outfits o ON o.id = so.outfit_id WHERE o.id IS NULL)",
+        "DELETE FROM shared_outfits WHERE outfit_id NOT IN (SELECT id FROM outfits)",
+        # Rows whose SharedOutfit itself is gone (unshare didn't cascade pre-fix).
+        "DELETE FROM notifications WHERE shared_outfit_id NOT IN (SELECT id FROM shared_outfits)",
+        "DELETE FROM community_favorites WHERE shared_outfit_id NOT IN (SELECT id FROM shared_outfits)",
+        "DELETE FROM ratings WHERE shared_outfit_id NOT IN (SELECT id FROM shared_outfits)",
+        "DELETE FROM reactions WHERE shared_outfit_id NOT IN (SELECT id FROM shared_outfits)",
+        "DELETE FROM comments WHERE shared_outfit_id NOT IN (SELECT id FROM shared_outfits)",
+    )
+    for _stmt in _orphan_cleanups:
+        try:
+            _conn.execute(sa_text(_stmt))
+            _conn.commit()
+        except Exception as _e:
+            _conn.rollback()
+            logger.warning(f"Orphan cleanup skipped: {_e}")
+
     # v4 emoji migration: legacy emoji_type → new spec set.
     # Idempotent — once a row is migrated, the WHERE clause matches nothing.
     # The NOT EXISTS guard prevents UNIQUE(shared_outfit_id, user_id, emoji_type)
@@ -669,6 +707,8 @@ async def unshare_outfit(
     db.query(Rating).filter(Rating.shared_outfit_id == shared_outfit_id).delete()
     db.query(Reaction).filter(Reaction.shared_outfit_id == shared_outfit_id).delete()
     db.query(Comment).filter(Comment.shared_outfit_id == shared_outfit_id).delete()
+    db.query(Notification).filter(Notification.shared_outfit_id == shared_outfit_id).delete()
+    db.query(CommunityFavorite).filter(CommunityFavorite.shared_outfit_id == shared_outfit_id).delete()
     db.delete(shared)
     db.commit()
 
@@ -685,6 +725,32 @@ async def unshare_outfit(
 
     logger.info(f"Shared outfit {shared_outfit_id} removed by user {user_id}")
     return {"success": True, "message": "Outfit unshared successfully"}
+
+
+# ── Internal: purge all community data tied to an outfit ─────────────────────
+# Called by outfit_service when an outfit is hard-deleted, so downstream
+# community rows (shared_outfits + ratings/reactions/comments/notifications/
+# favorites) don't outlive their source outfit.
+
+@app.delete("/community/internal/outfits/{outfit_id}/purge")
+async def purge_outfit_community_data(
+    outfit_id: str,
+    _: str = Depends(require_internal_key),
+    db: Session = Depends(get_db),
+):
+    shared_rows = db.query(SharedOutfit).filter(SharedOutfit.outfit_id == outfit_id).all()
+    shared_ids = [s.id for s in shared_rows]
+
+    if shared_ids:
+        db.query(Rating).filter(Rating.shared_outfit_id.in_(shared_ids)).delete(synchronize_session=False)
+        db.query(Reaction).filter(Reaction.shared_outfit_id.in_(shared_ids)).delete(synchronize_session=False)
+        db.query(Comment).filter(Comment.shared_outfit_id.in_(shared_ids)).delete(synchronize_session=False)
+        db.query(Notification).filter(Notification.shared_outfit_id.in_(shared_ids)).delete(synchronize_session=False)
+        db.query(CommunityFavorite).filter(CommunityFavorite.shared_outfit_id.in_(shared_ids)).delete(synchronize_session=False)
+        db.query(SharedOutfit).filter(SharedOutfit.id.in_(shared_ids)).delete(synchronize_session=False)
+
+    db.commit()
+    return {"success": True, "purged_shares": len(shared_ids)}
 
 
 # ── Helper: assemble a feed item from a SharedOutfit row ─────────────────────
@@ -968,18 +1034,22 @@ async def get_notifications(
     """Get notifications for the current user"""
     offset = (page - 1) * limit
 
-    total = db.query(Notification).filter(
-        Notification.recipient_user_id == user_id,
-    ).count()
+    # Only surface notifications whose SharedOutfit AND underlying Outfit still
+    # exist. Orphans (outfit deleted, share removed, etc.) are hidden from the
+    # UI; a startup sweep reclaims their storage.
+    base_query = (
+        db.query(Notification)
+        .join(SharedOutfit, SharedOutfit.id == Notification.shared_outfit_id)
+        .join(OutfitRef, OutfitRef.id == SharedOutfit.outfit_id)
+        .filter(Notification.recipient_user_id == user_id)
+    )
 
-    unread_count = db.query(Notification).filter(
-        Notification.recipient_user_id == user_id,
-        Notification.is_read == False,
-    ).count()
+    total = base_query.count()
+
+    unread_count = base_query.filter(Notification.is_read == False).count()
 
     notifications = (
-        db.query(Notification)
-        .filter(Notification.recipient_user_id == user_id)
+        base_query
         .order_by(Notification.created_at.desc())
         .offset(offset)
         .limit(limit)
