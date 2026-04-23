@@ -704,6 +704,7 @@ def _assemble_feed_item(shared: SharedOutfit, user_id: str, db: Session) -> dict
 
     user_ref = db.query(UserRef).filter(UserRef.id == shared.user_id).first()
     user_name = user_ref.full_name if user_ref else "Unknown"
+    user_avatar_url = user_ref.avatar_url if user_ref else None
 
     avg_rating = db.query(func.avg(Rating.score)).filter(
         Rating.shared_outfit_id == shared.id,
@@ -778,6 +779,7 @@ def _assemble_feed_item(shared: SharedOutfit, user_id: str, db: Session) -> dict
         "shared_by": {
             "user_id": shared.user_id,
             "name": user_name,
+            "avatar_url": user_avatar_url,
             "is_self": shared.user_id == user_id,
         },
         "description": shared.description,
@@ -986,9 +988,10 @@ async def get_notifications(
 
     items = []
     for n in notifications:
-        # Resolve actor name
+        # Resolve actor name + avatar
         actor_ref = db.query(UserRef).filter(UserRef.id == n.actor_user_id).first()
         actor_name = actor_ref.full_name if actor_ref else "Someone"
+        actor_avatar_url = actor_ref.avatar_url if actor_ref else None
 
         # Resolve outfit name
         shared = db.query(SharedOutfit).filter(SharedOutfit.id == n.shared_outfit_id).first()
@@ -1003,7 +1006,7 @@ async def get_notifications(
             "detail": n.detail,
             "is_read": n.is_read,
             "created_at": n.created_at.isoformat() + "Z" if n.created_at else None,
-            "actor": {"user_id": n.actor_user_id, "name": actor_name},
+            "actor": {"user_id": n.actor_user_id, "name": actor_name, "avatar_url": actor_avatar_url},
             "shared_outfit_id": n.shared_outfit_id,
             "outfit_name": outfit_name,
         })
@@ -1306,12 +1309,14 @@ async def get_comments(
     for c in comments:
         commenter_ref = db.query(UserRef).filter(UserRef.id == c.user_id).first()
         user_name = commenter_ref.full_name if commenter_ref else "Unknown"
+        user_avatar_url = commenter_ref.avatar_url if commenter_ref else None
 
         result.append({
             "id": c.id,
             "user": {
                 "user_id": c.user_id,
                 "name": user_name,
+                "avatar_url": user_avatar_url,
                 "is_self": c.user_id == user_id,
             },
             "text": c.text,
