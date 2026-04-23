@@ -518,7 +518,7 @@ async def search_users(
     return {
         "success": True,
         "data": [
-            {"user_id": u.id, "name": u.full_name}
+            {"user_id": u.id, "name": u.full_name, "avatar_url": u.avatar_url}
             for u in users
         ],
     }
@@ -566,6 +566,7 @@ async def get_user_profile(
             "user": {
                 "user_id": profile_user.id,
                 "name": profile_user.full_name,
+                "avatar_url": profile_user.avatar_url,
                 "is_self": profile_user.id == user_id,
             },
             "stats": {
