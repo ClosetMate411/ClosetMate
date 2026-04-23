@@ -16,7 +16,7 @@ const UserProfile = () => {
   const navigate = useNavigate();
   const { toast, showError, showSuccess } = useToast();
   const { items: wardrobeItems, fetchItems } = useWardrobeStore();
-  const { incrementCommentCount, decrementCommentCount } = useCommunityStore();
+  const { incrementCommentCount, decrementCommentCount, unshareOutfit } = useCommunityStore();
   const { updateAvatar, deleteAvatar } = useAuthStore();
 
   const [profile, setProfile] = useState(null);
@@ -41,6 +41,27 @@ const UserProfile = () => {
       e.target.value = '';
     }
   }, [updateAvatar, showSuccess, showError]);
+
+  const handleUnshare = useCallback(async (feedItem) => {
+    if (!window.confirm('Remove this outfit from the community?')) return;
+    try {
+      await unshareOutfit(feedItem.id);
+      setProfile((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          outfits: prev.outfits.filter((o) => o.id !== feedItem.id),
+          stats: {
+            ...prev.stats,
+            total_shared: Math.max(0, (prev.stats?.total_shared || 0) - 1),
+          },
+        };
+      });
+      showSuccess('Outfit removed from community.');
+    } catch (err) {
+      showError(err.message || 'Failed to unshare outfit.');
+    }
+  }, [unshareOutfit, showSuccess, showError]);
 
   const handleAvatarDelete = useCallback(async () => {
     setUploading(true);
@@ -179,7 +200,7 @@ const UserProfile = () => {
                   setSelectedFeedItem(feedItem);
                   setCommentsOpen(true);
                 }}
-                onUnshare={() => {}}
+                onUnshare={handleUnshare}
               />
             ))}
           </div>
