@@ -88,7 +88,11 @@ const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare }) => {
       <div className="feed-card-header">
         <div className="feed-card-user">
           <div className="feed-card-avatar" aria-hidden="true">
-            {shared_by.name.charAt(0).toUpperCase()}
+            {shared_by.avatar_url ? (
+              <img src={shared_by.avatar_url} alt="" loading="lazy" referrerPolicy="no-referrer" />
+            ) : (
+              shared_by.name.charAt(0).toUpperCase()
+            )}
           </div>
           <div className="feed-card-user-info">
             <Link to={`/profile/${shared_by.user_id}`} className="feed-card-username feed-card-username-link">
