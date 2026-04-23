@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Modal, Container, Text, Stack, Group, ActionIcon, Badge, Divider } from '@mantine/core';
 import { IconArrowLeft, IconHeart, IconHeartFilled, IconTrash } from '@tabler/icons-react';
 import useOutfitStore from '../../store/outfitStore';
@@ -28,21 +28,6 @@ const Outfits = () => {
   const [activeModal, setActiveModal] = useState(null); // 'generate' | 'preview' | 'detail'
   const [selectedOutfit, setSelectedOutfit] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [compareIds, setCompareIds] = useState([null, null]);
-
-  const handleCompareSelect = useCallback((index, outfitId) => {
-    setCompareIds(prev => {
-      const next = [...prev];
-      next[index] = outfitId || null;
-      return next;
-    });
-  }, []);
-
-  const compareOutfits = useMemo(() =>
-    compareIds.map(id => outfits.find(o => o.id === id) || null),
-    [compareIds, outfits]
-  );
-
   useEffect(() => {
     fetchOutfits();
     fetchItems();
@@ -138,56 +123,6 @@ const Outfits = () => {
             onAddClick={handleGenerateClick}
             onOutfitClick={handleOutfitClick}
           />
-        )}
-        {/* ── Outfit Comparison ────────────────────────── */}
-        {outfits.length >= 2 && (
-          <div className="compare-section">
-            <h2 className="compare-title">Compare Outfits</h2>
-            <p className="compare-subtitle">Pick two outfits to compare side by side</p>
-            <div className="compare-grid">
-              {[0, 1].map((idx) => (
-                <div key={idx} className="compare-slot">
-                  <select
-                    className="compare-select"
-                    value={compareIds[idx] || ''}
-                    onChange={(e) => handleCompareSelect(idx, e.target.value)}
-                  >
-                    <option value="">Select outfit...</option>
-                    {outfits.map((o) => (
-                      <option key={o.id} value={o.id}>{o.name}</option>
-                    ))}
-                  </select>
-
-                  {compareOutfits[idx] && (
-                    <div className="compare-card">
-                      <div className="compare-items">
-                        {compareOutfits[idx].item_ids
-                          .map(id => items.find(i => i.id === id))
-                          .filter(Boolean)
-                          .map(item => (
-                            <img key={item.id} src={item.image} alt={item.name} className="compare-item-img" referrerPolicy="no-referrer" />
-                          ))
-                        }
-                      </div>
-                      <div className="compare-meta">
-                        <h4 className="compare-name">{compareOutfits[idx].name}</h4>
-                        <div className="compare-badges">
-                          {compareOutfits[idx].style && <span className="meta-tag">{compareOutfits[idx].style}</span>}
-                          {compareOutfits[idx].occasion && <span className="meta-tag">{compareOutfits[idx].occasion}</span>}
-                          {compareOutfits[idx].cohesion_score && (
-                            <span className="compare-score">{compareOutfits[idx].cohesion_score}/10</span>
-                          )}
-                        </div>
-                        {compareOutfits[idx].reasoning && (
-                          <p className="compare-reasoning">{compareOutfits[idx].reasoning}</p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
         )}
       </Container>
 
