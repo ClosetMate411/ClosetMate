@@ -1,6 +1,11 @@
 import { create } from 'zustand';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiService from '../services/api.service';
+import {
+  getAccessToken,
+  setAccessToken,
+  setRefreshToken,
+  clearTokens,
+} from './tokenStore';
 
 const extractAuthPayload = (response) => {
   const payload = response?.data || response;
@@ -12,12 +17,23 @@ const extractAuthPayload = (response) => {
     payload?.data?.accessToken ||
     payload?.data?.access_token;
 
+  const refreshToken =
+    payload?.refresh_token ||
+    payload?.refreshToken ||
+    payload?.data?.refresh_token ||
+    payload?.data?.refreshToken;
+
   const user =
     payload?.user ||
     payload?.data?.user ||
     (payload && typeof payload === 'object' ? payload : null);
 
-  return { token, user };
+  return { token, refreshToken, user };
+};
+
+const persistTokens = async (token, refreshToken) => {
+  await setAccessToken(token);
+  if (refreshToken) await setRefreshToken(refreshToken);
 };
 
 const useAuthStore = create((set, get) => ({
@@ -27,7 +43,7 @@ const useAuthStore = create((set, get) => ({
   error: null,
 
   init: async () => {
-    const token = await AsyncStorage.getItem('token');
+    const token = await getAccessToken();
     if (!token) {
       set({ isAuthenticated: false, isLoading: false, user: null });
       return;
@@ -60,7 +76,7 @@ const useAuthStore = create((set, get) => ({
         // like `requires_otp`, which a man-in-the-middle could flip in the
         // response. A token cannot be forged client-side because it must be
         // signed by the server's JWT secret.
-        const { token, user } = extractAuthPayload(response);
+        const { token, refreshToken, user } = extractAuthPayload(response);
         if (!token || typeof token !== 'string') {
           set({ isLoading: false });
           return {
@@ -71,7 +87,7 @@ const useAuthStore = create((set, get) => ({
             expiresInSeconds: response.data.otp_expires_in_seconds,
           };
         }
-        await AsyncStorage.setItem('token', token);
+        await persistTokens(token, refreshToken);
         set({ user, isAuthenticated: true, isLoading: false });
         return { success: true };
       }
@@ -90,12 +106,12 @@ const useAuthStore = create((set, get) => ({
         console.log('[authStore.verifyLoginOtp] response =', JSON.stringify(response, null, 2));
       }
 
-      const { token, user } = extractAuthPayload(response);
+      const { token, refreshToken, user } = extractAuthPayload(response);
       if (!response?.success || !token || typeof token !== 'string') {
         throw new Error(response?.message || 'Verification succeeded but no token was returned by the API.');
       }
 
-      await AsyncStorage.setItem('token', token);
+      await persistTokens(token, refreshToken);
       set({ user, isAuthenticated: true, isLoading: false });
       return { success: true };
     } catch (error) {
@@ -132,6 +148,11 @@ const useAuthStore = create((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const response = await apiService.verifyRegistration({ email, code });
+      // Registration OTP may also return an access+refresh pair — persist if so.
+      const { token, refreshToken } = extractAuthPayload(response);
+      if (token && typeof token === 'string') {
+        await persistTokens(token, refreshToken);
+      }
       set({ isLoading: false });
       return { success: !!response?.success, message: response?.message || 'Email verified successfully!' };
     } catch (error) {
@@ -162,7 +183,7 @@ const useAuthStore = create((set, get) => ({
   },
 
   clearAuth: async () => {
-    await AsyncStorage.removeItem('token');
+    await clearTokens();
     set({ user: null, isAuthenticated: false, error: null });
   },
 

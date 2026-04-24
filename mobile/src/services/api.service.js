@@ -1,6 +1,12 @@
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_CONFIG, API_ENDPOINTS } from '../config/api.config';
+import {
+  getAccessToken,
+  setAccessToken,
+  getRefreshToken,
+  setRefreshToken,
+  clearTokens,
+} from '../store/tokenStore';
 
 const axiosInstance = axios.create({
   baseURL: API_CONFIG.baseURL,
@@ -10,12 +16,50 @@ const axiosInstance = axios.create({
 
 axiosInstance.interceptors.request.use(
   async (config) => {
-    const token = await AsyncStorage.getItem('token');
+    const token = await getAccessToken();
     if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
   },
   (error) => Promise.reject(error)
 );
+
+// ─── REFRESH-TOKEN STATE ──────────────────────────────────────────────────
+// Single-flight refresh: if N concurrent requests hit 401, only ONE
+// /auth/refresh is issued and the rest await this promise. Matches the web
+// client's axios interceptor so mobile session behaviour is identical.
+let refreshInFlight = null;
+
+const REFRESH_EXEMPT_PATHS = [
+  API_ENDPOINTS.refresh,
+  API_ENDPOINTS.login,
+  API_ENDPOINTS.register,
+  API_ENDPOINTS.verifyLogin,
+  API_ENDPOINTS.verifyRegistration,
+  API_ENDPOINTS.resendCode,
+  API_ENDPOINTS.forgotPassword,
+  API_ENDPOINTS.resetPassword,
+];
+
+const urlIsRefreshExempt = (url = '') => REFRESH_EXEMPT_PATHS.some((p) => url.includes(p));
+
+const performRefresh = async () => {
+  const refreshToken = await getRefreshToken();
+  if (!refreshToken) throw new Error('No refresh token available');
+
+  const resp = await axios.post(
+    `${API_CONFIG.baseURL}${API_ENDPOINTS.refresh}`,
+    { refresh_token: refreshToken },
+    { timeout: 15000, headers: { Accept: 'application/json' } },
+  );
+  const payload = resp.data?.data || resp.data || {};
+  const newAccess = payload.token;
+  const newRefresh = payload.refresh_token;
+  if (!newAccess) throw new Error('Refresh response missing access token');
+
+  await setAccessToken(newAccess);
+  if (newRefresh) await setRefreshToken(newRefresh);
+  return newAccess;
+};
 
 const extractErrorMessage = (data) => {
   if (!data) return null;
@@ -46,20 +90,40 @@ axiosInstance.interceptors.response.use(
     }
     return response.data;
   },
-  (error) => {
+  async (error) => {
     if (error?.code === 'ERR_CANCELED') {
       throw new Error('Upload cancelled.');
     }
 
     const status = error.response?.status;
     const errorData = error.response?.data;
+    const originalRequest = error.config || {};
+    const requestUrl = originalRequest.url || '';
 
-    // Global session expiry check
-    if (status === 401 || status === 403) {
-      const code = errorData?.error?.code || errorData?.code;
-      // Don't wipe for login errors, only for expired sessions
-      if (code !== 'INVALID_CREDENTIALS' && code !== 'ACCOUNT_LOCKED') {
-        // authStore.init() or subsequent guarded requests will handle cleanup
+    // Silently refresh on 401 before giving up. Auth endpoints are exempt so
+    // a genuine "bad credentials" doesn't loop through the refresh flow.
+    if (
+      status === 401 &&
+      !originalRequest._retriedAfterRefresh &&
+      !urlIsRefreshExempt(requestUrl)
+    ) {
+      const storedRefresh = await getRefreshToken();
+      if (storedRefresh) {
+        try {
+          if (!refreshInFlight) {
+            refreshInFlight = performRefresh().finally(() => {
+              refreshInFlight = null;
+            });
+          }
+          const newAccess = await refreshInFlight;
+          originalRequest._retriedAfterRefresh = true;
+          originalRequest.headers = originalRequest.headers || {};
+          originalRequest.headers.Authorization = `Bearer ${newAccess}`;
+          return axiosInstance(originalRequest);
+        } catch (_refreshErr) {
+          // Refresh failed → treat as session expired, fall through
+          await clearTokens();
+        }
       }
     }
 
@@ -111,7 +175,13 @@ class APIService {
     });
   }
 
-  async logout() { return axiosInstance.post(API_ENDPOINTS.logout); }
+  async logout() {
+    const refresh_token = await getRefreshToken().catch(() => null);
+    return axiosInstance.post(
+      API_ENDPOINTS.logout,
+      refresh_token ? { refresh_token } : {},
+    );
+  }
   async getCurrentUser() { return axiosInstance.get(API_ENDPOINTS.me); }
 
   async forgotPassword(email) {

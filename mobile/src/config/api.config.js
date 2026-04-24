@@ -23,7 +23,8 @@ export const API_ENDPOINTS = {
   forgotPassword: '/api/auth/forgot-password',
   resetPassword: '/api/auth/reset-password',
   resendCode: '/api/auth/resend-code',
-  verifyRegistration: '/api/auth/verify-login',
+  verifyRegistration: '/api/auth/verify-email',
+  refresh: '/api/auth/refresh',
 
   items: '/api/wardrobe/items',
   item: (id) => `/api/wardrobe/items/${id}`,
