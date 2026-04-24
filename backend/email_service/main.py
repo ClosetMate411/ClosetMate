@@ -25,7 +25,12 @@ INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://www.closetmate.org.tr")
 
 OTP_EXPIRY_MINUTES = 10
-MAX_OTP_REQUESTS_PER_HOUR = 5
+# Sliding-window rate limit on OTP issuance — keyed per-email.
+# Short enough that legitimate users retrying during a login session
+# won't lock themselves out; long enough to slow brute-force / enumeration.
+# 5 codes per 10-minute window = max 30 per hour per email.
+OTP_RATE_LIMIT_MAX = 5
+OTP_RATE_LIMIT_WINDOW_MINUTES = 10
 
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL environment variable is required")
@@ -258,17 +263,20 @@ async def send_otp(request: Request, db: Session = Depends(get_db)):
     if not email:
         return JSONResponse(status_code=400, content={"success": False, "error": "Email is required"})
 
-    # Rate limit: max N codes per email per hour
-    one_hour_ago = datetime.utcnow() - timedelta(hours=1)
+    # Sliding-window rate limit — N OTPs per email per short window.
+    window_start = datetime.utcnow() - timedelta(minutes=OTP_RATE_LIMIT_WINDOW_MINUTES)
     recent_count = db.query(OTPCode).filter(
         OTPCode.email == email,
-        OTPCode.created_at > one_hour_ago
+        OTPCode.created_at > window_start
     ).count()
 
-    if recent_count >= MAX_OTP_REQUESTS_PER_HOUR:
+    if recent_count >= OTP_RATE_LIMIT_MAX:
         return JSONResponse(
             status_code=429,
-            content={"success": False, "error": "Too many OTP requests. Try again later."}
+            content={
+                "success": False,
+                "error": f"Too many verification code requests. Please try again in {OTP_RATE_LIMIT_WINDOW_MINUTES} minutes.",
+            }
         )
 
     # Invalidate previous unused codes for this email
