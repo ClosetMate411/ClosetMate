@@ -221,10 +221,15 @@
 }
 
 /* Profile-scoped grid override: a lone shared outfit on this page should
-   not stretch to fill the whole row. Community feed keeps its 1fr layout. */
+   not stretch to fill the whole row. Community feed keeps its 1fr layout.
+   Self-contained (includes display + gap) because UserProfile.jsx does not
+   import Community.css — on a hard-refresh direct to /profile/:id, only
+   this file loads, so the base grid rule is unavailable. */
 .profile-page-wrapper .community-feed-grid {
+  display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 360px));
   justify-content: start;
+  gap: 20px;
 }
 
 @media (max-width: 600px) {
