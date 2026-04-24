@@ -40,10 +40,14 @@ _extra = os.getenv("EXTRA_CORS_ORIGINS", "")
 if _extra:
     ALLOWED_ORIGINS.extend([o.strip() for o in _extra.split(",") if o.strip()])
 
+_DOCS_ENABLED = os.getenv("ENABLE_DOCS", "").lower() in ("1", "true", "yes")
 app = FastAPI(
     title="ClosetMate API Gateway",
     description="API Gateway for ClosetMate microservices",
     version="3.0.0",
+    docs_url="/docs" if _DOCS_ENABLED else None,
+    redoc_url="/redoc" if _DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if _DOCS_ENABLED else None,
 )
 
 app.add_middleware(

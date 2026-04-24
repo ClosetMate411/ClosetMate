@@ -56,7 +56,12 @@ const useAuthStore = create((set, get) => ({
         if (__DEV__) {
           console.log('[authStore.login] response =', JSON.stringify(response, null, 2));
         }
-        if (response.data.requires_otp) {
+        // Auth decision is driven by token *presence* only — never by a flag
+        // like `requires_otp`, which a man-in-the-middle could flip in the
+        // response. A token cannot be forged client-side because it must be
+        // signed by the server's JWT secret.
+        const { token, user } = extractAuthPayload(response);
+        if (!token || typeof token !== 'string') {
           set({ isLoading: false });
           return {
             success: true,
@@ -65,11 +70,6 @@ const useAuthStore = create((set, get) => ({
             message: response.message,
             expiresInSeconds: response.data.otp_expires_in_seconds,
           };
-        }
-
-        const { token, user } = extractAuthPayload(response);
-        if (!token || typeof token !== 'string') {
-          throw new Error('Login succeeded but no token was returned by the API.');
         }
         await AsyncStorage.setItem('token', token);
         set({ user, isAuthenticated: true, isLoading: false });

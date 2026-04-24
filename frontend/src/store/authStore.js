@@ -48,18 +48,18 @@ const useAuthStore = create((set, get) => ({
     try {
       const response = await apiService.login(credentials);
       if (response.success && response.data) {
-        // OTP required — don't store token
-        if (response.data.requires_otp) {
+        // Auth decision is based on token *presence* only — never on a flag
+        // like `requires_otp`, which a man-in-the-middle could flip in the
+        // response. A token cannot be forged client-side because it must be
+        // signed by the server's JWT secret.
+        const { token, ...userData } = response.data;
+        if (!token) {
           set({ isLoading: false });
           return { success: true, requires_otp: true, email: response.data.email };
         }
 
-        const { token, ...userData } = response.data;
-
-        // 1. Save to localStorage for external tests and persistence
         localStorage.setItem('token', token);
 
-        // 2. Set memory state
         set({
           user: userData,
           isAuthenticated: true,
