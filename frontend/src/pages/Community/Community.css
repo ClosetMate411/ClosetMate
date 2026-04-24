@@ -140,9 +140,7 @@
 
 .community-feed-grid {
   display: grid;
-  /* Cap card at 360px so a lone outfit doesn't stretch to the full row. */
-  grid-template-columns: repeat(auto-fill, minmax(280px, 360px));
-  justify-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 20px;
 }
 
