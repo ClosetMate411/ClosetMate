@@ -219,3 +219,16 @@
 .profile-empty p {
   margin: 0;
 }
+
+/* Profile-scoped grid override: a lone shared outfit on this page should
+   not stretch to fill the whole row. Community feed keeps its 1fr layout. */
+.profile-page-wrapper .community-feed-grid {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 360px));
+  justify-content: start;
+}
+
+@media (max-width: 600px) {
+  .profile-page-wrapper .community-feed-grid {
+    grid-template-columns: 1fr;
+  }
+}
