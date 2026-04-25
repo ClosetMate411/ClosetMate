@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useState } from 'react';
-import { View, Text, Pressable, TextInput, FlatList, ActivityIndicator, Alert, Keyboard, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, Pressable, TextInput, FlatList, ActivityIndicator, Alert, Keyboard, TouchableWithoutFeedback, Image } from 'react-native';
 import { Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import apiService from '../../../services/api.service';
@@ -86,22 +86,31 @@ function CommentsModal({ visible, onClose, shareItem }) {
   };
 
   const isOwn = (comment) => {
-    const userId = currentUser?.id || currentUser?._id;
-    const commentUserId = comment?.user?.id || comment?.user?._id || comment?.user_id;
+    // Backend tags self-comments with is_self — prefer it, fall back to id match.
+    if (comment?.user?.is_self) return true;
+    const userId = currentUser?.user_id || currentUser?.id || currentUser?._id;
+    const commentUserId = comment?.user?.user_id || comment?.user?.id || comment?.user_id;
     return userId && commentUserId && String(userId) === String(commentUserId);
   };
 
   const renderComment = ({ item }) => {
-    const name = item?.user?.full_name || item?.user?.name || 'User';
-    const letter = name.charAt(0).toUpperCase();
+    // Backend shape: { id, user: { user_id, name, avatar_url, is_self }, text, created_at }
+    const name = item?.user?.name || item?.user?.full_name || 'User';
+    const avatarUrl = item?.user?.avatar_url;
+    const letter = (name || '?').charAt(0).toUpperCase();
     return (
       <View style={{ flexDirection: 'row', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: palette.border }}>
         <View style={{
           width: 32, height: 32, borderRadius: 16,
           backgroundColor: palette.primarySoft,
           alignItems: 'center', justifyContent: 'center',
+          overflow: 'hidden',
         }}>
-          <Text style={{ color: palette.primary, fontWeight: '700', fontSize: 13 }}>{letter}</Text>
+          {avatarUrl ? (
+            <Image source={{ uri: avatarUrl }} style={{ width: 32, height: 32 }} />
+          ) : (
+            <Text style={{ color: palette.primary, fontWeight: '700', fontSize: 13 }}>{letter}</Text>
+          )}
         </View>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>

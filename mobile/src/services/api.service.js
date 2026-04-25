@@ -184,6 +184,20 @@ class APIService {
   }
   async getCurrentUser() { return axiosInstance.get(API_ENDPOINTS.me); }
 
+  // --- AVATAR ---
+  async updateAvatar(fileObject) {
+    const f = new FormData();
+    f.append('avatar', fileObject);
+    return axiosInstance.put(API_ENDPOINTS.avatar, f, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
+    });
+  }
+
+  async deleteAvatar() {
+    return axiosInstance.delete(API_ENDPOINTS.avatar);
+  }
+
   async forgotPassword(email) {
     return axiosInstance.post(API_ENDPOINTS.forgotPassword, { email });
   }
@@ -222,6 +236,26 @@ class APIService {
     return axiosInstance.post(API_ENDPOINTS.processImage, f, { signal });
   }
 
+  async verifyImageQuality(imageUrl) {
+    return axiosInstance.post(API_ENDPOINTS.verifyImage, { image_url: imageUrl });
+  }
+
+  async getItemAttributes(id) {
+    return axiosInstance.get(API_ENDPOINTS.itemAttributes(id));
+  }
+
+  async reanalyzeItem(id, imageUrl) {
+    return axiosInstance.post(API_ENDPOINTS.reanalyzeItem(id), { image_url: imageUrl });
+  }
+
+  async getWardrobeStats() {
+    return axiosInstance.get(API_ENDPOINTS.wardrobeStats);
+  }
+
+  async saveOutfit(outfitData) {
+    return axiosInstance.post(API_ENDPOINTS.saveOutfit, outfitData);
+  }
+
   async getOutfits() {
     return axiosInstance.get(API_ENDPOINTS.outfits);
   }
@@ -245,13 +279,48 @@ class APIService {
     });
   }
 
-  // Community
+  // --- COMMUNITY ---
   async getCommunityFeed(page = 1, limit = 20) {
     return axiosInstance.get(API_ENDPOINTS.communityFeed, { params: { page, limit } });
   }
 
-  async shareOutfit(outfitId) {
-    return axiosInstance.post(API_ENDPOINTS.communityShare, { outfit_id: outfitId });
+  async getTopRated(page = 1, limit = 20) {
+    return axiosInstance.get(API_ENDPOINTS.communityTopRated, { params: { page, limit } });
+  }
+
+  async getNotifications(page = 1, limit = 20) {
+    return axiosInstance.get(API_ENDPOINTS.communityNotifications, { params: { page, limit } });
+  }
+
+  async markNotificationsRead() {
+    return axiosInstance.put(API_ENDPOINTS.communityNotificationsRead);
+  }
+
+  async getFavorites(page = 1, limit = 20) {
+    return axiosInstance.get(API_ENDPOINTS.communityFavorites, { params: { page, limit } });
+  }
+
+  async toggleFavoriteShared(sharedOutfitId) {
+    return axiosInstance.post(API_ENDPOINTS.communityFavorite(sharedOutfitId));
+  }
+
+  async searchUsers(q = '') {
+    return axiosInstance.get(API_ENDPOINTS.communityUserSearch, { params: { q } });
+  }
+
+  async getUserProfile(userId) {
+    return axiosInstance.get(API_ENDPOINTS.communityUserProfile(userId));
+  }
+
+  async shareOutfit(outfitId, description) {
+    return axiosInstance.post(API_ENDPOINTS.communityShare, {
+      outfit_id: outfitId,
+      ...(description ? { description } : {}),
+    });
+  }
+
+  async unshareOutfit(sharedOutfitId) {
+    return axiosInstance.delete(API_ENDPOINTS.communityUnshare(sharedOutfitId));
   }
 
   async addReaction(shareId, emojiType) {
@@ -262,8 +331,8 @@ class APIService {
     return axiosInstance.post(API_ENDPOINTS.communityRate(shareId), { score });
   }
 
-  async getComments(shareId) {
-    return axiosInstance.get(API_ENDPOINTS.communityComments(shareId));
+  async getComments(shareId, page = 1, limit = 20) {
+    return axiosInstance.get(API_ENDPOINTS.communityComments(shareId), { params: { page, limit } });
   }
 
   async addComment(shareId, text) {

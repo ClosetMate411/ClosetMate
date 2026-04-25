@@ -2,9 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ActivityIndicator, View, Pressable, Text } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import useAuthStore from '../store/authStore';
-import { Home, Wardrobe, Outfits, Community, Login, Register, ForgotPassword, ResetPassword, VerifyLogin, VerifySignup, Logout } from '../screens';
+import { getAccessToken } from '../store/tokenStore';
+import { Home, Wardrobe, Outfits, Community, Profile, Login, Register, ForgotPassword, ResetPassword, VerifyLogin, VerifySignup, Logout } from '../screens';
 import { palette } from '../theme/colors';
 
 const Stack = createNativeStackNavigator();
@@ -31,7 +31,7 @@ export default function RootNavigator() {
 
   useEffect(() => {
     (async () => {
-      const t = await AsyncStorage.getItem('token');
+      const t = await getAccessToken();
       setHasToken(!!t);
       await init();
     })();
@@ -57,6 +57,7 @@ export default function RootNavigator() {
           <Stack.Screen name="Wardrobe" component={Wardrobe} />
           <Stack.Screen name="Outfits" component={Outfits} />
           <Stack.Screen name="Community" component={Community} />
+          <Stack.Screen name="Profile" component={Profile} options={{ title: 'Profile' }} />
           <Stack.Screen
             name="Logout"
             component={Logout}

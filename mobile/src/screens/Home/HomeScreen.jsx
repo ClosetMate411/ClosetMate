@@ -57,30 +57,37 @@ export default function HomeScreen({ navigation }) {
 
           {/* Feature Cards List */}
           <View style={{ paddingHorizontal: paddingHorizontal }}>
-            <ScrollView 
-              horizontal={true} 
+            <ScrollView
+              horizontal={true}
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ gap: 16, paddingRight: paddingHorizontal, paddingVertical: 10 }}
             >
-              <FeatureCard 
-                icon="home-outline" 
+              <FeatureCard
+                icon="home-outline"
                 title="Wardrobe"
                 description="Upload and organize your clothing items with automatic background removal."
                 onPress={() => navigation.navigate('Wardrobe')}
                 width={isTablet ? 320 : width * 0.75}
               />
-              <FeatureCard 
-                icon="star-four-points-outline" 
+              <FeatureCard
+                icon="star-four-points-outline"
                 title="Outfits"
                 description="Let AI generate stylish outfit combinations from your wardrobe."
                 onPress={() => navigation.navigate('Outfits')}
                 width={isTablet ? 320 : width * 0.75}
               />
-              <FeatureCard 
-                icon="account-group-outline" 
+              <FeatureCard
+                icon="account-group-outline"
                 title="Community"
-                description="Share your outfits, discover styles, and react to looks from others."
+                description="Share outfits, discover styles, react to looks, and browse top-rated posts."
                 onPress={() => navigation.navigate('Community')}
+                width={isTablet ? 320 : width * 0.75}
+              />
+              <FeatureCard
+                icon="account-circle-outline"
+                title="Profile"
+                description="Manage your avatar, see your shared outfits, and track your engagement stats."
+                onPress={() => navigation.navigate('Profile')}
                 width={isTablet ? 320 : width * 0.75}
               />
             </ScrollView>
@@ -150,9 +157,10 @@ export default function HomeScreen({ navigation }) {
             </View>
 
             <View style={{ gap: 24 }}>
+              <MenuOption icon="account-circle-outline" title="Profile" onPress={() => { setMenuOpen(false); navigation.navigate('Profile'); }} />
               <MenuOption icon="home-outline" title="Wardrobe" onPress={() => { setMenuOpen(false); navigation.navigate('Wardrobe'); }} />
-              <MenuOption icon="star-four-points-outline" title="Outfits" onPress={() => { setMenuOpen(false); navigation.navigate('Outfits'); }} />
               <MenuOption icon="account-group-outline" title="Community" onPress={() => { setMenuOpen(false); navigation.navigate('Community'); }} />
+              <MenuOption icon="star-four-points-outline" title="Outfits" onPress={() => { setMenuOpen(false); navigation.navigate('Outfits'); }} />
             </View>
           </View>
         </View>

@@ -187,6 +187,13 @@ const useAuthStore = create((set, get) => ({
     set({ user: null, isAuthenticated: false, error: null });
   },
 
+  setAvatarUrl: (avatarUrl) => {
+    set((state) => {
+      if (!state.user) return state;
+      return { ...state, user: { ...state.user, avatar_url: avatarUrl } };
+    });
+  },
+
   clearError: () => set({ error: null }),
 }));
 

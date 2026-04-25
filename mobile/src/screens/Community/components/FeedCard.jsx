@@ -4,31 +4,32 @@ import { Ionicons } from '@expo/vector-icons';
 import { palette } from '../../../theme/colors';
 import apiService from '../../../services/api.service';
 
+// Backend-spec emojis: heart, fire, clap, love_eyes, idea
 const REACTIONS = [
-  { key: 'like', emoji: '👍' },
-  { key: 'love', emoji: '❤️' },
-  { key: 'fire', emoji: '🔥' },
-  { key: 'cool', emoji: '😎' },
-  { key: 'wow', emoji: '😮' },
+  { key: 'heart',     emoji: '❤️' },
+  { key: 'fire',      emoji: '🔥' },
+  { key: 'clap',      emoji: '👏' },
+  { key: 'love_eyes', emoji: '😍' },
+  { key: 'idea',      emoji: '💡' },
 ];
 
 const getItemImage = (item) => {
   if (!item) return null;
   if (typeof item === 'string') return item;
   return (
-    item.image || 
-    item.image_url || 
-    item.processed_image_url || 
-    item.imageUrl || 
+    item.image ||
+    item.image_url ||
+    item.processed_image_url ||
+    item.imageUrl ||
     item.processedImageUrl ||
     item.file_url ||
-    item.item?.image || 
-    item.item?.image_url || 
+    item.item?.image ||
+    item.item?.image_url ||
     item.item?.processed_image_url ||
-    item.wardrobe_item?.image || 
-    item.wardrobe_item?.image_url || 
+    item.wardrobe_item?.image ||
+    item.wardrobe_item?.image_url ||
     item.wardrobe_item?.processed_image_url ||
-    item.clothing_item?.image || 
+    item.clothing_item?.image ||
     item.clothing_item?.image_url ||
     null
   );
@@ -47,18 +48,35 @@ const formatTimeAgo = (dateStr) => {
   return `${Math.floor(days / 30)}mo ago`;
 };
 
-function FeedCard({ item, onReact, onRate, onOpenComments }) {
-  const userName = item?.user?.full_name || item?.user?.name || item?.user_name || 'User';
-  const avatarLetter = userName.charAt(0).toUpperCase();
-  const timestamp = formatTimeAgo(item?.created_at || item?.createdAt);
+function FeedCard({ item, onReact, onRate, onOpenComments, onToggleFavorite, onUnshare, onOpenProfile }) {
+  // Backend shape: shared_by, outfit, ratings{}, reactions{counts,user_reactions},
+  //                comment_count, favorites{count,user_has_favorited}, shared_at
+  const sharedBy = item?.shared_by || {};
+  const userName = sharedBy.name || item?.user?.full_name || item?.user?.name || 'User';
+  const avatarUrl = sharedBy.avatar_url || item?.user?.avatar_url || null;
+  const isSelf = !!sharedBy.is_self;
+  const userId = sharedBy.user_id || item?.user_id;
+  const avatarLetter = (userName || '?').charAt(0).toUpperCase();
+
+  const timestamp = formatTimeAgo(item?.shared_at || item?.created_at || item?.createdAt);
   const outfitName = item?.outfit?.name || item?.outfit_name || 'Outfit';
-  const cohesionScore = item?.outfit?.cohesion_score || item?.cohesion_score;
-  const reactions = item?.reactions || {};
-  const myReactions = item?.my_reactions || [];
-  const myRating = item?.my_rating || 0;
-  const averageRating = item?.average_rating;
-  const ratingCount = item?.rating_count || 0;
-  const commentCount = item?.comment_count || item?.comments_count || 0;
+  const cohesionScore = item?.outfit?.cohesion_score ?? item?.cohesion_score;
+  const description = item?.description;
+
+  // Backend shapes { counts, user_reactions } — fall back to legacy flat shape
+  const reactionCounts = item?.reactions?.counts || item?.reactions || {};
+  const myReactions = item?.reactions?.user_reactions || item?.my_reactions || [];
+
+  // Rating
+  const myRating = item?.ratings?.user_rating ?? item?.my_rating ?? 0;
+  const averageRating = item?.ratings?.average ?? item?.average_rating;
+  const ratingCount = item?.ratings?.count ?? item?.rating_count ?? 0;
+
+  // Favorites
+  const favoriteCount = item?.favorites?.count ?? 0;
+  const hasFavorited = !!item?.favorites?.user_has_favorited;
+
+  const commentCount = item?.comment_count ?? item?.comments_count ?? 0;
   const shareId = item?.id || item?._id;
 
   const [detailedOutfit, setDetailedOutfit] = useState(null);
@@ -67,19 +85,18 @@ function FeedCard({ item, onReact, onRate, onOpenComments }) {
     let mounted = true;
     const outfitId = item?.outfit?.id || item?.outfit_id;
     const hasPopulatedItems = Array.isArray(item?.outfit?.items) && item.outfit.items.length > 0;
-    
+
     if (outfitId && !hasPopulatedItems && !detailedOutfit) {
       apiService.getOutfit(outfitId).then(res => {
         if (mounted && res?.data?.items) {
           setDetailedOutfit(res.data);
         }
-      }).catch(err => console.log('Failed to fetch outfit details for community card', err));
+      }).catch(() => {});
     }
     return () => { mounted = false; };
   }, [item?.outfit?.id, item?.outfit_id]);
 
   const outfitItems = useMemo(() => {
-    // Prefer detailedOutfit items if we fetched them
     const items = detailedOutfit?.items || item?.outfit?.items || item?.items || [];
     return Array.isArray(items) ? items.slice(0, 4) : [];
   }, [item, detailedOutfit]);
@@ -105,18 +122,47 @@ function FeedCard({ item, onReact, onRate, onOpenComments }) {
       gap: 12,
     }}>
       {/* User Header */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        <View style={{
-          width: 40, height: 40, borderRadius: 20,
-          backgroundColor: palette.primary,
-          alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Text style={{ color: '#fff', fontWeight: '800', fontSize: 16 }}>{avatarLetter}</Text>
-        </View>
-        <View>
-          <Text style={{ fontWeight: '700', color: palette.text, fontSize: 15 }}>{userName}</Text>
-          <Text style={{ color: palette.textMuted, fontSize: 12 }}>{timestamp}</Text>
-        </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Pressable
+          onPress={() => userId && !isSelf && onOpenProfile?.(userId)}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}
+        >
+          <View style={{
+            width: 40, height: 40, borderRadius: 20,
+            backgroundColor: palette.primary,
+            alignItems: 'center', justifyContent: 'center',
+            overflow: 'hidden',
+          }}>
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={{ width: 40, height: 40 }} />
+            ) : (
+              <Text style={{ color: '#fff', fontWeight: '800', fontSize: 16 }}>{avatarLetter}</Text>
+            )}
+          </View>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={{ fontWeight: '700', color: palette.text, fontSize: 15 }} numberOfLines={1}>
+                {userName}
+              </Text>
+              {isSelf && (
+                <View style={{
+                  backgroundColor: palette.primarySoft,
+                  paddingHorizontal: 6, paddingVertical: 2,
+                  borderRadius: 6,
+                }}>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: palette.primary }}>You</Text>
+                </View>
+              )}
+            </View>
+            <Text style={{ color: palette.textMuted, fontSize: 12 }}>{timestamp}</Text>
+          </View>
+        </Pressable>
+
+        {isSelf && onUnshare && (
+          <Pressable onPress={() => onUnshare(item)} hitSlop={8} style={{ padding: 6 }}>
+            <Ionicons name="trash-outline" size={18} color={palette.textMuted} />
+          </Pressable>
+        )}
       </View>
 
       {/* Outfit Collage (2x2) */}
@@ -147,7 +193,9 @@ function FeedCard({ item, onReact, onRate, onOpenComments }) {
 
       {/* Outfit Info */}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ fontSize: 16, fontWeight: '800', color: palette.text, flex: 1 }}>{outfitName}</Text>
+        <Text style={{ fontSize: 16, fontWeight: '800', color: palette.text, flex: 1 }} numberOfLines={1}>
+          {outfitName}
+        </Text>
         {cohesionScore != null && (
           <View style={{
             backgroundColor: cohesionScore >= 7 ? '#dcfce7' : '#fee2e2',
@@ -176,17 +224,18 @@ function FeedCard({ item, onReact, onRate, onOpenComments }) {
         </View>
       )}
 
-      {/* Social Row */}
-      <View style={{
-        flexDirection: 'row', alignItems: 'center',
-        justifyContent: 'space-between',
-        borderTopWidth: 1, borderTopColor: palette.border,
-        paddingTop: 10,
-      }}>
-        {/* Reactions */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+      {description ? (
+        <Text style={{ fontSize: 13, color: palette.textMuted, lineHeight: 18 }} numberOfLines={2}>
+          {description}
+        </Text>
+      ) : null}
+
+      {/* Social — two rows to avoid horizontal overflow on narrow phones */}
+      <View style={{ borderTopWidth: 1, borderTopColor: palette.border, paddingTop: 10, gap: 10 }}>
+        {/* Row 1: Reactions (spec: ONE emoji per user; tapping another switches) */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
           {REACTIONS.map(({ key, emoji }) => {
-            const count = reactions[key] || 0;
+            const count = reactionCounts[key] || 0;
             const isActive = myReactions.includes(key);
             return (
               <Pressable
@@ -194,45 +243,74 @@ function FeedCard({ item, onReact, onRate, onOpenComments }) {
                 onPress={() => onReact?.(shareId, key)}
                 style={{
                   flexDirection: 'row', alignItems: 'center',
-                  paddingHorizontal: 5, paddingVertical: 4,
+                  paddingHorizontal: 6, paddingVertical: 4,
                   borderRadius: 8,
                   backgroundColor: isActive ? palette.primarySoft : 'transparent',
+                  borderWidth: 1,
+                  borderColor: isActive ? palette.primary : 'transparent',
                 }}
               >
-                <Text style={{ fontSize: 16 }}>{emoji}</Text>
+                <Text style={{ fontSize: 15 }}>{emoji}</Text>
                 {count > 0 && (
-                  <Text style={{ fontSize: 11, color: palette.textMuted, marginLeft: 2, fontWeight: '600' }}>{count}</Text>
+                  <Text style={{ fontSize: 11, color: palette.textMuted, marginLeft: 3, fontWeight: '600' }}>{count}</Text>
                 )}
               </Pressable>
             );
           })}
         </View>
 
-        {/* Stars + Comments */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 1 }}>
+        {/* Row 2: Stars + average + favorite + comments */}
+        <View style={{
+          flexDirection: 'row', alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 8,
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 1, flexShrink: 1 }}>
             {[1, 2, 3, 4, 5].map((star) => (
-              <Pressable key={star} onPress={() => onRate?.(shareId, star)} hitSlop={4}>
+              <Pressable
+                key={star}
+                onPress={() => !isSelf && onRate?.(shareId, star)}
+                onPressIn={() => !isSelf && setHoverStar(star)}
+                onPressOut={() => setHoverStar(0)}
+                hitSlop={4}
+              >
                 <Text style={{
-                  fontSize: 16,
+                  fontSize: 15,
                   color: star <= (hoverStar || myRating) ? '#f59e0b' : '#d1d5db',
                 }}>★</Text>
               </Pressable>
             ))}
             {(averageRating != null || ratingCount > 0) && (
-              <Text style={{ fontSize: 11, color: palette.primary, fontWeight: '700', marginLeft: 4 }}>
-                {averageRating != null ? averageRating.toFixed?.(1) || averageRating : ratingCount}
+              <Text
+                style={{ fontSize: 11, color: palette.primary, fontWeight: '700', marginLeft: 4 }}
+                numberOfLines={1}
+              >
+                {averageRating != null ? Number(averageRating).toFixed(1) : ''}
+                {ratingCount > 0 ? ` (${ratingCount})` : ''}
               </Text>
             )}
           </View>
 
-          <Pressable
-            onPress={() => onOpenComments?.(item)}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingLeft: 4 }}
-          >
-            <Ionicons name="chatbubble-outline" size={16} color={palette.textMuted} />
-            <Text style={{ fontSize: 12, color: palette.textMuted, fontWeight: '600' }}>{commentCount}</Text>
-          </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <Pressable
+              onPress={() => onToggleFavorite?.(shareId)}
+              hitSlop={6}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}
+            >
+              <Text style={{ fontSize: 15 }}>{hasFavorited ? '❤️' : '🤍'}</Text>
+              {favoriteCount > 0 && (
+                <Text style={{ fontSize: 11, color: palette.textMuted, fontWeight: '600' }}>{favoriteCount}</Text>
+              )}
+            </Pressable>
+
+            <Pressable
+              onPress={() => onOpenComments?.(item)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+            >
+              <Ionicons name="chatbubble-outline" size={15} color={palette.textMuted} />
+              <Text style={{ fontSize: 12, color: palette.textMuted, fontWeight: '600' }}>{commentCount}</Text>
+            </Pressable>
+          </View>
         </View>
       </View>
     </View>
