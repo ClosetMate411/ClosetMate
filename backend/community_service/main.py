@@ -298,6 +298,32 @@ with engine.connect() as _conn:
             _conn.rollback()
             logger.warning(f"Orphan cleanup skipped: {_e}")
 
+    # Reconcile outfits.is_shareable with the shared_outfits table. This
+    # corrects flag drift left over from the period when share/unshare
+    # updated is_shareable via a fire-and-forget HTTP call that could fail
+    # silently. After this sweep, the flag matches reality:
+    #   - is_shareable = TRUE  ⇔ a SharedOutfit row exists for the outfit
+    #   - is_shareable = FALSE ⇔ no SharedOutfit row exists
+    _shareable_reconciliation = (
+        # Outfits that ARE currently shared but flagged false → fix to true.
+        "UPDATE outfits SET is_shareable = TRUE "
+        "WHERE id IN (SELECT outfit_id FROM shared_outfits) "
+        "  AND (is_shareable IS NULL OR is_shareable = FALSE)",
+        # Outfits NOT currently shared but flagged true → fix to false.
+        # This is the case that bit users when their unshare's is_shareable=false
+        # callback failed silently and the flag stayed true forever.
+        "UPDATE outfits SET is_shareable = FALSE "
+        "WHERE is_shareable = TRUE "
+        "  AND id NOT IN (SELECT outfit_id FROM shared_outfits)",
+    )
+    for _stmt in _shareable_reconciliation:
+        try:
+            _conn.execute(sa_text(_stmt))
+            _conn.commit()
+        except Exception as _e:
+            _conn.rollback()
+            logger.warning(f"Shareable-flag reconciliation skipped: {_e}")
+
     # v4 emoji migration: legacy emoji_type → new spec set.
     # Idempotent — once a row is migrated, the WHERE clause matches nothing.
     # The NOT EXISTS guard prevents UNIQUE(shared_outfit_id, user_id, emoji_type)
@@ -666,19 +692,17 @@ async def share_outfit(
         description=body.description,
     )
     db.add(shared)
+
+    # Flip is_shareable=true directly on the outfits row in the same
+    # transaction. Both services share the database engine, so this is
+    # atomic with the SharedOutfit insert and cannot drift if a separate
+    # HTTP call to outfit_service silently fails.
+    db.execute(
+        sa_text("UPDATE outfits SET is_shareable = TRUE WHERE id = :oid"),
+        {"oid": body.outfit_id},
+    )
     db.commit()
     db.refresh(shared)
-
-    # Update is_shareable on outfit via outfit_service internal endpoint
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            await client.put(
-                f"{OUTFIT_SERVICE_URL}/outfits/{body.outfit_id}/shareable",
-                json={"is_shareable": True},
-                headers={"X-API-Key": INTERNAL_API_KEY or ""},
-            )
-    except Exception as e:
-        logger.warning(f"Could not update is_shareable flag: {e}")
 
     logger.info(f"Outfit {body.outfit_id} shared by user {user_id}")
     return {"success": True, "data": shared.to_dict()}
@@ -710,18 +734,15 @@ async def unshare_outfit(
     db.query(Notification).filter(Notification.shared_outfit_id == shared_outfit_id).delete()
     db.query(CommunityFavorite).filter(CommunityFavorite.shared_outfit_id == shared_outfit_id).delete()
     db.delete(shared)
-    db.commit()
 
-    # Update is_shareable flag
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            await client.put(
-                f"{OUTFIT_SERVICE_URL}/outfits/{outfit_id}/shareable",
-                json={"is_shareable": False},
-                headers={"X-API-Key": INTERNAL_API_KEY or ""},
-            )
-    except Exception as e:
-        logger.warning(f"Could not update is_shareable flag: {e}")
+    # Flip is_shareable=false on the outfits row in the same transaction so
+    # the flag cannot drift even if a separate HTTP call to outfit_service
+    # would have failed silently.
+    db.execute(
+        sa_text("UPDATE outfits SET is_shareable = FALSE WHERE id = :oid"),
+        {"oid": outfit_id},
+    )
+    db.commit()
 
     logger.info(f"Shared outfit {shared_outfit_id} removed by user {user_id}")
     return {"success": True, "message": "Outfit unshared successfully"}
