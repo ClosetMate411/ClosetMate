@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator } from 'react-native';
 import apiService from '../../services/api.service';
 import { palette } from '../../theme/colors';
+import { authStyles } from './authStyles';
 
 const SUCCESS_TEXT = 'If an account exists with that email address, you will receive a password reset link shortly.';
 
@@ -37,17 +38,17 @@ export default function ForgotPasswordScreen({ navigation }) {
 
   return (
     <View style={{ flex: 1, padding: 20, justifyContent: 'center', gap: 12, backgroundColor: palette.background }}>
-      <View style={{ alignItems: 'center', marginBottom: 8 }}>
-        <Text style={{ fontSize: 28, fontWeight: '700', color: palette.text }}>Reset Password</Text>
+      <View style={authStyles.titleWrap}>
+        <Text style={authStyles.title}>Reset Password</Text>
       </View>
 
       {!isSubmitted ? (
         <>
-          <Text style={{ color: palette.textMuted, textAlign: 'center', marginBottom: 8 }}>
+          <Text style={authStyles.helperText}>
             Enter your email address and click &quot;Send Reset Link&quot;.
           </Text>
 
-          <Text style={{ color: palette.text, fontWeight: '600' }}>Email Address</Text>
+          <Text style={authStyles.label}>Email Address</Text>
           <TextInput
             value={email}
             onChangeText={(v) => {
@@ -61,27 +62,23 @@ export default function ForgotPasswordScreen({ navigation }) {
             maxLength={254}
             placeholderTextColor={palette.textMuted}
             style={{
-              borderWidth: 1,
+              ...authStyles.input,
               borderColor: fieldError ? palette.danger : palette.borderStrong,
-              padding: 12,
-              borderRadius: 10,
-              backgroundColor: palette.surface,
-              color: palette.text,
             }}
           />
-          {fieldError ? <Text style={{ color: palette.danger }}>{fieldError}</Text> : null}
+          {fieldError ? <Text style={authStyles.errorText}>{fieldError}</Text> : null}
 
           <Pressable
             onPress={onSubmit}
             disabled={isLoading}
-            style={{ padding: 14, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: palette.primary, backgroundColor: palette.primary }}
+            style={authStyles.button}
           >
-            {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={{ fontWeight: '700', color: '#fff' }}>Send Reset Link</Text>}
+            {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={authStyles.buttonText}>Send Reset Link</Text>}
           </Pressable>
         </>
       ) : (
         <>
-          <View style={{ borderWidth: 1, borderColor: palette.border, borderRadius: 12, padding: 14, backgroundColor: palette.surface, gap: 10 }}>
+          <View style={authStyles.card}>
             <Text style={{ color: palette.text, textAlign: 'center', lineHeight: 22 }}>{SUCCESS_TEXT}</Text>
             <Text style={{ color: palette.textMuted, textAlign: 'center', lineHeight: 22 }}>
               If the website link in the email does not open, copy the full reset link and paste it into the reset form in the app.
@@ -89,15 +86,15 @@ export default function ForgotPasswordScreen({ navigation }) {
           </View>
           <Pressable
             onPress={() => navigation.replace('ResetPassword')}
-            style={{ padding: 14, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: palette.primary, backgroundColor: palette.primary }}
+            style={authStyles.button}
           >
-            <Text style={{ fontWeight: '700', color: '#fff' }}>Open Reset Form</Text>
+            <Text style={authStyles.buttonText}>Open Reset Form</Text>
           </Pressable>
         </>
       )}
 
-      <Pressable onPress={() => navigation.replace('Login')} style={{ alignItems: 'center', marginTop: 8 }}>
-        <Text style={{ color: palette.primaryStrong, fontWeight: '600' }}>Return to Login</Text>
+      <Pressable onPress={() => navigation.replace('Login')} style={authStyles.secondaryLink}>
+        <Text style={authStyles.secondaryLinkText}>Return to Login</Text>
       </Pressable>
     </View>
   );

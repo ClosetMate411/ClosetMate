@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator, Alert } from 'react-native';
 import useAuthStore from '../../store/authStore';
 import { palette } from '../../theme/colors';
+import { authStyles } from './authStyles';
 
 export default function RegisterScreen({ navigation }) {
   const register = useAuthStore((s) => s.register);
@@ -56,12 +57,8 @@ export default function RegisterScreen({ navigation }) {
         editable={!isLoading}
         placeholderTextColor={palette.textMuted}
         style={{
-          borderWidth: 1,
+          ...authStyles.input,
           borderColor: fieldErrors[name] ? palette.danger : palette.borderStrong,
-          padding: 12,
-          borderRadius: 10,
-          backgroundColor: palette.surface,
-          color: palette.text,
         }}
       />
       {fieldErrors[name] ? <Text style={{ color: palette.danger }}>{fieldErrors[name]}</Text> : null}
@@ -70,8 +67,8 @@ export default function RegisterScreen({ navigation }) {
 
   return (
     <View style={{ flex: 1, padding: 20, justifyContent: 'center', gap: 12, backgroundColor: palette.background }}>
-      <View style={{ alignItems: 'center', marginBottom: 8 }}>
-        <Text style={{ fontSize: 28, fontWeight: '700', marginTop: 10, color: palette.text }}>Register</Text>
+      <View style={authStyles.titleWrap}>
+        <Text style={[authStyles.title, { marginTop: 10 }]}>Register</Text>
       </View>
 
       <Field label="Full Name" value={fullName} setValue={setFullName} name="fullName" autoCapitalize="words" />
@@ -79,18 +76,18 @@ export default function RegisterScreen({ navigation }) {
       <Field label="Password" value={password} setValue={setPassword} name="password" secure />
       <Field label="Confirm Password" value={confirmPassword} setValue={setConfirmPassword} name="confirmPassword" secure />
 
-      {error ? <Text style={{ color: palette.danger }}>{error}</Text> : null}
+      {error ? <Text style={authStyles.errorText}>{error}</Text> : null}
 
       <Pressable
         onPress={onSubmit}
         disabled={isLoading}
-        style={{ padding: 14, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: palette.primary, marginTop: 8, backgroundColor: palette.primary }}
+        style={[authStyles.button, { marginTop: 8 }]}
       >
-        {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={{ fontWeight: '700', color: '#fff' }}>Create Account</Text>}
+        {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={authStyles.buttonText}>Create Account</Text>}
       </Pressable>
 
-      <Pressable onPress={() => navigation.replace('Login')} style={{ alignItems: 'center', marginTop: 8 }}>
-        <Text style={{ color: palette.primaryStrong, fontWeight: '600' }}>Already have an account? Login</Text>
+      <Pressable onPress={() => navigation.replace('Login')} style={authStyles.secondaryLink}>
+        <Text style={authStyles.secondaryLinkText}>Already have an account? Login</Text>
       </Pressable>
     </View>
   );

@@ -1,12 +1,7 @@
 import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_CONFIG, API_ENDPOINTS } from '../config/api.config';
-import {
-  getAccessToken,
-  setAccessToken,
-  getRefreshToken,
-  setRefreshToken,
-  clearTokens,
-} from '../store/tokenStore';
+import { emitSessionExpired } from '../utils/sessionEvents';
 
 const axiosInstance = axios.create({
   baseURL: API_CONFIG.baseURL,
@@ -14,22 +9,7 @@ const axiosInstance = axios.create({
   headers: API_CONFIG.headers,
 });
 
-axiosInstance.interceptors.request.use(
-  async (config) => {
-    const token = await getAccessToken();
-    if (token) config.headers.Authorization = `Bearer ${token}`;
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
-// ─── REFRESH-TOKEN STATE ──────────────────────────────────────────────────
-// Single-flight refresh: if N concurrent requests hit 401, only ONE
-// /auth/refresh is issued and the rest await this promise. Matches the web
-// client's axios interceptor so mobile session behaviour is identical.
-let refreshInFlight = null;
-
-const REFRESH_EXEMPT_PATHS = [
+const SESSION_EXEMPT_PATHS = [
   API_ENDPOINTS.refresh,
   API_ENDPOINTS.login,
   API_ENDPOINTS.register,
@@ -40,26 +20,26 @@ const REFRESH_EXEMPT_PATHS = [
   API_ENDPOINTS.resetPassword,
 ];
 
-const urlIsRefreshExempt = (url = '') => REFRESH_EXEMPT_PATHS.some((p) => url.includes(p));
+const isSessionExemptUrl = (url = '') => SESSION_EXEMPT_PATHS.some((path) => String(url).includes(path));
+let refreshInFlight = null;
 
-const performRefresh = async () => {
-  const refreshToken = await getRefreshToken();
-  if (!refreshToken) throw new Error('No refresh token available');
+let lastSessionExpiredEmitAt = 0;
 
-  const resp = await axios.post(
-    `${API_CONFIG.baseURL}${API_ENDPOINTS.refresh}`,
-    { refresh_token: refreshToken },
-    { timeout: 15000, headers: { Accept: 'application/json' } },
-  );
-  const payload = resp.data?.data || resp.data || {};
-  const newAccess = payload.token;
-  const newRefresh = payload.refresh_token;
-  if (!newAccess) throw new Error('Refresh response missing access token');
-
-  await setAccessToken(newAccess);
-  if (newRefresh) await setRefreshToken(newRefresh);
-  return newAccess;
+const emitSessionExpiredSafely = (payload) => {
+  const now = Date.now();
+  if (now - lastSessionExpiredEmitAt < 3000) return;
+  lastSessionExpiredEmitAt = now;
+  emitSessionExpired(payload);
 };
+
+axiosInstance.interceptors.request.use(
+  async (config) => {
+    const token = await AsyncStorage.getItem('token');
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
 const extractErrorMessage = (data) => {
   if (!data) return null;
@@ -80,6 +60,40 @@ const extractErrorMessage = (data) => {
   return data.message || null;
 };
 
+const extractAccessToken = (payload) =>
+  payload?.token ||
+  payload?.access_token ||
+  payload?.accessToken ||
+  null;
+
+const extractRefreshToken = (payload) =>
+  payload?.refresh_token ||
+  payload?.refreshToken ||
+  null;
+
+const performRefresh = async () => {
+  const refreshToken = await AsyncStorage.getItem('refresh_token');
+  if (!refreshToken) throw new Error('No refresh token available');
+
+  // Use bare axios so refresh request itself is never intercepted/retried.
+  const response = await axios.post(
+    `${API_CONFIG.baseURL}${API_ENDPOINTS.refresh}`,
+    { refresh_token: refreshToken },
+    { timeout: 15000, headers: { Accept: 'application/json' } }
+  );
+
+  const payload = response?.data?.data || response?.data || {};
+  const newAccess = extractAccessToken(payload);
+  const newRefresh = extractRefreshToken(payload);
+
+  if (!newAccess) throw new Error('Refresh response missing access token');
+
+  await AsyncStorage.setItem('token', newAccess);
+  if (newRefresh) await AsyncStorage.setItem('refresh_token', newRefresh);
+
+  return newAccess;
+};
+
 axiosInstance.interceptors.response.use(
   (response) => {
     if (response.data && response.data.success === false) {
@@ -97,33 +111,44 @@ axiosInstance.interceptors.response.use(
 
     const status = error.response?.status;
     const errorData = error.response?.data;
-    const originalRequest = error.config || {};
-    const requestUrl = originalRequest.url || '';
+    const originalRequest = error?.config || {};
+    const requestUrl = originalRequest?.url || '';
 
-    // Silently refresh on 401 before giving up. Auth endpoints are exempt so
-    // a genuine "bad credentials" doesn't loop through the refresh flow.
-    if (
+    const hasRefreshToken = !!(await AsyncStorage.getItem('refresh_token'));
+    const canTryRefresh =
       status === 401 &&
-      !originalRequest._retriedAfterRefresh &&
-      !urlIsRefreshExempt(requestUrl)
-    ) {
-      const storedRefresh = await getRefreshToken();
-      if (storedRefresh) {
-        try {
-          if (!refreshInFlight) {
-            refreshInFlight = performRefresh().finally(() => {
-              refreshInFlight = null;
-            });
-          }
-          const newAccess = await refreshInFlight;
-          originalRequest._retriedAfterRefresh = true;
-          originalRequest.headers = originalRequest.headers || {};
-          originalRequest.headers.Authorization = `Bearer ${newAccess}`;
-          return axiosInstance(originalRequest);
-        } catch (_refreshErr) {
-          // Refresh failed → treat as session expired, fall through
-          await clearTokens();
+      !originalRequest?._retriedAfterRefresh &&
+      !isSessionExemptUrl(requestUrl) &&
+      hasRefreshToken;
+
+    if (canTryRefresh) {
+      try {
+        if (!refreshInFlight) {
+          refreshInFlight = performRefresh().finally(() => {
+            refreshInFlight = null;
+          });
         }
+        const newAccess = await refreshInFlight;
+        originalRequest._retriedAfterRefresh = true;
+        originalRequest.headers = originalRequest.headers || {};
+        originalRequest.headers.Authorization = `Bearer ${newAccess}`;
+        return axiosInstance(originalRequest);
+      } catch (_refreshError) {
+        await AsyncStorage.removeItem('token');
+        await AsyncStorage.removeItem('refresh_token');
+      }
+    }
+
+    // Global session expiry check
+    if (status === 401 || status === 403) {
+      const code = errorData?.error?.code || errorData?.code;
+      // Don't wipe for login errors, only for expired sessions
+      if (
+        code !== 'INVALID_CREDENTIALS' &&
+        code !== 'ACCOUNT_LOCKED' &&
+        !isSessionExemptUrl(requestUrl)
+      ) {
+        emitSessionExpiredSafely({ status, code, requestUrl });
       }
     }
 
@@ -176,27 +201,16 @@ class APIService {
   }
 
   async logout() {
-    const refresh_token = await getRefreshToken().catch(() => null);
-    return axiosInstance.post(
-      API_ENDPOINTS.logout,
-      refresh_token ? { refresh_token } : {},
-    );
+    const refresh_token = await AsyncStorage.getItem('refresh_token');
+    return axiosInstance.post(API_ENDPOINTS.logout, refresh_token ? { refresh_token } : {});
   }
   async getCurrentUser() { return axiosInstance.get(API_ENDPOINTS.me); }
-
-  // --- AVATAR ---
-  async updateAvatar(fileObject) {
+  async updateAvatar(file) {
     const f = new FormData();
-    f.append('avatar', fileObject);
-    return axiosInstance.put(API_ENDPOINTS.avatar, f, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 60000,
-    });
+    f.append('avatar', file);
+    return axiosInstance.put(API_ENDPOINTS.avatar, f, { timeout: 60000 });
   }
-
-  async deleteAvatar() {
-    return axiosInstance.delete(API_ENDPOINTS.avatar);
-  }
+  async deleteAvatar() { return axiosInstance.delete(API_ENDPOINTS.avatar); }
 
   async forgotPassword(email) {
     return axiosInstance.post(API_ENDPOINTS.forgotPassword, { email });
@@ -236,26 +250,6 @@ class APIService {
     return axiosInstance.post(API_ENDPOINTS.processImage, f, { signal });
   }
 
-  async verifyImageQuality(imageUrl) {
-    return axiosInstance.post(API_ENDPOINTS.verifyImage, { image_url: imageUrl });
-  }
-
-  async getItemAttributes(id) {
-    return axiosInstance.get(API_ENDPOINTS.itemAttributes(id));
-  }
-
-  async reanalyzeItem(id, imageUrl) {
-    return axiosInstance.post(API_ENDPOINTS.reanalyzeItem(id), { image_url: imageUrl });
-  }
-
-  async getWardrobeStats() {
-    return axiosInstance.get(API_ENDPOINTS.wardrobeStats);
-  }
-
-  async saveOutfit(outfitData) {
-    return axiosInstance.post(API_ENDPOINTS.saveOutfit, outfitData);
-  }
-
   async getOutfits() {
     return axiosInstance.get(API_ENDPOINTS.outfits);
   }
@@ -266,6 +260,10 @@ class APIService {
 
   async toggleFavoriteOutfit(id) {
     return axiosInstance.put(API_ENDPOINTS.favoriteOutfit(id));
+  }
+
+  async deleteOutfit(id) {
+    return axiosInstance.delete(API_ENDPOINTS.outfit(id));
   }
 
   async generateOutfits(filters = {}) {
@@ -279,48 +277,76 @@ class APIService {
     });
   }
 
-  // --- COMMUNITY ---
+  async saveOutfit(outfitData) {
+    return axiosInstance.post(API_ENDPOINTS.saveOutfit, outfitData);
+  }
+
+  async getWardrobeStats() {
+    return axiosInstance.get(API_ENDPOINTS.wardrobeStats);
+  }
+
+  // Community
   async getCommunityFeed(page = 1, limit = 20) {
     return axiosInstance.get(API_ENDPOINTS.communityFeed, { params: { page, limit } });
   }
 
-  async getTopRated(page = 1, limit = 20) {
+  async getCommunityTopRated(page = 1, limit = 20) {
     return axiosInstance.get(API_ENDPOINTS.communityTopRated, { params: { page, limit } });
   }
 
-  async getNotifications(page = 1, limit = 20) {
-    return axiosInstance.get(API_ENDPOINTS.communityNotifications, { params: { page, limit } });
+  async getTopRated(page = 1, limit = 20) {
+    return this.getCommunityTopRated(page, limit);
   }
 
-  async markNotificationsRead() {
-    return axiosInstance.put(API_ENDPOINTS.communityNotificationsRead);
-  }
-
-  async getFavorites(page = 1, limit = 20) {
+  async getCommunityFavorites(page = 1, limit = 20) {
     return axiosInstance.get(API_ENDPOINTS.communityFavorites, { params: { page, limit } });
   }
 
-  async toggleFavoriteShared(sharedOutfitId) {
-    return axiosInstance.post(API_ENDPOINTS.communityFavorite(sharedOutfitId));
+  async getFavorites(page = 1, limit = 20) {
+    return this.getCommunityFavorites(page, limit);
   }
 
-  async searchUsers(q = '') {
-    return axiosInstance.get(API_ENDPOINTS.communityUserSearch, { params: { q } });
+  async getCommunityNotifications(page = 1, limit = 20) {
+    return axiosInstance.get(API_ENDPOINTS.communityNotifications, { params: { page, limit } });
   }
 
+  async getNotifications(page = 1, limit = 20) {
+    return this.getCommunityNotifications(page, limit);
+  }
+
+  async markCommunityNotificationsRead() {
+    return axiosInstance.put(API_ENDPOINTS.communityMarkNotificationsRead);
+  }
+
+  async markNotificationsRead() {
+    return this.markCommunityNotificationsRead();
+  }
+
+  async searchUsers(query) {
+    return axiosInstance.get(API_ENDPOINTS.communityUserSearch, { params: { q: query } });
+  }
+  
   async getUserProfile(userId) {
     return axiosInstance.get(API_ENDPOINTS.communityUserProfile(userId));
   }
 
-  async shareOutfit(outfitId, description) {
+  async shareOutfit(outfitId, description = null) {
     return axiosInstance.post(API_ENDPOINTS.communityShare, {
       outfit_id: outfitId,
-      ...(description ? { description } : {}),
+      description: description ?? null,
     });
   }
 
   async unshareOutfit(sharedOutfitId) {
     return axiosInstance.delete(API_ENDPOINTS.communityUnshare(sharedOutfitId));
+  }
+
+  async toggleCommunityFavorite(shareId) {
+    return axiosInstance.post(API_ENDPOINTS.communityToggleFavorite(shareId));
+  }
+
+  async toggleFavorite(sharedOutfitId) {
+    return this.toggleCommunityFavorite(sharedOutfitId);
   }
 
   async addReaction(shareId, emojiType) {
@@ -331,8 +357,8 @@ class APIService {
     return axiosInstance.post(API_ENDPOINTS.communityRate(shareId), { score });
   }
 
-  async getComments(shareId, page = 1, limit = 20) {
-    return axiosInstance.get(API_ENDPOINTS.communityComments(shareId), { params: { page, limit } });
+  async getComments(shareId) {
+    return axiosInstance.get(API_ENDPOINTS.communityComments(shareId));
   }
 
   async addComment(shareId, text) {

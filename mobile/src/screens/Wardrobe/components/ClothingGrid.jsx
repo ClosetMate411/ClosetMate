@@ -40,9 +40,13 @@ function ClothingGrid({
       <FlatList
         data={items}
         keyExtractor={(it) => String(it.id)}
+        numColumns={3}
+        columnWrapperStyle={{ gap: 10 }}
         contentContainerStyle={{ paddingBottom: 20, gap: 10 }}
         renderItem={({ item }) => (
-          <ClothingCard item={item} onClick={onCardClick} />
+          <View style={{ width: '31.5%' }}>
+            <ClothingCard item={item} onClick={onCardClick} />
+          </View>
         )}
       />
 

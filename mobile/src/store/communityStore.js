@@ -1,55 +1,214 @@
 import { create } from 'zustand';
 import apiService from '../services/api.service';
 
+const PAGE_LIMIT = 20;
+const REQUEST_TIMEOUT_MS = 15000;
+
+const emptyPagination = { page: 0, pages: 0, total: 0, limit: PAGE_LIMIT };
+
+const mergePage = (prevItems, nextItems, reset) => (reset ? nextItems : [...prevItems, ...nextItems]);
+const withTimeout = (promise, ms, message) =>
+  Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
+  ]);
+
+const sortNewestFirst = (items = []) =>
+  [...items].sort((a, b) => {
+    const aTime = new Date(a?.shared_at || a?.created_at || a?.createdAt || 0).getTime();
+    const bTime = new Date(b?.shared_at || b?.created_at || b?.createdAt || 0).getTime();
+    return bTime - aTime;
+  });
+
+const dedupeById = (items = []) => {
+  const seen = new Set();
+  const out = [];
+  for (const item of items) {
+    const id = String(item?.id || item?._id || '');
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(item);
+  }
+  return out;
+};
+
+const hasMoreFrom = (pagination, fetchedCount, limit = PAGE_LIMIT) => {
+  if (pagination?.pages && pagination?.page) return pagination.page < pagination.pages;
+  return fetchedCount >= limit;
+};
+
+const updatePostAcrossLists = (state, shareId, updater) => {
+  const update = (arr) => arr.map((item) => ((item?.id || item?._id) === shareId ? updater(item) : item));
+  return {
+    feedItems: update(state.feedItems),
+    topRatedItems: update(state.topRatedItems),
+    favoriteItems: update(state.favoriteItems),
+  };
+};
+
 const useCommunityStore = create((set, get) => ({
-  // Feed
   feedItems: [],
+  topRatedItems: [],
+  favoriteItems: [],
+  notifications: [],
+
+  feedPagination: emptyPagination,
+  topRatedPagination: emptyPagination,
+  favoritePagination: emptyPagination,
+  notificationsPagination: emptyPagination,
+
+  unreadCount: 0,
+
   loading: false,
   refreshing: false,
-  error: null,
-  page: 1,
-  hasMore: true,
-
-  // Top rated
-  topRatedItems: [],
+  loadingMore: false,
   topRatedLoading: false,
-  topRatedPage: 1,
-  topRatedHasMore: true,
-
-  // Notifications
-  notifications: [],
-  unreadCount: 0,
-  notificationsLoading: false,
-  notificationsPage: 1,
-  notificationsHasMore: true,
-
-  // Favorites
-  favorites: [],
+  topRatedLoadingMore: false,
   favoritesLoading: false,
-  favoritesPage: 1,
-  favoritesHasMore: true,
+  favoritesLoadingMore: false,
+  notificationsLoading: false,
+  notificationsLoadingMore: false,
 
-  // ─── Feed ─────────────────────────────────────────────────────────
+  hasMore: true,
+  topRatedHasMore: true,
+  favoritesHasMore: true,
+  notificationsHasMore: true,
+  error: null,
+
   fetchFeed: async (reset = false) => {
     const state = get();
-    if (state.loading || (!reset && !state.hasMore)) return;
-
-    const nextPage = reset ? 1 : state.page;
-    set({ loading: true, error: null, ...(reset ? { refreshing: true } : {}) });
-
+    if (state.loading || state.loadingMore || (!reset && !state.hasMore)) return;
+    const nextPage = reset ? 1 : (state.feedPagination.page || 0) + 1;
+    set({
+      error: null,
+      ...(reset ? { loading: true, refreshing: true } : { loadingMore: true }),
+    });
     try {
-      const response = await apiService.getCommunityFeed(nextPage, 20);
+      const response = await withTimeout(
+        apiService.getCommunityFeed(nextPage, PAGE_LIMIT),
+        REQUEST_TIMEOUT_MS,
+        'Loading feed timed out. Please try again.'
+      );
       const items = Array.isArray(response?.data) ? response.data : [];
-
+      const pagination = response?.pagination || { ...emptyPagination, page: nextPage, limit: PAGE_LIMIT };
       set((prev) => ({
-        feedItems: reset ? items : [...prev.feedItems, ...items],
-        page: nextPage + 1,
-        hasMore: items.length >= 20,
+        feedItems: sortNewestFirst(dedupeById(mergePage(prev.feedItems, items, reset))),
+        feedPagination: {
+          page: pagination.page || nextPage,
+          pages: pagination.pages || 0,
+          total: pagination.total || 0,
+          limit: pagination.limit || PAGE_LIMIT,
+        },
+        hasMore: hasMoreFrom(pagination, items.length, PAGE_LIMIT),
         loading: false,
         refreshing: false,
+        loadingMore: false,
       }));
     } catch (error) {
-      set({ error: error.message, loading: false, refreshing: false });
+      set({ error: error.message, loading: false, refreshing: false, loadingMore: false });
+    }
+  },
+
+  fetchTopRated: async (reset = false) => {
+    const state = get();
+    if (state.topRatedLoading || state.topRatedLoadingMore || (!reset && !state.topRatedHasMore)) return;
+    const nextPage = reset ? 1 : (state.topRatedPagination.page || 0) + 1;
+    set({ error: null, ...(reset ? { topRatedLoading: true } : { topRatedLoadingMore: true }) });
+    try {
+      const response = await withTimeout(
+        apiService.getCommunityTopRated(nextPage, PAGE_LIMIT),
+        REQUEST_TIMEOUT_MS,
+        'Loading top rated timed out. Please try again.'
+      );
+      const items = Array.isArray(response?.data) ? response.data : [];
+      const pagination = response?.pagination || { ...emptyPagination, page: nextPage, limit: PAGE_LIMIT };
+      set((prev) => ({
+        topRatedItems: mergePage(prev.topRatedItems, items, reset),
+        topRatedPagination: {
+          page: pagination.page || nextPage,
+          pages: pagination.pages || 0,
+          total: pagination.total || 0,
+          limit: pagination.limit || PAGE_LIMIT,
+        },
+        topRatedHasMore: hasMoreFrom(pagination, items.length, PAGE_LIMIT),
+        topRatedLoading: false,
+        topRatedLoadingMore: false,
+      }));
+    } catch (error) {
+      set({ error: error.message, topRatedLoading: false, topRatedLoadingMore: false });
+    }
+  },
+
+  fetchFavorites: async (reset = false) => {
+    const state = get();
+    if (state.favoritesLoading || state.favoritesLoadingMore || (!reset && !state.favoritesHasMore)) return;
+    const nextPage = reset ? 1 : (state.favoritePagination.page || 0) + 1;
+    set({ error: null, ...(reset ? { favoritesLoading: true } : { favoritesLoadingMore: true }) });
+    try {
+      const response = await withTimeout(
+        apiService.getCommunityFavorites(nextPage, PAGE_LIMIT),
+        REQUEST_TIMEOUT_MS,
+        'Loading favorites timed out. Please try again.'
+      );
+      const items = Array.isArray(response?.data) ? response.data : [];
+      const pagination = response?.pagination || { ...emptyPagination, page: nextPage, limit: PAGE_LIMIT };
+      set((prev) => ({
+        favoriteItems: mergePage(prev.favoriteItems, items, reset),
+        favoritePagination: {
+          page: pagination.page || nextPage,
+          pages: pagination.pages || 0,
+          total: pagination.total || 0,
+          limit: pagination.limit || PAGE_LIMIT,
+        },
+        favoritesHasMore: hasMoreFrom(pagination, items.length, PAGE_LIMIT),
+        favoritesLoading: false,
+        favoritesLoadingMore: false,
+      }));
+    } catch (error) {
+      set({ error: error.message, favoritesLoading: false, favoritesLoadingMore: false });
+    }
+  },
+
+  fetchNotifications: async (reset = false) => {
+    const state = get();
+    if (state.notificationsLoading || state.notificationsLoadingMore || (!reset && !state.notificationsHasMore)) return;
+    const nextPage = reset ? 1 : (state.notificationsPagination.page || 0) + 1;
+    set({ error: null, ...(reset ? { notificationsLoading: true } : { notificationsLoadingMore: true }) });
+    try {
+      const response = await withTimeout(
+        apiService.getCommunityNotifications(nextPage, PAGE_LIMIT),
+        REQUEST_TIMEOUT_MS,
+        'Loading notifications timed out. Please try again.'
+      );
+      const items = Array.isArray(response?.data) ? response.data : [];
+      const pagination = response?.pagination || { ...emptyPagination, page: nextPage, limit: PAGE_LIMIT };
+      set((prev) => ({
+        notifications: mergePage(prev.notifications, items, reset),
+        notificationsPagination: {
+          page: pagination.page || nextPage,
+          pages: pagination.pages || 0,
+          total: pagination.total || 0,
+          limit: pagination.limit || PAGE_LIMIT,
+        },
+        notificationsHasMore: hasMoreFrom(pagination, items.length, PAGE_LIMIT),
+        unreadCount: Number(response?.unread_count ?? prev.unreadCount ?? 0),
+        notificationsLoading: false,
+        notificationsLoadingMore: false,
+      }));
+    } catch (error) {
+      set({ error: error.message, notificationsLoading: false, notificationsLoadingMore: false });
+    }
+  },
+
+  markAllRead: async () => {
+    try {
+      await apiService.markCommunityNotificationsRead();
+      set((state) => ({
+        unreadCount: 0,
+        notifications: state.notifications.map((n) => ({ ...n, is_read: true })),
+      }));
+    } catch (error) {
+      set({ error: error.message });
     }
   },
 
@@ -57,256 +216,155 @@ const useCommunityStore = create((set, get) => ({
     await get().fetchFeed(true);
   },
 
-  clearFeed: () => set({ feedItems: [], page: 1, hasMore: true, error: null }),
-
-  // ─── Top Rated ────────────────────────────────────────────────────
-  fetchTopRated: async (reset = false) => {
-    const state = get();
-    if (state.topRatedLoading || (!reset && !state.topRatedHasMore)) return;
-
-    const nextPage = reset ? 1 : state.topRatedPage;
-    set({ topRatedLoading: true });
-
-    try {
-      const response = await apiService.getTopRated(nextPage, 20);
-      const items = Array.isArray(response?.data) ? response.data : [];
-
-      set((prev) => ({
-        topRatedItems: reset ? items : [...prev.topRatedItems, ...items],
-        topRatedPage: nextPage + 1,
-        topRatedHasMore: items.length >= 20,
-        topRatedLoading: false,
-      }));
-    } catch (_e) {
-      set({ topRatedLoading: false });
-    }
-  },
-
-  refreshTopRated: async () => {
-    set({ topRatedPage: 1, topRatedHasMore: true });
-    await get().fetchTopRated(true);
-  },
-
-  // ─── Notifications ────────────────────────────────────────────────
-  fetchNotifications: async (reset = false) => {
-    const state = get();
-    if (state.notificationsLoading || (!reset && !state.notificationsHasMore)) return;
-
-    const nextPage = reset ? 1 : state.notificationsPage;
-    set({ notificationsLoading: true });
-
-    try {
-      const response = await apiService.getNotifications(nextPage, 20);
-      const items = Array.isArray(response?.data) ? response.data : [];
-      const unread = response?.unread_count ?? get().unreadCount;
-
-      set((prev) => ({
-        notifications: reset ? items : [...prev.notifications, ...items],
-        notificationsPage: nextPage + 1,
-        notificationsHasMore: items.length >= 20,
-        unreadCount: unread,
-        notificationsLoading: false,
-      }));
-    } catch (_e) {
-      set({ notificationsLoading: false });
-    }
-  },
-
-  markNotificationsRead: async () => {
-    try {
-      await apiService.markNotificationsRead();
-      set((state) => ({
-        notifications: state.notifications.map((n) => ({ ...n, is_read: true })),
-        unreadCount: 0,
-      }));
-    } catch (_e) { /* silent */ }
-  },
-
-  // ─── Favorites ────────────────────────────────────────────────────
-  fetchFavorites: async (reset = false) => {
-    const state = get();
-    if (state.favoritesLoading || (!reset && !state.favoritesHasMore)) return;
-
-    const nextPage = reset ? 1 : state.favoritesPage;
-    set({ favoritesLoading: true });
-
-    try {
-      const response = await apiService.getFavorites(nextPage, 20);
-      const items = Array.isArray(response?.data) ? response.data : [];
-
-      set((prev) => ({
-        favorites: reset ? items : [...prev.favorites, ...items],
-        favoritesPage: nextPage + 1,
-        favoritesHasMore: items.length >= 20,
-        favoritesLoading: false,
-      }));
-    } catch (_e) {
-      set({ favoritesLoading: false });
-    }
-  },
-
-  toggleFavoriteShared: async (sharedOutfitId) => {
-    // Optimistic across feedItems, topRatedItems, and favorites
-    const updateList = (list) => list.map((item) => {
-      if ((item.id || item._id) !== sharedOutfitId) return item;
-      const favorites = item.favorites || {};
-      const now = !!favorites.user_has_favorited;
-      return {
-        ...item,
-        favorites: {
-          count: Math.max(0, (favorites.count || 0) + (now ? -1 : 1)),
-          user_has_favorited: !now,
-        },
-      };
-    });
-
-    set((state) => ({
-      feedItems: updateList(state.feedItems),
-      topRatedItems: updateList(state.topRatedItems),
-      favorites: updateList(state.favorites),
-    }));
-
-    try {
-      await apiService.toggleFavoriteShared(sharedOutfitId);
-    } catch (_e) {
-      await get().fetchFeed(true);
-    }
-  },
-
-  // ─── Share / Unshare ──────────────────────────────────────────────
-  shareOutfit: async (outfitId, description) => {
-    set({ loading: true, error: null });
+  shareOutfit: async (outfitId, description = null) => {
     try {
       await apiService.shareOutfit(outfitId, description);
       await get().fetchFeed(true);
       return { success: true };
     } catch (error) {
-      set({ loading: false });
       return { success: false, error: error.message };
     }
   },
 
   unshareOutfit: async (sharedOutfitId) => {
+    const targetId = String(sharedOutfitId || '');
+    if (!targetId) return { success: false, error: 'Shared outfit id is missing.' };
+
     try {
-      await apiService.unshareOutfit(sharedOutfitId);
-      set((state) => ({
-        feedItems: state.feedItems.filter((i) => (i.id || i._id) !== sharedOutfitId),
-        topRatedItems: state.topRatedItems.filter((i) => (i.id || i._id) !== sharedOutfitId),
-        favorites: state.favorites.filter((i) => (i.id || i._id) !== sharedOutfitId),
-      }));
+      await apiService.unshareOutfit(targetId);
+      set((state) => {
+        const removeById = (arr) => arr.filter((item) => String(item?.id || item?._id || '') !== targetId);
+        return {
+          feedItems: removeById(state.feedItems),
+          topRatedItems: removeById(state.topRatedItems),
+          favoriteItems: removeById(state.favoriteItems),
+          notifications: (state.notifications || []).filter(
+            (n) => String(n?.shared_outfit_id || n?.sharedOutfitId || '') !== targetId
+          ),
+          feedPagination: {
+            ...state.feedPagination,
+            total: Math.max(0, Number(state.feedPagination?.total || 0) - 1),
+          },
+        };
+      });
       return { success: true };
     } catch (error) {
+      await Promise.all([
+        get().fetchFeed(true),
+        get().fetchTopRated(true),
+        get().fetchFavorites(true),
+        get().fetchNotifications(true),
+      ]);
       return { success: false, error: error.message };
     }
   },
 
-  // ─── Reactions / Ratings ──────────────────────────────────────────
-  // Spec: exactly ONE emoji per user per post. Tapping the same emoji removes
-  // it; tapping a different one switches (old decrements, new increments).
   addReaction: async (shareId, emojiType) => {
-    const updateList = (list) => list.map((item) => {
-      if ((item.id || item._id) !== shareId) return item;
-      const reactions = { ...(item.reactions?.counts || item.reactions || {}) };
-      const myReactions = [...(item.reactions?.user_reactions || item.my_reactions || [])];
-      const existingEmoji = myReactions[0]; // there can only ever be one
-
-      if (existingEmoji === emojiType) {
-        // Toggle off
+    set((state) => updatePostAcrossLists(state, shareId, (item) => {
+      const rawReactions = item?.reactions || {};
+      const hasNestedCounts = rawReactions?.counts && typeof rawReactions.counts === 'object';
+      const reactions = hasNestedCounts
+        ? { ...(rawReactions.counts || {}) }
+        : { ...rawReactions };
+      const myReactions = [...(item.my_reactions || [])];
+      const alreadyReacted = myReactions.includes(emojiType);
+      if (alreadyReacted) {
         reactions[emojiType] = Math.max(0, (reactions[emojiType] || 1) - 1);
-        myReactions.length = 0;
+        const idx = myReactions.indexOf(emojiType);
+        if (idx > -1) myReactions.splice(idx, 1);
       } else {
-        // Switch: remove the old one if any, add the new one
-        if (existingEmoji) {
-          reactions[existingEmoji] = Math.max(0, (reactions[existingEmoji] || 1) - 1);
-        }
         reactions[emojiType] = (reactions[emojiType] || 0) + 1;
-        myReactions.length = 0;
         myReactions.push(emojiType);
       }
-
-      return {
-        ...item,
-        reactions: { counts: reactions, user_reactions: myReactions },
-        my_reactions: myReactions,
-      };
-    });
-
-    set((state) => ({
-      feedItems: updateList(state.feedItems),
-      topRatedItems: updateList(state.topRatedItems),
-      favorites: updateList(state.favorites),
+      if (hasNestedCounts) {
+        return {
+          ...item,
+          reactions: {
+            ...rawReactions,
+            counts: reactions,
+            user_reactions: myReactions,
+          },
+          my_reactions: myReactions,
+        };
+      }
+      return { ...item, reactions, my_reactions: myReactions };
     }));
-
     try {
       await apiService.addReaction(shareId, emojiType);
     } catch (_e) {
-      await get().fetchFeed(true);
+      await Promise.all([get().fetchFeed(true), get().fetchTopRated(true), get().fetchFavorites(true)]);
+    }
+  },
+
+  toggleFavorite: async (shareId) => {
+    set((state) => updatePostAcrossLists(state, shareId, (item) => {
+      const favorites = { ...(item?.favorites || {}) };
+      const currentlyFavorited = !!favorites.user_has_favorited;
+      const currentCount = Number(favorites.count || 0);
+      favorites.user_has_favorited = !currentlyFavorited;
+      favorites.count = currentlyFavorited
+        ? Math.max(0, currentCount - 1)
+        : currentCount + 1;
+      return { ...item, favorites };
+    }));
+
+    try {
+      const response = await apiService.toggleCommunityFavorite(shareId);
+      const action = response?.data?.action;
+      const favoriteCount = Number(response?.data?.favorite_count || 0);
+      set((state) => updatePostAcrossLists(state, shareId, (item) => ({
+        ...item,
+        favorites: {
+          ...(item?.favorites || {}),
+          user_has_favorited: action === 'added',
+          count: favoriteCount,
+        },
+      })));
+      await get().fetchFavorites(true);
+    } catch (_e) {
+      await Promise.all([get().fetchFeed(true), get().fetchTopRated(true), get().fetchFavorites(true)]);
     }
   },
 
   rateOutfit: async (shareId, score) => {
-    const updateList = (list) => list.map((item) => {
-      if ((item.id || item._id) !== shareId) return item;
-      return {
-        ...item,
-        ratings: { ...(item.ratings || {}), user_rating: score },
-        my_rating: score,
-      };
-    });
-
-    set((state) => ({
-      feedItems: updateList(state.feedItems),
-      topRatedItems: updateList(state.topRatedItems),
-      favorites: updateList(state.favorites),
-    }));
-
+    set((state) => updatePostAcrossLists(state, shareId, (item) => ({ ...item, my_rating: score })));
     try {
-      const response = await apiService.rateOutfit(shareId, score);
-      if (response?.data?.avg_rating !== undefined) {
-        const avg = response.data.avg_rating;
-        const count = response.data.rating_count;
-        const patchAvg = (list) => list.map((item) => {
-          if ((item.id || item._id) !== shareId) return item;
-          return {
-            ...item,
-            ratings: { ...(item.ratings || {}), average: avg, count, user_rating: score },
-          };
-        });
-        set((state) => ({
-          feedItems: patchAvg(state.feedItems),
-          topRatedItems: patchAvg(state.topRatedItems),
-          favorites: patchAvg(state.favorites),
-        }));
-      }
+      await apiService.rateOutfit(shareId, score);
     } catch (_e) {
-      await get().fetchFeed(true);
+      await Promise.all([get().fetchFeed(true), get().fetchTopRated(true), get().fetchFavorites(true)]);
     }
   },
 
-  // ─── Comments ─────────────────────────────────────────────────────
-  incrementCommentCount: (shareId) => {
-    const bump = (list) => list.map((item) => {
-      if ((item.id || item._id) !== shareId) return item;
-      return { ...item, comment_count: (item.comment_count || 0) + 1 };
-    });
-    set((state) => ({
-      feedItems: bump(state.feedItems),
-      topRatedItems: bump(state.topRatedItems),
-      favorites: bump(state.favorites),
+  incrementCommentCount: (sharedOutfitId) => {
+    set((state) => updatePostAcrossLists(state, sharedOutfitId, (item) => {
+      const current = Number(item?.comment_count || 0);
+      return { ...item, comment_count: current + 1 };
     }));
   },
 
-  decrementCommentCount: (shareId) => {
-    const dec = (list) => list.map((item) => {
-      if ((item.id || item._id) !== shareId) return item;
-      return { ...item, comment_count: Math.max(0, (item.comment_count || 0) - 1) };
-    });
-    set((state) => ({
-      feedItems: dec(state.feedItems),
-      topRatedItems: dec(state.topRatedItems),
-      favorites: dec(state.favorites),
+  decrementCommentCount: (sharedOutfitId) => {
+    set((state) => updatePostAcrossLists(state, sharedOutfitId, (item) => {
+      const current = Number(item?.comment_count || 0);
+      return { ...item, comment_count: Math.max(0, current - 1) };
     }));
   },
+
+  clearFeed: () => set({
+    feedItems: [],
+    topRatedItems: [],
+    favoriteItems: [],
+    notifications: [],
+    feedPagination: emptyPagination,
+    topRatedPagination: emptyPagination,
+    favoritePagination: emptyPagination,
+    notificationsPagination: emptyPagination,
+    unreadCount: 0,
+    hasMore: true,
+    topRatedHasMore: true,
+    favoritesHasMore: true,
+    notificationsHasMore: true,
+    error: null,
+  }),
 }));
 
 export default useCommunityStore;

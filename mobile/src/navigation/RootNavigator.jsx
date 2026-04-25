@@ -1,13 +1,19 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
+import { createDrawerNavigator } from '@react-navigation/drawer';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { ActivityIndicator, View, Pressable, Text } from 'react-native';
+import { ActivityIndicator, View, Pressable } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { Image as ExpoImage } from 'expo-image';
 import useAuthStore from '../store/authStore';
-import { getAccessToken } from '../store/tokenStore';
 import { Home, Wardrobe, Outfits, Community, Profile, Login, Register, ForgotPassword, ResetPassword, VerifyLogin, VerifySignup, Logout } from '../screens';
+import CustomDrawerContent from './CustomDrawerContent';
 import { palette } from '../theme/colors';
+import { motion, shadow } from '../theme/tokens';
+import { onSessionExpired } from '../utils/sessionEvents';
 
 const Stack = createNativeStackNavigator();
+const Drawer = createDrawerNavigator();
 
 const FullScreenLoader = () => (
   <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.background }}>
@@ -15,57 +21,110 @@ const FullScreenLoader = () => (
   </View>
 );
 
-const LogoutHeaderButton = ({ navigation }) => (
-  <Pressable onPress={() => navigation.navigate('Logout')} style={{ paddingHorizontal: 8, paddingVertical: 4 }}>
-    <Text style={{ color: palette.primaryStrong, fontWeight: '600' }}>Logout</Text>
-  </Pressable>
-);
+function MainDrawerNavigator() {
+  return (
+    <Drawer.Navigator
+      drawerContent={(props) => <CustomDrawerContent {...props} />}
+      backBehavior="history"
+      screenOptions={({ navigation }) => ({
+        headerShown: true,
+        headerStyle: {
+          backgroundColor: palette.surfaceElevated,
+          borderBottomWidth: 1,
+          borderBottomColor: palette.borderSubtle,
+        },
+        headerShadowVisible: false,
+        headerTitleAlign: 'left',
+        headerLeft: () => null,
+        headerTitle: () => (
+          <Pressable onPress={() => navigation.navigate('Home')} hitSlop={8}>
+            <ExpoImage
+              source={require('../../assets/images/ClosetMate_Logo_new.png')}
+              contentFit="contain"
+              style={{ width: 215, height: 52, marginLeft: -18 }}
+            />
+          </Pressable>
+        ),
+        headerRight: () => (
+          <Pressable onPress={() => navigation.openDrawer()} style={{ paddingHorizontal: 10, paddingVertical: 6 }}>
+            <Ionicons name="menu" size={30} color="#6b7280" />
+          </Pressable>
+        ),
+        drawerPosition: 'right',
+        drawerType: 'front',
+        overlayColor: palette.overlay,
+        swipeEdgeWidth: 36,
+        sceneStyle: { backgroundColor: palette.background },
+        drawerStyle: {
+          width: 326,
+          backgroundColor: palette.surfaceElevated,
+          borderLeftWidth: 0,
+          ...shadow.card,
+        },
+        animationDuration: motion.standard,
+      })}
+    >
+      <Drawer.Screen name="Home" component={Home} />
+      <Drawer.Screen name="Profile" component={Profile} />
+      <Drawer.Screen name="Wardrobe" component={Wardrobe} />
+      <Drawer.Screen name="Community" component={Community} />
+      <Drawer.Screen name="Outfits" component={Outfits} />
+    </Drawer.Navigator>
+  );
+}
 
 export default function RootNavigator() {
   const init = useAuthStore((s) => s.init);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const isLoading = useAuthStore((s) => s.isLoading);
-  const user = useAuthStore((s) => s.user);
-
-  const [hasToken, setHasToken] = useState(false);
+  const isInitialized = useAuthStore((s) => s.isInitialized);
+  const clearAuth = useAuthStore((s) => s.clearAuth);
 
   useEffect(() => {
-    (async () => {
-      const t = await getAccessToken();
-      setHasToken(!!t);
-      await init();
-    })();
+    init();
   }, [init]);
 
-  const isInitializing = useMemo(() => isLoading && !user && hasToken, [isLoading, user, hasToken]);
-  if (isInitializing) return <FullScreenLoader />;
+  useEffect(() => {
+    const unsubscribe = onSessionExpired(() => {
+      clearAuth();
+    });
+    return unsubscribe;
+  }, [clearAuth]);
+
+  if (!isInitialized) return <FullScreenLoader />;
 
   return (
     <NavigationContainer>
       {isAuthenticated ? (
         <Stack.Navigator
           key="auth"
-          screenOptions={({ navigation }) => ({
-            headerRight: () => <LogoutHeaderButton navigation={navigation} />,
-            headerStyle: { backgroundColor: palette.surface },
-            headerTitleStyle: { color: palette.text, fontWeight: '700' },
-            headerTintColor: palette.primaryStrong,
+          screenOptions={{
             contentStyle: { backgroundColor: palette.background },
-          })}
+            animation: 'slide_from_right',
+            animationDuration: motion.standard,
+          }}
         >
-          <Stack.Screen name="Home" component={Home} options={{ headerShown: false }} />
-          <Stack.Screen name="Wardrobe" component={Wardrobe} />
-          <Stack.Screen name="Outfits" component={Outfits} />
-          <Stack.Screen name="Community" component={Community} />
-          <Stack.Screen name="Profile" component={Profile} options={{ title: 'Profile' }} />
+          <Stack.Screen name="MainDrawer" component={MainDrawerNavigator} options={{ headerShown: false }} />
           <Stack.Screen
             name="Logout"
             component={Logout}
-            options={{ presentation: 'modal', title: 'Logout', headerRight: () => null }}
+            options={{
+              presentation: 'modal',
+              title: 'Logout',
+              headerStyle: { backgroundColor: palette.surface },
+              headerTitleStyle: { color: palette.text, fontWeight: '700' },
+              headerTintColor: palette.primaryStrong,
+            }}
           />
         </Stack.Navigator>
       ) : (
-        <Stack.Navigator key="guest" screenOptions={{ contentStyle: { backgroundColor: palette.background } }}>
+        <Stack.Navigator
+          key="guest"
+          screenOptions={{
+            contentStyle: { backgroundColor: palette.background },
+            animation: 'slide_from_right',
+            animationDuration: motion.standard,
+          }}
+        >
           <Stack.Screen name="Login" component={Login} options={{ headerShown: false }} />
           <Stack.Screen name="Register" component={Register} options={{ headerShown: false }} />
           <Stack.Screen name="ForgotPassword" component={ForgotPassword} options={{ headerShown: false }} />

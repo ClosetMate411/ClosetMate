@@ -29,8 +29,9 @@ const useWardrobeStore = create((set, get) => ({
   setError: (error) => set({ error }),
   setAiLabels: (labels) => set((state) => ({ aiLabels: { ...state.aiLabels, ...labels } })),
 
-  fetchItems: async () => {
-    if (get().loading || get().items.length > 0) return get().items;
+  fetchItems: async (options = {}) => {
+    const force = !!options?.force;
+    if (get().loading || (!force && get().items.length > 0)) return get().items;
     set({ loading: true, error: null });
     try {
       const response = await withTimeout(
@@ -128,7 +129,7 @@ const useWardrobeStore = create((set, get) => ({
   },
 
   clearItems: () => {
-    set({ items: [], error: null });
+    set({ items: [], aiLabels: {}, error: null, currentItemId: null, openModal: null });
   },
 }));
 

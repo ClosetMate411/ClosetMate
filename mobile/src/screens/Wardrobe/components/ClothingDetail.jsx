@@ -1,22 +1,37 @@
 import React, { memo, useEffect, useMemo, useState } from 'react';
-import { View, Text, Pressable, Image, TextInput, Alert } from 'react-native';
+import { View, Text, Pressable, Image, Alert, useWindowDimensions } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import ConfirmModal from './ConfirmModal';
 import { palette } from '../../../theme/colors';
+import useWardrobeStore from '../../../store/wardrobeStore';
+import { generateItemLabel } from '../../../utils/helpers';
 
-const WEATHER_TYPES = ['Spring', 'Summer', 'Fall', 'Winter'];
-const DEFAULT_ITEM_NAME = 'Untitled';
-const DEFAULT_WEATHER = 'Untitled';
+const DEFAULT_ITEM_NAME = '';
+const formatWeather = (value) =>
+  String(value || '')
+    .trim()
+    .replace(/[_-]+/g, '/')
+    .split('/')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join('/');
 
 function ClothingDetail({ item, onBack, onSave, onDelete, onProcessImage, isEditingItem, onEditToggle }) {
+  const { width } = useWindowDimensions();
+  const isNarrow = width < 420;
+  const aiLabels = useWardrobeStore((s) => s.aiLabels);
+  const aiName = aiLabels[String(item?.id || '')] || '';
+  const generatedLabel = generateItemLabel(item);
+  const resolvedName = aiName || generatedLabel || item?.name || '';
+  const displayName = resolvedName.trim().toLowerCase() === 'untitled' ? '' : resolvedName;
+  const weatherValue = formatWeather(item?.weather || item?.season || '');
   const [isEditing, setIsEditing] = useState(!!isEditingItem);
   const [editState, setEditState] = useState({
-    name: item?.name || DEFAULT_ITEM_NAME,
-    weather: item?.weather || '',
+    name: resolvedName || DEFAULT_ITEM_NAME,
     image: null,
   });
   const [previewImage, setPreviewImage] = useState(item?.image || item?.image_url || null);
-  const [nameError, setNameError] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmVariant, setConfirmVariant] = useState('delete');
   const [confirmTitle, setConfirmTitle] = useState('');
@@ -25,13 +40,12 @@ function ClothingDetail({ item, onBack, onSave, onDelete, onProcessImage, isEdit
 
   useEffect(() => {
     setEditState({
-      name: item?.name || DEFAULT_ITEM_NAME,
-      weather: item?.weather || '',
+      name: resolvedName || DEFAULT_ITEM_NAME,
       image: null,
     });
     setPreviewImage(item?.image || item?.image_url || null);
     setIsEditing(!!isEditingItem);
-  }, [item, isEditingItem]);
+  }, [item, isEditingItem, resolvedName]);
 
   const normalize = (v, fallback) => (v === fallback || !v ? '' : v);
 
@@ -39,9 +53,7 @@ function ClothingDetail({ item, onBack, onSave, onDelete, onProcessImage, isEdit
     if (!isEditing) return false;
     const originalName = normalize(item?.name, DEFAULT_ITEM_NAME).trim();
     const editedName = normalize(editState.name, DEFAULT_ITEM_NAME).trim();
-    const originalWeather = normalize(item?.weather, DEFAULT_WEATHER).trim();
-    const editedWeather = normalize(editState.weather, DEFAULT_WEATHER).trim();
-    return originalName !== editedName || originalWeather !== editedWeather || !!editState.image;
+    return originalName !== editedName || !!editState.image;
   }, [isEditing, item, editState]);
 
   const handleEdit = () => {
@@ -70,7 +82,7 @@ function ClothingDetail({ item, onBack, onSave, onDelete, onProcessImage, isEdit
     setPreviewImage(asset.uri);
     setEditState((prev) => ({ ...prev, image: file }));
     if (onProcessImage) {
-      await onProcessImage(file, { name: editState.name, weather: editState.weather });
+      await onProcessImage(file, { name: editState.name });
     }
   };
 
@@ -84,7 +96,6 @@ function ClothingDetail({ item, onBack, onSave, onDelete, onProcessImage, isEdit
         onEditToggle?.(false);
         setEditState({
           name: item?.name || DEFAULT_ITEM_NAME,
-          weather: item?.weather || '',
           image: null,
         });
         setPreviewImage(item?.image || item?.image_url || null);
@@ -97,15 +108,7 @@ function ClothingDetail({ item, onBack, onSave, onDelete, onProcessImage, isEdit
   };
 
   const handleSave = () => {
-    const trimmedName = (editState.name || '').trim();
-    if (trimmedName.length > 100) {
-      setNameError('Item name is too long (max 100 chars).');
-      return;
-    }
-    const updates = {
-      itemName: trimmedName || DEFAULT_ITEM_NAME,
-      weather: editState.weather || DEFAULT_WEATHER,
-    };
+    const updates = {};
     if (editState.image) updates.file = editState.image;
     setConfirmVariant('save');
     setConfirmTitle('Save Changes');
@@ -134,53 +137,58 @@ function ClothingDetail({ item, onBack, onSave, onDelete, onProcessImage, isEdit
   return (
     <View style={{ borderWidth: 1, borderColor: palette.border, borderRadius: 14, padding: 12, gap: 10, backgroundColor: palette.surface }}>
       <Pressable onPress={handleImagePick} disabled={!isEditing}>
-        {previewImage ? (
-          <Image source={{ uri: previewImage }} style={{ width: '100%', height: 300, borderRadius: 12 }} />
-        ) : (
-          <View style={{ width: '100%', height: 300, borderRadius: 12, backgroundColor: palette.surfaceSoft }} />
-        )}
+        <View
+          style={{
+            width: '100%',
+            height: isNarrow ? 240 : 280,
+            borderRadius: 12,
+            backgroundColor: palette.surfaceSoft,
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+          }}
+        >
+          {previewImage ? (
+            <Image
+              source={{ uri: previewImage }}
+              resizeMode="contain"
+              style={{ width: '92%', height: '92%' }}
+            />
+          ) : null}
+        </View>
       </Pressable>
 
-      {!isEditing ? (
-        <View style={{ gap: 8 }}>
-          <Text style={{ fontWeight: '700', color: palette.text }}>Item Name</Text>
-          <Text style={{ color: palette.textMuted }}>{item?.name || DEFAULT_ITEM_NAME}</Text>
-          <Text style={{ fontWeight: '700', color: palette.text }}>Weather</Text>
-          <Text style={{ color: palette.textMuted }}>{item?.weather || DEFAULT_WEATHER}</Text>
-        </View>
-      ) : (
-        <View style={{ gap: 8 }}>
-          <Text style={{ color: palette.text, fontWeight: '600' }}>Item Name</Text>
-          <TextInput
-            value={editState.name}
-            onChangeText={(v) => {
-              setEditState((prev) => ({ ...prev, name: v }));
-              if (nameError) setNameError('');
-            }}
-            style={{ borderWidth: 1, borderColor: nameError ? palette.danger : palette.borderStrong, borderRadius: 10, padding: 12, backgroundColor: palette.surface, color: palette.text }}
-            placeholderTextColor={palette.textMuted}
-          />
-          {nameError ? <Text style={{ color: palette.danger }}>{nameError}</Text> : null}
-          <Text style={{ color: palette.text, fontWeight: '600' }}>Weather</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {WEATHER_TYPES.map((weather) => {
-              const active = editState.weather === weather;
-              return (
-                <Pressable
-                  key={weather}
-                  onPress={() => setEditState((prev) => ({ ...prev, weather: prev.weather === weather ? '' : weather }))}
-                  style={{ paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderRadius: 999, borderColor: active ? palette.primary : palette.borderStrong, backgroundColor: active ? palette.primarySoft : palette.surface }}
-                >
-                  <Text style={{ color: palette.text }}>{weather}</Text>
-                </Pressable>
-              );
-            })}
+      <View style={{ gap: 8 }}>
+        <Text style={{ color: '#6b7280', fontSize: isNarrow ? 14 : 16, fontWeight: '500' }}>Item Name</Text>
+        <Text
+          numberOfLines={2}
+          style={{ color: '#7c3aed', fontSize: isNarrow ? 24 : 30, lineHeight: isNarrow ? 30 : 36, fontWeight: '800' }}
+        >
+          {displayName || 'AI will generate a name'}
+        </Text>
+      </View>
+
+      {weatherValue ? (
+        <>
+          <View style={{ height: 1, backgroundColor: palette.border, marginVertical: 6 }} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={{ color: '#6b7280', fontSize: isNarrow ? 16 : 18, fontWeight: '500' }}>Weather</Text>
+            <Text
+              numberOfLines={1}
+              style={{ color: palette.text, fontSize: isNarrow ? 16 : 18, fontWeight: '700', textAlign: 'right', marginLeft: 12, flexShrink: 1 }}
+            >
+              {weatherValue}
+            </Text>
           </View>
-        </View>
-      )}
+        </>
+      ) : null}
+
+      {!weatherValue ? (
+        <View style={{ height: 1, backgroundColor: palette.border, marginVertical: 6 }} />
+      ) : null}
 
       {!isEditing ? (
-        <View style={{ flexDirection: 'row', gap: 10 }}>
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
           <Pressable onPress={handleBack} style={{ flex: 1, padding: 12, borderWidth: 1, borderRadius: 10, alignItems: 'center', borderColor: palette.borderStrong, backgroundColor: palette.surfaceSoft }}>
             <Text style={{ color: palette.text }}>Back</Text>
           </Pressable>
@@ -201,7 +209,7 @@ function ClothingDetail({ item, onBack, onSave, onDelete, onProcessImage, isEdit
           </Pressable>
         </View>
       ) : (
-        <View style={{ flexDirection: 'row', gap: 10 }}>
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
           <Pressable onPress={handleCancel} style={{ flex: 1, padding: 12, borderWidth: 1, borderRadius: 10, alignItems: 'center', borderColor: palette.borderStrong, backgroundColor: palette.surfaceSoft }}>
             <Text style={{ color: palette.text }}>Cancel</Text>
           </Pressable>

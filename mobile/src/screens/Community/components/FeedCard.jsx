@@ -1,17 +1,20 @@
 import React, { memo, useMemo, useState, useEffect } from 'react';
-import { View, Text, Pressable, Image } from 'react-native';
+import { View, Text, Pressable, Image, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { palette } from '../../../theme/colors';
+import { radius, shadow, spacing, type } from '../../../theme/tokens';
 import apiService from '../../../services/api.service';
+import useAuthStore from '../../../store/authStore';
 
-// Backend-spec emojis: heart, fire, clap, love_eyes, idea
 const REACTIONS = [
-  { key: 'heart',     emoji: '❤️' },
-  { key: 'fire',      emoji: '🔥' },
-  { key: 'clap',      emoji: '👏' },
+  { key: 'heart', emoji: '❤️' },
+  { key: 'fire', emoji: '🔥' },
+  { key: 'clap', emoji: '👏' },
   { key: 'love_eyes', emoji: '😍' },
-  { key: 'idea',      emoji: '💡' },
+  { key: 'idea', emoji: '💡' },
 ];
+const AVATAR_GRADIENT = ['#7c3aed', '#c026d3'];
 
 const getItemImage = (item) => {
   if (!item) return null;
@@ -35,51 +38,170 @@ const getItemImage = (item) => {
   );
 };
 
-const formatTimeAgo = (dateStr) => {
+const formatRelativeTime = (dateStr) => {
   if (!dateStr) return '';
-  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
-  if (seconds < 60) return 'just now';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return `${Math.floor(days / 30)}mo ago`;
+  if (days < 7) return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
-function FeedCard({ item, onReact, onRate, onOpenComments, onToggleFavorite, onUnshare, onOpenProfile }) {
-  // Backend shape: shared_by, outfit, ratings{}, reactions{counts,user_reactions},
-  //                comment_count, favorites{count,user_has_favorited}, shared_at
-  const sharedBy = item?.shared_by || {};
-  const userName = sharedBy.name || item?.user?.full_name || item?.user?.name || 'User';
-  const avatarUrl = sharedBy.avatar_url || item?.user?.avatar_url || null;
-  const isSelf = !!sharedBy.is_self;
-  const userId = sharedBy.user_id || item?.user_id;
-  const avatarLetter = (userName || '?').charAt(0).toUpperCase();
+const userNameCache = new Map();
 
-  const timestamp = formatTimeAgo(item?.shared_at || item?.created_at || item?.createdAt);
+const pickString = (...values) => (
+  values.find((value) => typeof value === 'string' && value.trim().length > 0) || ''
+);
+
+const isPlaceholderName = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'user' || normalized === 'u';
+};
+
+const resolveUserId = (item) => (
+  item?.shared_by?.user_id ||
+  item?.shared_by?.id ||
+  item?.shared_by?._id ||
+  item?.user?.user_id ||
+  item?.user?.id ||
+  item?.user?._id ||
+  item?.user_id ||
+  item?.shared_by_user_id ||
+  item?.author_id ||
+  null
+);
+
+const resolveUserNameFromItem = (item) => (
+  pickString(
+    item?.shared_by?.name,
+    item?.user?.full_name,
+    item?.user?.fullName,
+    item?.user?.name,
+    item?.user?.username,
+    item?.user_name,
+    item?.shared_by_name,
+    item?.author_name,
+    item?.owner_name
+  )
+);
+
+function FeedCard({ item, onReact, onRate, onOpenComments, onNavigateToProfile, onToggleFavorite, onDeleteShare, forceShowDelete = false }) {
+  const authUserRaw = useAuthStore((store) => store.user);
+  const authUser = authUserRaw?.user && typeof authUserRaw.user === 'object' ? authUserRaw.user : authUserRaw;
+  const currentUserId = authUser?.id || authUser?._id || authUser?.user_id || authUser?.uid || null;
+  const currentUserName = pickString(
+    authUser?.full_name,
+    authUser?.fullName,
+    authUser?.name,
+    authUser?.username,
+    authUser?.email
+  );
+
+  const userId = resolveUserId(item);
+  const [resolvedUserName, setResolvedUserName] = useState('');
+  const [resolvedAvatarUrl, setResolvedAvatarUrl] = useState(
+    item?.shared_by?.avatar_url || item?.shared_by?.avatarUrl || null
+  );
+  const inlineUserName = resolveUserNameFromItem(item);
+  const safeInlineUserName = isPlaceholderName(inlineUserName) ? '' : inlineUserName;
+  const userName = resolvedUserName || safeInlineUserName || 'User';
+  const isSelfPost =
+    item?.shared_by?.is_self === true ||
+    (!!currentUserId && !!userId && String(currentUserId) === String(userId));
+  const avatarLetter = (userName || 'U').charAt(0).toUpperCase();
+  const timestamp = formatRelativeTime(
+    item?.shared_at || item?.created_at || item?.createdAt
+  );
   const outfitName = item?.outfit?.name || item?.outfit_name || 'Outfit';
-  const cohesionScore = item?.outfit?.cohesion_score ?? item?.cohesion_score;
-  const description = item?.description;
-
-  // Backend shapes { counts, user_reactions } — fall back to legacy flat shape
-  const reactionCounts = item?.reactions?.counts || item?.reactions || {};
-  const myReactions = item?.reactions?.user_reactions || item?.my_reactions || [];
-
-  // Rating
-  const myRating = item?.ratings?.user_rating ?? item?.my_rating ?? 0;
-  const averageRating = item?.ratings?.average ?? item?.average_rating;
-  const ratingCount = item?.ratings?.count ?? item?.rating_count ?? 0;
-
-  // Favorites
-  const favoriteCount = item?.favorites?.count ?? 0;
-  const hasFavorited = !!item?.favorites?.user_has_favorited;
-
-  const commentCount = item?.comment_count ?? item?.comments_count ?? 0;
+  const cohesionScore = item?.outfit?.cohesion_score || item?.cohesion_score;
+  const rawReactions = item?.reactions || {};
+  const reactions = rawReactions?.counts && typeof rawReactions.counts === 'object'
+    ? rawReactions.counts
+    : rawReactions;
+  const myReactions = Array.isArray(item?.my_reactions)
+    ? item.my_reactions
+    : (Array.isArray(rawReactions?.user_reactions) ? rawReactions.user_reactions : []);
+  const favoriteState = item?.favorites || {};
+  const isFavoritedByMe = !!favoriteState?.user_has_favorited;
+  const favoriteCount = Number(favoriteState?.count || 0);
+  const myRating = item?.my_rating || item?.ratings?.user_rating || 0;
+  const averageRating = item?.average_rating ?? item?.ratings?.average;
+  const ratingCount = item?.rating_count ?? item?.ratings?.count ?? 0;
+  const commentCount = item?.comment_count || item?.comments_count || 0;
   const shareId = item?.id || item?._id;
+  const hasRatingSummary = averageRating != null || Number(ratingCount) > 0;
+  const averageRatingValue = averageRating != null ? Number(averageRating) : null;
+  const averageRatingLabel = averageRatingValue != null && Number.isFinite(averageRatingValue)
+    ? averageRatingValue.toFixed(1)
+    : null;
 
   const [detailedOutfit, setDetailedOutfit] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (safeInlineUserName) {
+      setResolvedUserName(safeInlineUserName);
+      setResolvedAvatarUrl(item?.shared_by?.avatar_url || item?.shared_by?.avatarUrl || null);
+      return () => { mounted = false; };
+    }
+
+    // If backend returns placeholder user label, prefer the logged-in user's name for self posts.
+    if (currentUserName && (isSelfPost || (!userId && isPlaceholderName(inlineUserName)))) {
+      setResolvedUserName(currentUserName);
+      setResolvedAvatarUrl(authUser?.avatar_url || authUser?.avatarUrl || null);
+      return () => { mounted = false; };
+    }
+
+    if (!userId) {
+      setResolvedUserName('');
+      setResolvedAvatarUrl(null);
+      return () => { mounted = false; };
+    }
+
+    const cacheKey = String(userId);
+    const cachedName = userNameCache.get(cacheKey);
+    if (cachedName) {
+      setResolvedUserName(cachedName);
+      return () => { mounted = false; };
+    }
+
+    // Fallback: fetch profile name if feed payload omitted user details.
+    apiService.getUserProfile(userId)
+      .then((res) => {
+        if (!mounted) return;
+        const profilePayload = res?.data || res || {};
+        const profileUser = profilePayload?.user || profilePayload;
+        const fetchedName = pickString(
+          profileUser?.full_name,
+          profileUser?.fullName,
+          profileUser?.name,
+          profileUser?.username
+        );
+        const fetchedAvatarUrl = profileUser?.avatar_url || profileUser?.avatarUrl || null;
+        if (fetchedName) {
+          userNameCache.set(cacheKey, fetchedName);
+          setResolvedUserName(fetchedName);
+        }
+        if (fetchedAvatarUrl) {
+          setResolvedAvatarUrl(fetchedAvatarUrl);
+        }
+      })
+      .catch(() => {
+        // Keep UI fallback as "User" if profile fetch fails.
+        if (!mounted) return;
+        if (currentUserName && isPlaceholderName(inlineUserName)) {
+          setResolvedUserName(currentUserName);
+          setResolvedAvatarUrl(authUser?.avatar_url || authUser?.avatarUrl || null);
+        }
+      });
+
+    return () => { mounted = false; };
+  }, [item, userId, inlineUserName, safeInlineUserName, currentUserId, currentUserName, authUser]);
 
   useEffect(() => {
     let mounted = true;
@@ -91,12 +213,13 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onToggleFavorite, onU
         if (mounted && res?.data?.items) {
           setDetailedOutfit(res.data);
         }
-      }).catch(() => {});
+      }).catch(err => console.log('Failed to fetch outfit details for community card', err));
     }
     return () => { mounted = false; };
-  }, [item?.outfit?.id, item?.outfit_id]);
+  }, [item?.outfit?.id, item?.outfit_id, item?.outfit?.items, detailedOutfit]);
 
   const outfitItems = useMemo(() => {
+    // Prefer detailedOutfit items if we fetched them
     const items = detailedOutfit?.items || item?.outfit?.items || item?.items || [];
     return Array.isArray(items) ? items.slice(0, 4) : [];
   }, [item, detailedOutfit]);
@@ -110,77 +233,47 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onToggleFavorite, onU
     return result.filter(Boolean);
   }, [item, detailedOutfit]);
 
-  const [hoverStar, setHoverStar] = useState(0);
-
   return (
-    <View style={{
-      borderWidth: 1,
-      borderColor: palette.border,
-      borderRadius: 16,
-      backgroundColor: palette.surface,
-      padding: 14,
-      gap: 12,
-    }}>
+    <View style={styles.card}>
       {/* User Header */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Pressable
-          onPress={() => userId && !isSelf && onOpenProfile?.(userId)}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}
-        >
-          <View style={{
-            width: 40, height: 40, borderRadius: 20,
-            backgroundColor: palette.primary,
-            alignItems: 'center', justifyContent: 'center',
-            overflow: 'hidden',
-          }}>
-            {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} style={{ width: 40, height: 40 }} />
-            ) : (
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: 16 }}>{avatarLetter}</Text>
-            )}
-          </View>
-          <View style={{ flex: 1 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={{ fontWeight: '700', color: palette.text, fontSize: 15 }} numberOfLines={1}>
-                {userName}
-              </Text>
-              {isSelf && (
-                <View style={{
-                  backgroundColor: palette.primarySoft,
-                  paddingHorizontal: 6, paddingVertical: 2,
-                  borderRadius: 6,
-                }}>
-                  <Text style={{ fontSize: 10, fontWeight: '700', color: palette.primary }}>You</Text>
+      <View style={styles.headerRow}>
+        <Pressable onPress={() => onNavigateToProfile?.(userId)} style={styles.headerUserPressable}>
+          {resolvedAvatarUrl ? (
+            <Image source={{ uri: resolvedAvatarUrl }} style={styles.avatarCircle} />
+          ) : (
+            <LinearGradient
+              colors={AVATAR_GRADIENT}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.avatarCircle}>
+              <Text style={styles.avatarLetter}>{avatarLetter}</Text>
+            </LinearGradient>
+          )}
+          <View>
+            <View style={styles.userRow}>
+              <Text style={styles.userName}>{userName}</Text>
+              {isSelfPost ? (
+                <View style={styles.youBadge}>
+                  <Text style={styles.youBadgeText}>You</Text>
                 </View>
-              )}
+              ) : null}
             </View>
-            <Text style={{ color: palette.textMuted, fontSize: 12 }}>{timestamp}</Text>
+            <Text style={styles.timestamp}>{timestamp}</Text>
           </View>
         </Pressable>
-
-        {isSelf && onUnshare && (
-          <Pressable onPress={() => onUnshare(item)} hitSlop={8} style={{ padding: 6 }}>
+        {(forceShowDelete || isSelfPost) && shareId ? (
+          <Pressable onPress={() => onDeleteShare?.(item, shareId)} hitSlop={8} style={styles.deleteButton}>
             <Ionicons name="trash-outline" size={18} color={palette.textMuted} />
           </Pressable>
-        )}
+        ) : null}
       </View>
 
-      {/* Outfit Collage (2x2) */}
-      <View style={{
-        flexDirection: 'row', flexWrap: 'wrap', gap: 4,
-        borderRadius: 12, overflow: 'hidden',
-      }}>
+      <View style={styles.collage}>
         {[0, 1, 2, 3].map((idx) => {
           const outfitItem = outfitItems[idx];
           const image = outfitItem ? getItemImage(outfitItem) : null;
           return (
-            <View key={idx} style={{
-              width: '48.5%', aspectRatio: 1,
-              backgroundColor: palette.surfaceSoft,
-              borderRadius: 8,
-              alignItems: 'center', justifyContent: 'center',
-              overflow: 'hidden',
-            }}>
+            <View key={idx} style={styles.collageCell}>
               {image ? (
                 <Image source={{ uri: image }} style={{ width: '80%', height: '80%' }} resizeMode="contain" />
               ) : (
@@ -192,123 +285,79 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onToggleFavorite, onU
       </View>
 
       {/* Outfit Info */}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ fontSize: 16, fontWeight: '800', color: palette.text, flex: 1 }} numberOfLines={1}>
-          {outfitName}
-        </Text>
+      <View style={styles.outfitMetaRow}>
+        <Text style={styles.outfitName}>{outfitName}</Text>
         {cohesionScore != null && (
-          <View style={{
-            backgroundColor: cohesionScore >= 7 ? '#dcfce7' : '#fee2e2',
-            paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
-          }}>
-            <Text style={{
-              fontWeight: '700', fontSize: 13,
-              color: cohesionScore >= 7 ? '#16a34a' : '#dc2626',
-            }}>{cohesionScore}/10</Text>
+          <View style={[styles.scorePill, cohesionScore >= 7 ? styles.scoreGood : styles.scoreBad]}>
+            <Text style={[styles.scoreText, cohesionScore >= 7 ? styles.scoreGoodText : styles.scoreBadText]}>{cohesionScore}/10</Text>
           </View>
         )}
       </View>
 
       {/* Tags */}
       {tags.length > 0 && (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+        <View style={styles.tagRow}>
           {tags.map((tag) => (
-            <View key={tag} style={{
-              borderWidth: 1, borderColor: palette.border,
-              borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4,
-              backgroundColor: palette.surfaceSoft,
-            }}>
-              <Text style={{ fontSize: 12, color: palette.textMuted, fontWeight: '600' }}>{tag}</Text>
+            <View key={tag} style={styles.tagPill}>
+              <Text style={styles.tagText}>{tag}</Text>
             </View>
           ))}
         </View>
       )}
 
-      {description ? (
-        <Text style={{ fontSize: 13, color: palette.textMuted, lineHeight: 18 }} numberOfLines={2}>
-          {description}
-        </Text>
+      {item?.description ? (
+        <Text style={styles.descriptionText}>{item.description}</Text>
       ) : null}
 
-      {/* Social — two rows to avoid horizontal overflow on narrow phones */}
-      <View style={{ borderTopWidth: 1, borderTopColor: palette.border, paddingTop: 10, gap: 10 }}>
-        {/* Row 1: Reactions (spec: ONE emoji per user; tapping another switches) */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
+      <View style={styles.socialRow}>
+        <View style={styles.reactionRow}>
           {REACTIONS.map(({ key, emoji }) => {
-            const count = reactionCounts[key] || 0;
+            const count = reactions[key] || 0;
             const isActive = myReactions.includes(key);
             return (
               <Pressable
                 key={key}
                 onPress={() => onReact?.(shareId, key)}
-                style={{
-                  flexDirection: 'row', alignItems: 'center',
-                  paddingHorizontal: 6, paddingVertical: 4,
-                  borderRadius: 8,
-                  backgroundColor: isActive ? palette.primarySoft : 'transparent',
-                  borderWidth: 1,
-                  borderColor: isActive ? palette.primary : 'transparent',
-                }}
+                style={[styles.reactionButton, isActive ? styles.reactionActive : null]}
               >
-                <Text style={{ fontSize: 15 }}>{emoji}</Text>
-                {count > 0 && (
-                  <Text style={{ fontSize: 11, color: palette.textMuted, marginLeft: 3, fontWeight: '600' }}>{count}</Text>
-                )}
+                <Text style={styles.reactionEmoji}>{emoji}</Text>
+                {count > 0 ? <Text style={styles.reactionCount}>{count}</Text> : null}
               </Pressable>
             );
           })}
         </View>
 
-        {/* Row 2: Stars + average + favorite + comments */}
-        <View style={{
-          flexDirection: 'row', alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 8,
-        }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 1, flexShrink: 1 }}>
+        <View style={styles.metaRow}>
+          <View style={styles.starRow}>
             {[1, 2, 3, 4, 5].map((star) => (
-              <Pressable
-                key={star}
-                onPress={() => !isSelf && onRate?.(shareId, star)}
-                onPressIn={() => !isSelf && setHoverStar(star)}
-                onPressOut={() => setHoverStar(0)}
-                hitSlop={4}
-              >
+              <Pressable key={star} onPress={() => onRate?.(shareId, star)} hitSlop={4}>
                 <Text style={{
-                  fontSize: 15,
-                  color: star <= (hoverStar || myRating) ? '#f59e0b' : '#d1d5db',
+                  fontSize: 16,
+                  color: star <= myRating ? '#f59e0b' : '#d1d5db',
                 }}>★</Text>
               </Pressable>
             ))}
-            {(averageRating != null || ratingCount > 0) && (
-              <Text
-                style={{ fontSize: 11, color: palette.primary, fontWeight: '700', marginLeft: 4 }}
-                numberOfLines={1}
-              >
-                {averageRating != null ? Number(averageRating).toFixed(1) : ''}
-                {ratingCount > 0 ? ` (${ratingCount})` : ''}
+            {hasRatingSummary && (
+              <Text style={styles.ratingText}>
+                {averageRatingLabel || '0.0'} <Text style={styles.ratingCountText}>({Number(ratingCount) || 0})</Text>
               </Text>
             )}
           </View>
-
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <View style={styles.rightMetaRow}>
             <Pressable
               onPress={() => onToggleFavorite?.(shareId)}
-              hitSlop={6}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}
+              style={styles.favoriteButton}
             >
-              <Text style={{ fontSize: 15 }}>{hasFavorited ? '❤️' : '🤍'}</Text>
-              {favoriteCount > 0 && (
-                <Text style={{ fontSize: 11, color: palette.textMuted, fontWeight: '600' }}>{favoriteCount}</Text>
-              )}
+              <Text style={styles.favoriteEmoji}>{isFavoritedByMe ? '❤️' : '🤍'}</Text>
+              <Text style={styles.favoriteCount}>{favoriteCount}</Text>
             </Pressable>
 
             <Pressable
               onPress={() => onOpenComments?.(item)}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+              style={styles.commentButton}
             >
-              <Ionicons name="chatbubble-outline" size={15} color={palette.textMuted} />
-              <Text style={{ fontSize: 12, color: palette.textMuted, fontWeight: '600' }}>{commentCount}</Text>
+              <Text style={styles.commentEmoji}>💬</Text>
+              <Text style={styles.commentCount}>{commentCount}</Text>
             </Pressable>
           </View>
         </View>
@@ -316,5 +365,225 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onToggleFavorite, onU
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  card: {
+    borderWidth: 1,
+    borderColor: palette.border,
+    borderRadius: radius.lg,
+    backgroundColor: palette.surfaceElevated,
+    padding: spacing.sm,
+    gap: spacing.sm,
+    ...shadow.soft,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.xs,
+  },
+  headerUserPressable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
+    flex: 1,
+  },
+  deleteButton: {
+    padding: 4,
+    borderRadius: 8,
+  },
+  avatarCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarLetter: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  userName: {
+    ...type.label,
+    color: palette.text,
+    fontWeight: '700',
+  },
+  userRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  youBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: '#e9d5ff',
+  },
+  youBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6d28d9',
+  },
+  timestamp: {
+    ...type.caption,
+    color: palette.textMuted,
+  },
+  collage: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    borderRadius: radius.md,
+    overflow: 'hidden',
+  },
+  collageCell: {
+    width: '48.5%',
+    aspectRatio: 1,
+    backgroundColor: palette.surfaceSoft,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  outfitMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  outfitName: {
+    ...type.title,
+    color: palette.text,
+    flex: 1,
+  },
+  scorePill: {
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 3,
+    borderRadius: radius.sm,
+  },
+  scoreGood: {
+    backgroundColor: '#dcfce7',
+  },
+  scoreBad: {
+    backgroundColor: '#fee2e2',
+  },
+  scoreText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  scoreGoodText: {
+    color: '#16a34a',
+  },
+  scoreBadText: {
+    color: '#dc2626',
+  },
+  tagRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  tagPill: {
+    borderWidth: 1,
+    borderColor: palette.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.xs + 2,
+    paddingVertical: 4,
+    backgroundColor: palette.surfaceSoft,
+  },
+  tagText: {
+    ...type.caption,
+    color: palette.textMuted,
+    fontWeight: '600',
+  },
+  descriptionText: {
+    color: palette.textMuted,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  socialRow: {
+    flexDirection: 'column',
+    gap: spacing.xs + 2,
+    borderTopWidth: 1,
+    borderTopColor: palette.border,
+    paddingTop: spacing.xs + 2,
+  },
+  reactionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  reactionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 5,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+  },
+  reactionActive: {
+    backgroundColor: palette.primarySoft,
+  },
+  reactionEmoji: {
+    fontSize: 16,
+  },
+  reactionCount: {
+    fontSize: 11,
+    color: palette.textMuted,
+    marginLeft: 2,
+    fontWeight: '600',
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  rightMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  favoriteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  favoriteEmoji: {
+    fontSize: 16,
+  },
+  favoriteCount: {
+    ...type.caption,
+    color: palette.textMuted,
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  starRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 1,
+  },
+  ratingText: {
+    fontSize: 11,
+    color: palette.primary,
+    fontWeight: '700',
+    marginLeft: 4,
+  },
+  ratingCountText: {
+    color: palette.textMuted,
+    fontWeight: '600',
+  },
+  commentButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  commentEmoji: {
+    fontSize: 16,
+  },
+  commentCount: {
+    ...type.caption,
+    color: palette.textMuted,
+    fontWeight: '700',
+    fontSize: 13,
+  },
+});
 
 export default memo(FeedCard);

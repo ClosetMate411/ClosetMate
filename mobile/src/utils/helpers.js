@@ -46,5 +46,10 @@ export const transformItemsForDisplay = (items = []) =>
     name: normalizeDisplayName(item?.name || item?.item_name || ''),
     weather: item?.weather || item?.season || '',
     image: item?.image || item?.image_url || null,
+    // Preserve AI metadata for generateItemLabel
+    category: item?.category || '',
+    subcategory: item?.subcategory || '',
+    color_primary: item?.color_primary || item?.colorPrimary || '',
+    material: item?.material || '',
   }));
 

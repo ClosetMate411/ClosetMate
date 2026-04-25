@@ -1,95 +1,192 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, FlatList, ActivityIndicator, RefreshControl, Pressable, Image, Alert } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, Alert, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
-import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
+import { palette } from '../../theme/colors';
+import { radius, shadow, spacing, type } from '../../theme/tokens';
 import useAuthStore from '../../store/authStore';
-import useCommunityStore from '../../store/communityStore';
-import apiService from '../../services/api.service';
+import useWardrobeStore from '../../store/wardrobeStore';
 import FeedCard from '../Community/components/FeedCard';
 import CommentsModal from '../Community/components/CommentsModal';
-import { palette } from '../../theme/colors';
+import apiService from '../../services/api.service';
+import * as ImagePicker from 'expo-image-picker';
+import SkeletonBlock from '../../components/ui/SkeletonBlock';
 
-export default function ProfileScreen() {
-  const navigation = useNavigation();
-  const route = useRoute();
-  const routeUserId = route.params?.userId;
-  const currentUser = useAuthStore((s) => s.user);
-  const setAvatarUrl = useAuthStore((s) => s.setAvatarUrl); // may not exist — defensive
+const pickValue = (...values) => values.find((value) => typeof value === 'string' && value.trim().length > 0) || '-';
 
-  const selfUserId = currentUser?.user_id || currentUser?.id;
-  const profileUserId = routeUserId || selfUserId;
-  const isSelf = !routeUserId || routeUserId === selfUserId;
+const getInitials = (name) =>
+  String(name || '')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((chunk) => chunk[0]?.toUpperCase() || '')
+    .join('') || 'U';
+
+const toNumberOrDash = (value) => (value === null || value === undefined ? '-' : value);
+const AVATAR_GRADIENT = ['#7c3aed', '#c026d3'];
+
+const resolveUserEntity = (value) => (value?.user && typeof value.user === 'object' ? value.user : value || {});
+const resolveUserId = (value) => {
+  const user = resolveUserEntity(value);
+  return user?.id || user?._id || user?.user_id || user?.uid || null;
+};
+
+const resolveAvatarUrl = (...values) =>
+  values.find((value) => typeof value === 'string' && value.trim().length > 0) || null;
+
+const normalizeProfilePayload = (raw, fallbackUser, isSelf) => {
+  const payload = raw?.data || raw || {};
+  const nestedUser = payload?.user || {};
+  const nestedStats = payload?.stats || {};
+  const fallbackEntity = resolveUserEntity(fallbackUser);
+
+  return {
+    user: {
+      id: nestedUser?.id || nestedUser?._id || nestedUser?.user_id || resolveUserId(fallbackEntity),
+      name: pickValue(
+        nestedUser?.name,
+        nestedUser?.full_name,
+        nestedUser?.fullName,
+        fallbackEntity?.full_name,
+        fallbackEntity?.fullName,
+        fallbackEntity?.name,
+        fallbackEntity?.username,
+        fallbackEntity?.email
+      ),
+      avatar_url: resolveAvatarUrl(
+        nestedUser?.avatar_url,
+        nestedUser?.avatarUrl,
+        fallbackEntity?.avatar_url,
+        fallbackEntity?.avatarUrl
+      ),
+      is_self: nestedUser?.is_self ?? isSelf,
+    },
+    stats: {
+      total_shared: toNumberOrDash(nestedStats?.total_shared ?? payload?.total_shared ?? 0),
+      average_rating: toNumberOrDash(nestedStats?.average_rating ?? payload?.average_rating),
+      total_ratings_received: toNumberOrDash(nestedStats?.total_ratings_received ?? payload?.total_ratings_received ?? 0),
+      total_favorites_received: toNumberOrDash(nestedStats?.total_favorites_received ?? payload?.total_favorites_received ?? 0),
+    },
+    outfits: Array.isArray(payload?.outfits) ? payload.outfits : [],
+  };
+};
+
+export default function ProfileScreen({ navigation, route }) {
+  const authUserRaw = useAuthStore((store) => store.user);
+  const setAvatarUrl = useAuthStore((store) => store.setAvatarUrl);
+  const authUser = useMemo(() => resolveUserEntity(authUserRaw), [authUserRaw]);
+  const fetchWardrobeItems = useWardrobeStore((store) => store.fetchItems);
 
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [commentsItem, setCommentsItem] = useState(null);
+  const [error, setError] = useState('');
+  const [selectedFeedItem, setSelectedFeedItem] = useState(null);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [profilePhotoUri, setProfilePhotoUri] = useState(null);
 
-  const addReaction = useCommunityStore((s) => s.addReaction);
-  const rateOutfit = useCommunityStore((s) => s.rateOutfit);
-  const toggleFavoriteShared = useCommunityStore((s) => s.toggleFavoriteShared);
-  const unshareOutfit = useCommunityStore((s) => s.unshareOutfit);
+  const routeUserId = route?.params?.userId;
+  const myUserId = resolveUserId(authUser);
+  const userId = routeUserId || myUserId;
+  const isSelfProfile = !routeUserId || String(routeUserId) === String(myUserId);
 
-  const load = useCallback(async () => {
-    if (!profileUserId) { setLoading(false); return; }
+  const loadProfile = useCallback(async () => {
+    setLoading(true);
+    setError('');
+
     try {
-      const res = await apiService.getUserProfile(profileUserId);
-      if (res?.success) setProfile(res.data);
-    } catch (_e) {
+      await fetchWardrobeItems().catch(() => []);
+      let resolvedUserId = userId;
+
+      // If route/store didn't provide a resolvable id, fetch me and derive id from that payload.
+      if (!resolvedUserId) {
+        const meResponse = await apiService.getCurrentUser();
+        resolvedUserId = resolveUserId(meResponse?.data || meResponse);
+      }
+
+      if (!resolvedUserId) {
+        throw new Error('Profile user id is missing from auth response.');
+      }
+
+      const response = await apiService.getUserProfile(resolvedUserId);
+      const normalized = normalizeProfilePayload(response, authUser, isSelfProfile);
+      setProfile(normalized);
+      setProfilePhotoUri(normalized?.user?.avatar_url || null);
+    } catch (e) {
+      setError(e?.message || 'Failed to load profile');
       setProfile(null);
+      setProfilePhotoUri(null);
     } finally {
       setLoading(false);
     }
-  }, [profileUserId]);
+  }, [userId, fetchWardrobeItems, authUser, isSelfProfile]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
 
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  }, [load]);
+  const fullName = useMemo(() => profile?.user?.name || '-', [profile]);
+  const initials = useMemo(() => getInitials(fullName), [fullName]);
+  const outfits = useMemo(() => (Array.isArray(profile?.outfits) ? profile.outfits : []), [profile]);
+  const stats = profile?.stats || {};
 
-  const pickAvatar = useCallback(async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert('Permission needed', 'Media library access is required to change avatar.');
+  const updateCommentCount = useCallback((shareId, delta) => {
+    setProfile((prev) => {
+      if (!prev) return prev;
+      const updated = prev.outfits.map((item) => {
+        const id = item?.id || item?._id;
+        if (String(id) !== String(shareId)) return item;
+        const current = Number(item?.comment_count ?? item?.comments_count ?? 0);
+        const nextCount = Math.max(0, current + delta);
+        return { ...item, comment_count: nextCount, comments_count: nextCount };
+      });
+      return { ...prev, outfits: updated };
+    });
+  }, []);
+
+  const pickProfilePhoto = useCallback(async () => {
+    if (!isSelfProfile) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permission.status !== 'granted') {
+      Alert.alert('Permission needed', 'Media library permission is required to set a profile photo.');
       return;
     }
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.9,
+      quality: 0.8,
     });
-    if (result.canceled || !result.assets?.[0]) return;
 
-    const asset = result.assets[0];
-    const fileObject = {
-      uri: asset.uri,
-      name: asset.fileName || `avatar-${Date.now()}.jpg`,
-      type: asset.mimeType || 'image/jpeg',
-    };
+    if (result.canceled) return;
+    const asset = result.assets?.[0];
+    const uri = asset?.uri;
+    if (!uri) return;
 
-    setUploading(true);
+    const fileName = asset?.fileName || `avatar_${Date.now()}.jpg`;
+    const mimeType = asset?.mimeType || (fileName.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg');
+
     try {
-      const res = await apiService.updateAvatar(fileObject);
-      const url = res?.data?.avatar_url;
-      if (url) {
-        setProfile((p) => p ? { ...p, user: { ...p.user, avatar_url: url } } : p);
-        if (typeof setAvatarUrl === 'function') setAvatarUrl(url);
-      }
+      const response = await apiService.updateAvatar({
+        uri,
+        name: fileName,
+        type: mimeType,
+      });
+      const avatarUrl = response?.data?.avatar_url || null;
+      setProfilePhotoUri(avatarUrl);
+      setAvatarUrl(avatarUrl);
+      setProfile((prev) => (
+        prev
+          ? { ...prev, user: { ...prev.user, avatar_url: avatarUrl } }
+          : prev
+      ));
     } catch (e) {
-      Alert.alert('Upload failed', e.message || 'Try again.');
-    } finally {
-      setUploading(false);
+      Alert.alert('Upload failed', e?.message || 'Could not update profile photo.');
     }
-  }, [setAvatarUrl]);
+  }, [isSelfProfile, setAvatarUrl]);
 
-  const deleteAvatar = useCallback(async () => {
-    Alert.alert('Remove avatar?', 'Your profile picture will be removed.', [
+  const removeProfilePhoto = useCallback(() => {
+    Alert.alert('Remove Photo', 'Do you want to remove your profile photo?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Remove',
@@ -97,165 +194,334 @@ export default function ProfileScreen() {
         onPress: async () => {
           try {
             await apiService.deleteAvatar();
-            setProfile((p) => p ? { ...p, user: { ...p.user, avatar_url: null } } : p);
-            if (typeof setAvatarUrl === 'function') setAvatarUrl(null);
+            setProfilePhotoUri(null);
+            setAvatarUrl(null);
+            setProfile((prev) => (
+              prev
+                ? { ...prev, user: { ...prev.user, avatar_url: null } }
+                : prev
+            ));
           } catch (e) {
-            Alert.alert('Remove failed', e.message || 'Try again.');
+            Alert.alert('Delete failed', e?.message || 'Could not remove profile photo.');
           }
         },
       },
     ]);
   }, [setAvatarUrl]);
 
-  const handleUnshare = useCallback((item) => {
-    const shareId = item?.id || item?._id;
-    Alert.alert('Remove from community?', 'This will delete the shared post.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: async () => {
-          await unshareOutfit(shareId);
-          setProfile((p) => p ? { ...p, outfits: p.outfits.filter((o) => (o.id || o._id) !== shareId) } : p);
-        },
-      },
-    ]);
-  }, [unshareOutfit]);
+  const handleAvatarPress = useCallback(() => {
+    if (!isSelfProfile) return;
+    if (profilePhotoUri) {
+      Alert.alert('Profile Photo', 'Choose an action', [
+        { text: 'Change Photo', onPress: () => pickProfilePhoto() },
+        { text: 'Remove Photo', style: 'destructive', onPress: () => removeProfilePhoto() },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+      return;
+    }
+    pickProfilePhoto();
+  }, [isSelfProfile, profilePhotoUri, pickProfilePhoto, removeProfilePhoto]);
 
   if (loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: palette.background, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={styles.loadingRoot}>
         <ActivityIndicator size="large" color={palette.primary} />
+        <Text style={styles.loadingText}>Loading profile...</Text>
+        <View style={styles.loadingSkeletons}>
+          <SkeletonBlock height={96} borderRadius={radius.lg} />
+          <SkeletonBlock height={180} borderRadius={radius.lg} />
+        </View>
       </View>
     );
   }
 
-  if (!profile) {
+  if (error) {
     return (
-      <View style={{ flex: 1, backgroundColor: palette.background, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <Text style={{ fontSize: 16, color: palette.textMuted }}>Profile not found</Text>
+      <View style={styles.loadingRoot}>
+        <Ionicons name="warning-outline" size={28} color={palette.danger} />
+        <Text style={styles.errorText}>{error}</Text>
+        <Pressable style={styles.retryButton} onPress={loadProfile}>
+          <Text style={styles.retryText}>Retry</Text>
+        </Pressable>
       </View>
     );
   }
-
-  const { user, stats, outfits } = profile;
-  const name = user?.name || user?.full_name || 'User';
-  const avatarUrl = user?.avatar_url;
-
-  const renderItem = ({ item }) => (
-    <FeedCard
-      item={item}
-      onReact={(id, emoji) => addReaction(id, emoji)}
-      onRate={(id, score) => rateOutfit(id, score)}
-      onOpenComments={setCommentsItem}
-      onToggleFavorite={toggleFavoriteShared}
-      onUnshare={isSelf ? handleUnshare : undefined}
-      onOpenProfile={(userId) => navigation.navigate('Profile', { userId })}
-    />
-  );
 
   return (
-    <View style={{ flex: 1, backgroundColor: palette.background }}>
-      <FlatList
-        data={outfits || []}
-        keyExtractor={(o) => String(o?.id || Math.random())}
-        renderItem={renderItem}
-        ListHeaderComponent={
-          <View style={{ padding: 20 }}>
-            {/* Avatar + name */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 20 }}>
-              <View style={{ position: 'relative' }}>
-                <View style={{
-                  width: 80, height: 80, borderRadius: 40,
-                  backgroundColor: palette.primary,
-                  alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-                }}>
-                  {avatarUrl ? (
-                    <Image source={{ uri: avatarUrl }} style={{ width: 80, height: 80 }} />
-                  ) : (
-                    <Text style={{ color: '#fff', fontWeight: '800', fontSize: 28 }}>
-                      {name.charAt(0).toUpperCase()}
-                    </Text>
-                  )}
-                </View>
-                {isSelf && (
-                  <Pressable
-                    onPress={pickAvatar}
-                    style={{
-                      position: 'absolute', bottom: -4, right: -4,
-                      width: 28, height: 28, borderRadius: 14,
-                      backgroundColor: palette.primary,
-                      alignItems: 'center', justifyContent: 'center',
-                      borderWidth: 2, borderColor: palette.surface,
-                    }}
-                  >
-                    {uploading ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <Ionicons name="camera" size={14} color="#fff" />
-                    )}
-                  </Pressable>
-                )}
-              </View>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Text style={{ fontSize: 22, fontWeight: '800', color: palette.text }} numberOfLines={1}>
-                    {name}
-                  </Text>
-                  {user?.is_self && (
-                    <View style={{ backgroundColor: palette.primarySoft, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 }}>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: palette.primary }}>You</Text>
-                    </View>
-                  )}
-                </View>
-                {isSelf && avatarUrl && (
-                  <Pressable onPress={deleteAvatar} style={{ marginTop: 6 }}>
-                    <Text style={{ fontSize: 12, color: palette.danger, fontWeight: '600' }}>
-                      Remove avatar
-                    </Text>
-                  </Pressable>
-                )}
-              </View>
-            </View>
+    <View style={styles.screen}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <Pressable onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Text style={styles.backText}>← Back</Text>
+        </Pressable>
 
-            {/* Stats row */}
-            <View style={{
-              flexDirection: 'row', gap: 8,
-              marginBottom: 20,
-            }}>
-              {[
-                { label: 'SHARED', value: stats?.total_shared ?? 0 },
-                { label: 'AVG RATING', value: stats?.average_rating != null ? Number(stats.average_rating).toFixed(1) : '-' },
-                { label: 'RATINGS', value: stats?.total_ratings_received ?? 0 },
-                { label: 'FAVORITES', value: stats?.total_favorites_received ?? 0 },
-              ].map((s) => (
-                <View key={s.label} style={{
-                  flex: 1, borderWidth: 1, borderColor: palette.border,
-                  backgroundColor: palette.surface,
-                  borderRadius: 12, padding: 12, alignItems: 'center',
-                }}>
-                  <Text style={{ fontSize: 20, fontWeight: '800', color: palette.primary }}>{s.value}</Text>
-                  <Text style={{ fontSize: 10, color: palette.textMuted, marginTop: 2, fontWeight: '700', letterSpacing: 0.5 }}>
-                    {s.label}
-                  </Text>
-                </View>
-              ))}
-            </View>
+        <View style={styles.profileHeader}>
+          <Pressable style={styles.avatar} onPress={handleAvatarPress} disabled={!isSelfProfile}>
+            {profilePhotoUri ? (
+              <Image source={{ uri: profilePhotoUri }} style={styles.avatarImage} />
+            ) : (
+              <LinearGradient
+                colors={AVATAR_GRADIENT}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.avatarGradient}
+              >
+                <Text style={styles.avatarText}>{initials}</Text>
+              </LinearGradient>
+            )}
+            {isSelfProfile ? (
+              <View style={styles.avatarEditBadge}>
+                <Ionicons name="camera" size={12} color="#fff" />
+              </View>
+            ) : null}
+          </Pressable>
+          <View style={styles.profileInfo}>
+            <Text style={styles.name}>{fullName}</Text>
+            {profile?.user?.is_self ? <Text style={styles.youBadge}>You</Text> : null}
+          </View>
+        </View>
 
-            <Text style={{ fontSize: 16, fontWeight: '700', color: palette.text }}>Shared Outfits</Text>
+        <View style={styles.statsRow}>
+          <StatCard label="Shared" value={stats.total_shared} />
+          <StatCard label="Avg Rating" value={stats.average_rating} />
+          <StatCard label="Ratings" value={stats.total_ratings_received} />
+          <StatCard label="Favorites" value={stats.total_favorites_received} />
+        </View>
+
+        <Text style={styles.sectionTitle}>Shared Outfits</Text>
+        {outfits.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <Text style={styles.emptyText}>No shared outfits yet.</Text>
           </View>
-        }
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 80 }}
-        ListEmptyComponent={
-          <View style={{ alignItems: 'center', padding: 40 }}>
-            <Text style={{ color: palette.textMuted }}>No shared outfits yet.</Text>
+        ) : (
+          <View style={styles.feedList}>
+            {outfits.map((item) => (
+              <FeedCard
+                key={item?.id || item?._id}
+                item={item}
+                onReact={async (shareId, emojiType) => {
+                  await apiService.addReaction(shareId, emojiType);
+                  await loadProfile();
+                }}
+                onRate={async (shareId, score) => {
+                  await apiService.rateOutfit(shareId, score);
+                  await loadProfile();
+                }}
+                onOpenComments={(feedItem) => {
+                  setSelectedFeedItem(feedItem);
+                  setCommentsOpen(true);
+                }}
+                onDeleteShare={(feedItem, sharedOutfitId) => {
+                  const targetId = String(sharedOutfitId || feedItem?.id || feedItem?._id || '');
+                  if (!targetId) return;
+                  Alert.alert('Delete shared outfit', 'This will remove your outfit from community. Continue?', [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Delete',
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          await apiService.unshareOutfit(targetId);
+                          await loadProfile();
+                        } catch (e) {
+                          Alert.alert('Delete failed', e?.message || 'Could not delete shared outfit.');
+                        }
+                      },
+                    },
+                  ]);
+                }}
+                forceShowDelete={isSelfProfile}
+              />
+            ))}
           </View>
-        }
-        ItemSeparatorComponent={() => <View style={{ height: 14 }} />}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={palette.primary} />}
+        )}
+      </ScrollView>
+
+      <CommentsModal
+        visible={commentsOpen}
+        onClose={() => {
+          setCommentsOpen(false);
+          setTimeout(() => setSelectedFeedItem(null), 250);
+        }}
+        shareItem={selectedFeedItem}
+        onCommentAdded={(id) => updateCommentCount(id, 1)}
+        onCommentDeleted={(id) => updateCommentCount(id, -1)}
       />
-
-      <CommentsModal visible={!!commentsItem} onClose={() => setCommentsItem(null)} shareItem={commentsItem} />
     </View>
   );
 }
+
+function StatCard({ label, value }) {
+  return (
+    <View style={styles.statCard}>
+      <Text style={styles.statValue}>{value}</Text>
+      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: palette.background,
+  },
+  content: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
+  loadingRoot: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: palette.background,
+    padding: spacing.xl,
+    gap: spacing.xs + 2,
+  },
+  loadingText: {
+    ...type.label,
+    color: palette.textMuted,
+  },
+  loadingSkeletons: {
+    width: '100%',
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  errorText: {
+    color: palette.danger,
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  retryButton: {
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xs + 2,
+    backgroundColor: palette.primary,
+    ...shadow.soft,
+  },
+  retryText: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    marginBottom: spacing.md,
+    paddingVertical: 4,
+  },
+  backText: {
+    color: palette.textMuted,
+    ...type.label,
+    fontWeight: '700',
+  },
+  profileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  avatar: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarGradient: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    color: '#fff',
+    fontSize: 26,
+    fontWeight: '900',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    right: 2,
+    bottom: 2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: palette.primaryStrong,
+    borderWidth: 1,
+    borderColor: '#fff',
+  },
+  name: {
+    color: palette.text,
+    ...type.h1,
+    fontWeight: '900',
+  },
+  profileInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
+  },
+  youBadge: {
+    fontSize: 11,
+    fontWeight: '700',
+    backgroundColor: palette.borderStrong,
+    color: palette.primaryStrong,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.sm,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs + 2,
+    marginBottom: spacing.xl,
+  },
+  statCard: {
+    flex: 1,
+    minWidth: 75,
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: 8,
+    borderRadius: radius.md,
+    backgroundColor: palette.surfaceElevated,
+    borderWidth: 1,
+    borderColor: palette.border,
+    ...shadow.soft,
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: palette.primary,
+  },
+  statLabel: {
+    width: '100%',
+    fontSize: 10,
+    fontWeight: '700',
+    color: palette.textMuted,
+    letterSpacing: 0.3,
+    textAlign: 'center',
+  },
+  sectionTitle: {
+    ...type.h2,
+    color: palette.text,
+    marginBottom: spacing.sm,
+  },
+  emptyBox: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceElevated,
+    paddingVertical: 26,
+    alignItems: 'center',
+    ...shadow.soft,
+  },
+  emptyText: {
+    color: palette.textMuted,
+    ...type.body,
+  },
+  feedList: {
+    gap: spacing.sm,
+  },
+});

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator, Alert, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import useAuthStore from '../../store/authStore';
 import { palette } from '../../theme/colors';
+import { authStyles } from './authStyles';
 
 export default function VerifyLoginScreen({ navigation, route }) {
   const verifyLoginOtp = useAuthStore((s) => s.verifyLoginOtp);
@@ -50,12 +51,12 @@ export default function VerifyLoginScreen({ navigation, route }) {
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
       <View style={{ flex: 1, padding: 20, justifyContent: 'center', gap: 12, backgroundColor: palette.background }}>
-        <View style={{ alignItems: 'center', marginBottom: 8, gap: 8 }}>
-          <Text style={{ fontSize: 28, fontWeight: '700', color: palette.text }}>Verify Login</Text>
-          <Text style={{ color: palette.textMuted, textAlign: 'center', lineHeight: 22 }}>{helperText}</Text>
+        <View style={authStyles.titleWrap}>
+          <Text style={authStyles.title}>Verify Login</Text>
+          <Text style={authStyles.helperText}>{helperText}</Text>
         </View>
 
-        <Text style={{ color: palette.text, fontWeight: '600' }}>Verification Code</Text>
+        <Text style={authStyles.label}>Verification Code</Text>
         <TextInput
           value={code}
           onChangeText={(value) => {
@@ -72,12 +73,8 @@ export default function VerifyLoginScreen({ navigation, route }) {
           maxLength={6}
           placeholderTextColor={palette.textMuted}
           style={{
-            borderWidth: 1,
+            ...authStyles.input,
             borderColor: palette.borderStrong,
-            padding: 12,
-            borderRadius: 10,
-            backgroundColor: palette.surface,
-            color: palette.text,
             letterSpacing: 8,
             textAlign: 'center',
             fontSize: 22,
@@ -85,22 +82,22 @@ export default function VerifyLoginScreen({ navigation, route }) {
           }}
         />
 
-        {error ? <Text style={{ color: palette.danger }}>{error}</Text> : null}
+        {error ? <Text style={authStyles.errorText}>{error}</Text> : null}
 
         <Pressable
           onPress={onSubmit}
           disabled={isLoading}
-          style={{ padding: 14, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: palette.primary, backgroundColor: palette.primary }}
+          style={authStyles.button}
         >
-          {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={{ fontWeight: '700', color: '#fff' }}>Verify</Text>}
+          {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={authStyles.buttonText}>Verify</Text>}
         </Pressable>
 
-        <Pressable onPress={onResend} disabled={isLoading} style={{ alignItems: 'center', marginTop: 8 }}>
-          <Text style={{ color: palette.primaryStrong, fontWeight: '600' }}>Resend Code</Text>
+        <Pressable onPress={onResend} disabled={isLoading} style={authStyles.secondaryLink}>
+          <Text style={authStyles.secondaryLinkText}>Resend Code</Text>
         </Pressable>
 
-        <Pressable onPress={() => navigation.replace('Login', { email })} disabled={isLoading} style={{ alignItems: 'center', marginTop: 4 }}>
-          <Text style={{ color: palette.primaryStrong, fontWeight: '600' }}>Back to Login</Text>
+        <Pressable onPress={() => navigation.replace('Login', { email })} disabled={isLoading} style={authStyles.secondaryLink}>
+          <Text style={authStyles.secondaryLinkText}>Back to Login</Text>
         </Pressable>
       </View>
     </TouchableWithoutFeedback>

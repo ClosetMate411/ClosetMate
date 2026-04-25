@@ -1,14 +1,16 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Pressable, Modal, Alert, Image as RNImage } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, Pressable, Alert, Image as RNImage } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Asset } from 'expo-asset';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import useWardrobeStore from '../../store/wardrobeStore';
+import useAuthStore from '../../store/authStore';
 import apiService from '../../services/api.service';
 import LoadingOverlay from './components/LoadingOverlay';
 import ProcessingError from './components/ProcessingError';
 import ClothingGrid from './components/ClothingGrid';
-import OptionalDetailsForm from './components/OptionalDetailsForm';
+
 import ImageConfirmation from './components/ImageConfirmation';
 import EmptyWardrobe from './components/EmptyWardrobe';
 import { palette } from '../../theme/colors';
@@ -43,6 +45,8 @@ export default function WardrobeScreen() {
   const removeItem = useWardrobeStore((s) => s.removeItem);
   const setAiLabels = useWardrobeStore((s) => s.setAiLabels);
   const aiLabels = useWardrobeStore((s) => s.aiLabels);
+  const rawUser = useAuthStore((s) => s.user);
+  const authUser = rawUser?.user && typeof rawUser.user === 'object' ? rawUser.user : rawUser;
 
   const [uploadState, setUploadState] = useState('idle'); // idle|processing|saving|updating|deleting|error|confirming
   const [pickedAsset, setPickedAsset] = useState(null); // ImagePicker asset
@@ -51,17 +55,41 @@ export default function WardrobeScreen() {
   const [processingError, setProcessingError] = useState('');
   const [showUploadInterface, setShowUploadInterface] = useState(false);
   const [uploadValidationError, setUploadValidationError] = useState('');
+  const [wardrobeStats, setWardrobeStats] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(false);
 
-  const [detailsOpen, setDetailsOpen] = useState(false);
+
   const [selectedItem, setSelectedItem] = useState(null);
   const [isEditingItem, setIsEditingItem] = useState(false);
   const abortControllerRef = useRef(null);
+  const displayName = useMemo(
+    () => authUser?.full_name || authUser?.fullName || authUser?.name || authUser?.username || 'Your',
+    [authUser]
+  );
+  const totalPieces = wardrobeStats?.total_items ?? items.length ?? 0;
+
+  const fetchWardrobeStats = useCallback(async () => {
+    setStatsLoading(true);
+    try {
+      const res = await apiService.getWardrobeStats();
+      setWardrobeStats(res?.data || null);
+    } catch {
+      setWardrobeStats(null);
+    } finally {
+      setStatsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     (async () => {
-      try { await fetchItems(); } catch (e) { Alert.alert('Error', e.message || 'Failed to load wardrobe'); }
+      try {
+        await fetchItems({ force: true });
+        await fetchWardrobeStats();
+      } catch (e) {
+        Alert.alert('Error', e.message || 'Failed to load wardrobe');
+      }
     })();
-  }, [fetchItems]);
+  }, [fetchItems, fetchWardrobeStats]);
 
   // Load AI labels from outfits if not already loaded
   useEffect(() => {
@@ -89,7 +117,7 @@ export default function WardrobeScreen() {
           }
         }
         if (Object.keys(labels).length > 0) setAiLabels(labels);
-      } catch {}
+      } catch { }
     })();
   }, [aiLabels, setAiLabels]);
 
@@ -275,30 +303,28 @@ export default function WardrobeScreen() {
     }
   };
 
-  const confirmProcessed = () => {
+  const confirmProcessed = async () => {
     setUploadState('idle');
-    setDetailsOpen(true);
+    await saveItem();
   };
 
-  const saveItem = async (skipDetails = false, details) => {
+  const saveItem = async () => {
     if (!pickedAsset) return;
 
-    setDetailsOpen(false);
     setUploadState('saving');
 
     try {
       const file = toUploadFile(pickedAsset);
-      const resolvedName = skipDetails ? '' : (details?.itemName ?? '');
-      const resolvedSeason = skipDetails ? '' : (details?.weather ?? '');
 
-      await addItem(file, resolvedName, resolvedSeason);
+      await addItem(file, '', '');
+      await fetchWardrobeStats();
       if (processedImageUrl) {
         setSelectedItem((prev) => (prev ? { ...prev, image: processedImageUrl } : prev));
       }
 
       clearUploadFlow();
 
-      Alert.alert('Saved', 'Item saved successfully!');
+      Alert.alert('Saved', 'Item saved successfully! AI will generate a name automatically.');
     } catch (e) {
       clearUploadFlow();
       Alert.alert('Save failed', e.message || 'Failed to save item');
@@ -315,6 +341,7 @@ export default function WardrobeScreen() {
           try {
             setUploadState('deleting');
             await removeItem(id);
+            await fetchWardrobeStats();
             if (selectedItem?.id === id) {
               setSelectedItem(null);
               setIsEditingItem(false);
@@ -382,12 +409,52 @@ export default function WardrobeScreen() {
 
   return (
     <View style={{ flex: 1, padding: 16, gap: 10, backgroundColor: palette.background }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Text style={{ fontSize: 22, fontWeight: '800', color: palette.text }}>Wardrobe</Text>
-        <Pressable onPress={openUploadInterface} style={{ paddingVertical: 10, paddingHorizontal: 12, borderWidth: 1, borderRadius: 10, borderColor: palette.primary, backgroundColor: palette.primary }}>
-          <Text style={{ color: '#fff', fontWeight: '700' }}>Add</Text>
-        </Pressable>
-      </View>
+      <LinearGradient
+        colors={['#22163b', '#2a1d44', '#241837']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{
+          borderRadius: 22,
+          paddingVertical: 20,
+          paddingHorizontal: 16,
+          overflow: 'hidden',
+        }}
+      >
+        <View style={{ position: 'absolute', left: -20, top: 30, width: 180, height: 120, borderRadius: 90, backgroundColor: 'rgba(139,92,246,0.22)' }} />
+        <View style={{ position: 'absolute', right: -20, top: 12, width: 140, height: 100, borderRadius: 70, backgroundColor: 'rgba(124,58,237,0.25)' }} />
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <View style={{ flex: 1 }}>
+            <Text numberOfLines={1} style={{ color: '#d8ccff', fontSize: 28, lineHeight: 32, fontWeight: '800' }}>
+              {displayName}'s
+            </Text>
+            <Text numberOfLines={1} style={{ color: '#fff', fontSize: 28, lineHeight: 32, fontWeight: '800' }}>
+              Wardrobe
+            </Text>
+            <Text style={{ color: 'rgba(216,204,255,0.85)', fontSize: 15, marginTop: 6, fontWeight: '700' }}>
+              {statsLoading ? 'Loading pieces...' : `${totalPieces} pieces`}
+            </Text>
+            <Text style={{ color: 'rgba(216,204,255,0.45)', fontSize: 10, marginTop: 18, fontWeight: '700', letterSpacing: 0.8 }}>
+              CLICK ANY ITEM TO VIEW OR EDIT IT
+            </Text>
+          </View>
+          <Pressable
+            onPress={openUploadInterface}
+            style={{
+              borderRadius: 24,
+              backgroundColor: '#8b5cf6',
+              paddingHorizontal: 18,
+              paddingVertical: 12,
+              shadowColor: '#8b5cf6',
+              shadowOpacity: 0.45,
+              shadowRadius: 14,
+              shadowOffset: { width: 0, height: 8 },
+              elevation: 7,
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>+ Add Item</Text>
+          </Pressable>
+        </View>
+      </LinearGradient>
 
       {showUploadInterface ? (
         <View style={{ borderWidth: 1, borderColor: palette.border, borderRadius: 14, padding: 14, gap: 10, backgroundColor: palette.surface }}>
@@ -446,22 +513,7 @@ export default function WardrobeScreen() {
         />
       )}
 
-      {/* Optional Details Modal */}
-      <Modal visible={detailsOpen} transparent animationType="slide" onRequestClose={() => setDetailsOpen(false)}>
-        <View style={{ flex: 1, backgroundColor: palette.overlay, justifyContent: 'flex-end' }}>
-          <View style={{ backgroundColor: palette.surface, padding: 16, borderTopLeftRadius: 18, borderTopRightRadius: 18, gap: 10 }}>
-            <Text style={{ fontSize: 18, fontWeight: '800', color: palette.text }}>Optional Details</Text>
-            <OptionalDetailsForm
-              onSave={(details) => saveItem(false, details)}
-              onSkip={() => saveItem(true)}
-            />
 
-            <Pressable onPress={() => setDetailsOpen(false)} style={{ padding: 12, borderWidth: 1, borderRadius: 10, alignItems: 'center', borderColor: palette.borderStrong, backgroundColor: palette.surfaceSoft }}>
-              <Text style={{ color: palette.text }}>Close</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
 
     </View>
   );

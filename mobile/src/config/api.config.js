@@ -12,57 +12,45 @@ if (__DEV__) {
 }
 
 export const API_ENDPOINTS = {
-  // Health
   healthAll: '/api/health/all',
-
-  // Images
   processImage: '/api/images/process',
 
-  // Auth
   register: '/api/auth/register',
   login: '/api/auth/login',
   verifyLogin: '/api/auth/verify-login',
-  verifyEmail: '/api/auth/verify-email',
-  verifyRegistration: '/api/auth/verify-email',
+  refresh: '/api/auth/refresh',
   logout: '/api/auth/logout',
   me: '/api/auth/me',
   avatar: '/api/auth/avatar',
   forgotPassword: '/api/auth/forgot-password',
   resetPassword: '/api/auth/reset-password',
   resendCode: '/api/auth/resend-code',
-  refresh: '/api/auth/refresh',
+  verifyRegistration: '/api/auth/verify-email',
 
-  // Wardrobe
   items: '/api/wardrobe/items',
   item: (id) => `/api/wardrobe/items/${id}`,
-  verifyImage: '/api/wardrobe/verify-image',
 
-  // Outfits
   outfits: '/api/outfits',
   outfit: (id) => `/api/outfits/${id}`,
+  saveOutfit: '/api/outfits/save',
   favoriteOutfit: (id) => `/api/outfits/${id}/favorite`,
   generateOutfits: '/api/outfits/generate',
-  saveOutfit: '/api/outfits/save',
   wardrobeStats: '/api/outfits/wardrobe/stats',
-  itemAttributes: (id) => `/api/outfits/items/${id}/attributes`,
-  reanalyzeItem: (id) => `/api/outfits/items/${id}/reanalyze`,
 
-  // Community
   communityFeed: '/api/community/feed',
   communityTopRated: '/api/community/top-rated',
-  communityNotifications: '/api/community/notifications',
-  communityNotificationsRead: '/api/community/notifications/read',
   communityFavorites: '/api/community/favorites',
-  communityFavorite: (sharedOutfitId) => `/api/community/${sharedOutfitId}/favorite`,
+  communityNotifications: '/api/community/notifications',
+  communityMarkNotificationsRead: '/api/community/notifications/read',
   communityUserSearch: '/api/community/users/search',
-  communityUserProfile: (userId) => `/api/community/users/${userId}`,
+  communityUserProfile: (id) => `/api/community/users/${id}`,
   communityShare: '/api/community/share',
-  communityUnshare: (sharedOutfitId) => `/api/community/${sharedOutfitId}`,
-  communityRate: (sharedOutfitId) => `/api/community/${sharedOutfitId}/rate`,
-  communityReact: (sharedOutfitId) => `/api/community/${sharedOutfitId}/react`,
-  communityComments: (sharedOutfitId) => `/api/community/${sharedOutfitId}/comments`,
-  communityComment: (commentId) => `/api/community/comments/${commentId}`,
-  communityDeleteComment: (commentId) => `/api/community/comments/${commentId}`,
+  communityUnshare: (id) => `/api/community/${id}`,
+  communityToggleFavorite: (id) => `/api/community/${id}/favorite`,
+  communityReact: (id) => `/api/community/${id}/react`,
+  communityRate: (id) => `/api/community/${id}/rate`,
+  communityComments: (id) => `/api/community/${id}/comments`,
+  communityDeleteComment: (id) => `/api/community/comments/${id}`,
 };
 
 export default API_CONFIG;
