@@ -203,9 +203,16 @@ VALID_SUBCATEGORIES = {
     "activewear": ["sports-bra", "athletic-shorts", "track-pants",
                    "compression-top", "yoga-pants", "jersey"],
     "accessory": ["hat", "scarf", "belt", "tie", "bow-tie", "watch",
-                  "bag", "backpack", "sunglasses", "gloves",
-                  "jewelry",
-                  "necklace", "bracelet", "earrings", "ring"],
+                  # Bag family — kept aligned with _BAG_SUBCATEGORIES so
+                  # outfit generation can route them to the BAG category
+                  # rather than dropping them into a generic ACCESSORY slot.
+                  "bag", "backpack", "tote", "clutch", "purse", "handbag", "crossbody",
+                  # Eyewear
+                  "sunglasses", "glasses", "eyeglasses",
+                  "gloves",
+                  # Jewelry — `jewelry` stays as the catch-all so the
+                  # validator never has to fall back to "hat".
+                  "jewelry", "necklace", "bracelet", "earrings", "ring", "anklet", "brooch"],
     "swimwear": ["bikini", "one-piece", "swim-trunks", "board-shorts"],
 }
 
