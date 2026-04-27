@@ -1409,16 +1409,22 @@ async def create_item(
     db.refresh(item)
     logger.info(f"Create item: saved to DB with id {item.id} (name='{ai_name}', season='{ai_season}')")
 
-    # If we got a full analysis, persist attributes to the outfit_service so
-    # future outfit generation works without another Gemini call
-    if analysis_attrs:
-        asyncio.create_task(
-            trigger_clothing_analysis(
-                item_id=item.id,
-                user_id=current_user.id,
-                image_url=item.image_url,
-            )
+    # Always fire the async analysis backfill, regardless of whether the
+    # synchronous pre-save analysis succeeded. The sync call's only job is to
+    # catch moderation rejection up front; if it fails for any other reason
+    # (Gemini timeout, malformed JSON, safety filter on a branded item)
+    # the item is saved with "Untitled" placeholders, and the async retry
+    # below patches both `clothing_attributes` and the items row's
+    # name / season columns once analysis finally succeeds. Without this
+    # second attempt, jewelry and other items that occasionally trip
+    # Gemini's safety filters are stuck at "Untitled" forever.
+    asyncio.create_task(
+        trigger_clothing_analysis(
+            item_id=item.id,
+            user_id=current_user.id,
+            image_url=item.image_url,
         )
+    )
 
     payload = serialize_item(item)
     if bg_removal_quality:

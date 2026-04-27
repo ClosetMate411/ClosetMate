@@ -203,7 +203,9 @@ VALID_SUBCATEGORIES = {
     "activewear": ["sports-bra", "athletic-shorts", "track-pants",
                    "compression-top", "yoga-pants", "jersey"],
     "accessory": ["hat", "scarf", "belt", "tie", "bow-tie", "watch",
-                  "bag", "sunglasses", "gloves", "jewelry"],
+                  "bag", "backpack", "sunglasses", "gloves",
+                  "jewelry",
+                  "necklace", "bracelet", "earrings", "ring"],
     "swimwear": ["bikini", "one-piece", "swim-trunks", "board-shorts"],
 }
 
