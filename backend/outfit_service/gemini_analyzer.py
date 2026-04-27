@@ -652,6 +652,75 @@ class GeminiClothingAnalyzer:
                 "layer": "gemini_fallback",
             }
 
+    async def moderate_image(self, image_bytes: bytes, mime_type: str = "image/png") -> dict:
+        """Lightweight pre-flight moderation check on a RAW (pre-bg-removal)
+        clothing upload. Decides only one question — is this picture in the
+        ClosetMate domain (clothing, footwear, fashion accessory, jewelry,
+        eyewear, bag) — so we can short-circuit BiRefNet for selfies, food,
+        screenshots, animals, and other off-topic uploads before spending
+        3-8 seconds on background removal.
+
+        Returns: {"passed": bool, "rejection_reason": str | None}.
+        Fail-OPEN if Gemini is unreachable or returns malformed output, so
+        a transient hiccup never blocks a legitimate upload.
+        """
+        prompt = (
+            "You are a domain gatekeeper for ClosetMate, a wardrobe / outfit "
+            "management app. Decide ONLY whether the image is in-scope for "
+            "this app.\n\n"
+            "IN-SCOPE (passed=true):\n"
+            "- Any single clothing item: top, bottom, dress, outerwear, "
+            "swimwear, activewear.\n"
+            "- Any footwear item.\n"
+            "- Any fashion accessory: hat, scarf, belt, tie, gloves, watch, "
+            "any bag (handbag, tote, clutch, backpack, crossbody, purse), "
+            "sunglasses or optical glasses, any jewelry (necklace, bracelet, "
+            "earrings, ring, anklet, brooch).\n\n"
+            "OUT-OF-SCOPE (passed=false):\n"
+            "- People, faces, selfies, group photos.\n"
+            "- Food, drinks, animals, plants, vehicles, landscapes.\n"
+            "- Screenshots, memes, documents, charts, text-only images.\n"
+            "- Random objects (electronics, toys, tools, books, furniture, "
+            "household items).\n"
+            "- Adult / explicit / violent content.\n\n"
+            "If the image shows a person WEARING a single garment that is "
+            "the clear focus, treat the garment as in-scope; if the focus is "
+            "the person rather than the garment, treat it as out-of-scope.\n\n"
+            "Respond with ONLY this JSON (no markdown, no commentary):\n"
+            "{\"passed\": true_or_false, "
+            "\"rejection_reason\": \"short technical reason or null\"}"
+        )
+
+        image_part = {
+            "mime_type": mime_type,
+            "data": base64.b64encode(image_bytes).decode("utf-8"),
+        }
+
+        try:
+            response = await self.text_moderation_model.generate_content_async(
+                [prompt, image_part]
+            )
+            try:
+                result = json.loads(response.text)
+            except json.JSONDecodeError:
+                result = json.loads(repair_json(response.text))
+
+            if not isinstance(result.get("passed"), bool):
+                logger.warning(
+                    f"Malformed image-moderation response (failing OPEN): {str(result)[:200]}"
+                )
+                return {"passed": True, "rejection_reason": None}
+
+            return {
+                "passed": bool(result.get("passed")),
+                "rejection_reason": result.get("rejection_reason"),
+            }
+        except Exception as e:
+            # Fail-open: a transient Gemini error must not block a real upload.
+            logger.warning(f"Image moderation skipped (Gemini error): {e}")
+            return {"passed": True, "rejection_reason": None}
+
+
     async def analyze_clothing(self, image_bytes: bytes, mime_type: str = "image/png") -> dict:
         """
         Analyze a clothing image and return structured attributes.

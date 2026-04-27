@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
+import httpx
 import numpy as np
 from fastapi import FastAPI, UploadFile, File, Header, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -52,6 +53,7 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGORITHM = "HS256"
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
+OUTFIT_SERVICE_URL = os.getenv("OUTFIT_SERVICE_URL", "http://localhost:3003")
 
 
 def require_user_or_internal(
@@ -339,6 +341,37 @@ async def process_image(
     content = await image.read()
     if len(content) > MAX_FILE_SIZE:
         return create_error_response("FILE_TOO_LARGE", "File exceeds 10MB limit")
+
+    # ── Pre-flight Gemini moderation on the RAW upload ─────────────────────
+    # Reject obviously off-topic images (selfies, food, screenshots, random
+    # objects) BEFORE running BiRefNet, so we don't waste 3-8 seconds and
+    # produce a useless processed file the user will only end up rejecting
+    # at the confirm screen anyway. Fail-OPEN: a transient outfit_service
+    # error must not block legitimate uploads — the post-bg-removal
+    # moderation in /analyze still runs as defense-in-depth.
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{OUTFIT_SERVICE_URL}/moderate/image",
+                files={"image": (image.filename or "upload", content, image.content_type or "image/png")},
+                headers={"X-API-Key": INTERNAL_API_KEY or ""},
+            )
+            if resp.status_code == 200:
+                mod = resp.json()
+                if mod.get("success") and mod.get("passed") is False:
+                    reason = mod.get("rejection_reason") or "Image is not a clothing item, footwear, or fashion accessory."
+                    logger.info(f"Pre-flight moderation rejected upload: {reason}")
+                    return create_error_response(
+                        "NOT_FASHION",
+                        "This image was not recognised as a clothing item, footwear, or fashion accessory. Please upload an image of the garment or accessory itself.",
+                        400,
+                    )
+            else:
+                logger.warning(
+                    f"Pre-flight moderation returned {resp.status_code}; proceeding with bg removal"
+                )
+    except Exception as e:
+        logger.warning(f"Pre-flight moderation skipped (outfit_service unreachable): {e}")
 
     try:
         file_id = str(uuid.uuid4())

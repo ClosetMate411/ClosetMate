@@ -18,7 +18,7 @@ import logging
 from datetime import datetime
 from typing import Optional, List, Literal
 
-from fastapi import FastAPI, Depends, HTTPException, Header, Query, Request
+from fastapi import FastAPI, Depends, HTTPException, Header, Query, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -437,6 +437,48 @@ async def moderate_text_endpoint(
         "internal_reason": result.get("internal_reason"),
         "severity": result.get("severity"),
         "layer": result.get("layer"),
+    }
+
+
+# ============== IMAGE MODERATION (PRE-BG-REMOVAL) ==============
+
+@app.post("/moderate/image")
+async def moderate_image_endpoint(
+    image: UploadFile = File(...),
+    x_api_key: Optional[str] = Header(None),
+):
+    """Lightweight Gemini-based domain check on a RAW upload.
+
+    Called by image_processing_service BEFORE BiRefNet runs, so we can
+    short-circuit obvious off-topic uploads (selfies, food, screenshots,
+    random objects) without spending 3-8 seconds on background removal.
+
+    Returns: {success, passed, rejection_reason}.
+    Fails OPEN on any Gemini error so transient hiccups never block a
+    legitimate upload — a fuller second-pass moderation still runs after
+    bg-removal in /analyze.
+    """
+    if not verify_internal_request(x_api_key):
+        return create_error_response("UNAUTHORIZED", "Invalid API key", 401)
+
+    content = await image.read()
+    if not content:
+        return create_error_response("EMPTY_IMAGE", "Empty image upload", 400)
+
+    mime_type = image.content_type or "image/png"
+    if not mime_type.startswith("image/"):
+        mime_type = "image/png"
+
+    try:
+        result = await analyzer.moderate_image(content, mime_type)
+    except Exception as e:
+        logger.warning(f"Image moderation endpoint failed open: {e}")
+        return {"success": True, "passed": True, "rejection_reason": None}
+
+    return {
+        "success": True,
+        "passed": result.get("passed", True),
+        "rejection_reason": result.get("rejection_reason"),
     }
 
 
