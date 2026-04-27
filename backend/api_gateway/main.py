@@ -7,6 +7,7 @@ Docs at /docs are public (discovery is allowed). Each endpoint's own
 auth dependency controls execution. /api/admin/* additionally requires
 role=admin in the JWT claims.
 """
+import asyncio
 import os
 from typing import Optional
 
@@ -100,22 +101,28 @@ async def health_all():
 
     Intentionally does NOT expose service names, versions, database status,
     or error messages to unauthenticated callers — only a boolean aggregate.
+
+    Implementation note: downstream probes are issued *concurrently* via
+    asyncio.gather rather than sequentially, and a single AsyncClient is
+    reused for the full fan-out. A previous sequential-loop / per-call
+    AsyncClient implementation collapsed under modest concurrent load
+    because it serialised three downstream waits per request and rebuilt
+    the TCP pool every iteration.
     """
     service_urls = [WARDROBE_SERVICE_URL, IMAGE_SERVICE_URL, OUTFIT_SERVICE_URL]
-    all_healthy = True
-    for url in service_urls:
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(f"{url}/health")
-                payload = response.json()
-                if payload.get("status") != "healthy":
-                    all_healthy = False
-                    break
-        except Exception:
-            all_healthy = False
-            break
 
-    return {"success": True, "all_healthy": all_healthy}
+    async def _probe(client: httpx.AsyncClient, url: str) -> bool:
+        try:
+            response = await client.get(f"{url}/health")
+            payload = response.json()
+            return payload.get("status") == "healthy"
+        except Exception:
+            return False
+
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        results = await asyncio.gather(*(_probe(client, u) for u in service_urls))
+
+    return {"success": True, "all_healthy": all(results)}
 
 
 # ============== IMAGE PROCESSING ROUTES ==============
