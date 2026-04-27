@@ -126,28 +126,6 @@
   background: #a02553;
 }
 
-.cd-btn--reanalyze {
-  margin-top: 0.75rem;
-  padding: 0.5rem 0.875rem;
-  font-size: 0.85rem;
-  border-radius: 8px;
-  background: var(--bg-light);
-  color: var(--primary);
-  border: 1px solid var(--primary-lighter);
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
-}
-
-.cd-btn--reanalyze:hover:not(:disabled) {
-  background: var(--primary-lighter);
-  border-color: var(--primary);
-}
-
-.cd-btn--reanalyze:disabled {
-  opacity: 0.6;
-  cursor: progress;
-}
-
 /* ── 640px: stack image above info ── */
 @media (max-width: 640px) {
   .cd-root {

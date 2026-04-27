@@ -642,45 +642,6 @@ async def reanalyze_clothing_item(
     )
 
     db.add(clothing_attr)
-
-    # Mirror the AI-generated name + season back into wardrobe_service's
-    # clothing_items table so the wardrobe grid stops showing "Untitled".
-    # Only overwrites if the existing values are still the placeholder
-    # default — never clobbers a user-set name.
-    ai_name_value = attributes.get("name") or None
-    seasons_list = attributes.get("seasons") or []
-    if isinstance(seasons_list, list) and seasons_list:
-        if len(seasons_list) >= 4:
-            season_value = "All seasons"
-        else:
-            season_value = " / ".join(s for s in seasons_list)
-    else:
-        season_value = None
-
-    try:
-        if ai_name_value:
-            db.execute(
-                sa_text(
-                    "UPDATE clothing_items SET item_name = :n "
-                    "WHERE id = :id AND user_id = :u "
-                    "AND (item_name IS NULL OR item_name = 'Untitled' OR item_name = '')"
-                ),
-                {"n": ai_name_value, "id": item_id, "u": user_id},
-            )
-        if season_value:
-            db.execute(
-                sa_text(
-                    "UPDATE clothing_items SET season = :s "
-                    "WHERE id = :id AND user_id = :u "
-                    "AND (season IS NULL OR season = 'Untitled' OR season = '')"
-                ),
-                {"s": season_value, "id": item_id, "u": user_id},
-            )
-    except Exception as e:
-        # Don't fail the reanalyze if the items-table mirror update fails;
-        # the clothing_attributes row is the canonical AI result.
-        logger.warning(f"reanalyze: items-table mirror update skipped: {e}")
-
     db.commit()
     db.refresh(clothing_attr)
 

@@ -4,18 +4,12 @@ import { ConfirmModal } from "../";
 import { useModal } from "../../hooks";
 import "./ClothingDetail.css";
 
-const ClothingDetail = ({ item, onBack, onDelete, onReanalyze, reanalyzing }) => {
+const ClothingDetail = ({ item, onBack, onDelete }) => {
   const modal = useModal();
 
   const handleDelete = () => {
     onDelete();
   };
-
-  // Show the Reanalyze affordance when the AI never assigned a name —
-  // these are the cases where the synchronous Gemini call failed and
-  // the user is stuck with the placeholder.
-  const isUntitled = !item.name || item.name === "Untitled";
-  const canReanalyze = isUntitled && typeof onReanalyze === "function";
 
   return (
     <div className="cd-root">
@@ -28,16 +22,6 @@ const ClothingDetail = ({ item, onBack, onDelete, onReanalyze, reanalyzing }) =>
           <div className="cd-field">
             <span className="cd-label">Item Name</span>
             <h2 className="cd-name">{item.name}</h2>
-            {canReanalyze && (
-              <button
-                type="button"
-                className="cd-btn cd-btn--reanalyze"
-                onClick={onReanalyze}
-                disabled={reanalyzing}
-              >
-                {reanalyzing ? "Re-analysing…" : "Re-run AI analysis"}
-              </button>
-            )}
           </div>
 
           {item.weather && (
@@ -80,8 +64,6 @@ ClothingDetail.propTypes = {
   }).isRequired,
   onBack: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
-  onReanalyze: PropTypes.func,
-  reanalyzing: PropTypes.bool,
 };
 
 export default memo(ClothingDetail);

@@ -304,27 +304,6 @@ const Wardrobe = () => {
     });
   }, [modal, currentSelectedItem, handlers, showSuccess, showError, fetchItems]);
 
-  const [reanalyzing, setReanalyzing] = useState(false);
-  const handleReanalyze = useCallback(async () => {
-    if (!currentSelectedItem || reanalyzing) return;
-    setReanalyzing(true);
-    try {
-      await apiService.reanalyzeItem(currentSelectedItem.id, currentSelectedItem.image);
-      const refreshed = await useWardrobeStore.getState().fetchItems();
-      // Re-pick the same item from the refreshed store so the modal
-      // updates with the new AI-generated name without closing.
-      const updated = (refreshed || useWardrobeStore.getState().items).find(
-        (it) => it.id === currentSelectedItem.id,
-      );
-      if (updated) setSelectedItem(updated);
-      showSuccess("Item re-analysed.");
-    } catch (error) {
-      showError(error.message || "Re-analysis failed. Please try again later.");
-    } finally {
-      setReanalyzing(false);
-    }
-  }, [currentSelectedItem, reanalyzing, showSuccess, showError]);
-
   const handleAddClick = useCallback(() => setOpenModal("upload"), [setOpenModal]);
   const handleCloseUpload = useCallback(() => setOpenModal(null), [setOpenModal]);
 
@@ -488,8 +467,6 @@ const Wardrobe = () => {
                 item={currentSelectedItem}
                 onBack={handleBack}
                 onDelete={handleDelete}
-                onReanalyze={handleReanalyze}
-                reanalyzing={reanalyzing}
               />
             </motion.div>
           </motion.div>
