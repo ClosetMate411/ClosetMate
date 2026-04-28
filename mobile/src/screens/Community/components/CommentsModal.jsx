@@ -131,11 +131,12 @@ function CommentsModal({ visible, onClose, shareItem, onCommentAdded, onCommentD
 
   const handleTextChange = useCallback((value) => {
     setText(value);
-    const firstMention = value.match(/^@([A-Za-z0-9ğüşıöçĞÜŞİÖÇ._\s]+)/);
-    setReplyingTo(firstMention ? firstMention[1].trim() : null);
-    if (!firstMention) {
+    
+    if (replyingTo && !value.startsWith(`@${replyingTo}`)) {
+      setReplyingTo(null);
       setReplyToCommentId(null);
     }
+    
     const currentCursor = Math.min(cursorPos, value.length);
     const textBefore = value.slice(0, currentCursor);
     const atMatch = textBefore.match(/@([A-Za-z0-9ğüşıöçĞÜŞİÖÇ._\s]*)$/) || value.match(/@([A-Za-z0-9ğüşıöçĞÜŞİÖÇ._\s]*)$/);
@@ -147,7 +148,7 @@ function CommentsModal({ visible, onClose, shareItem, onCommentAdded, onCommentD
     }
     setMentionQuery(null);
     setMentionResults([]);
-  }, [cursorPos, runMentionSearch]);
+  }, [cursorPos, runMentionSearch, replyingTo]);
 
   const getMentionName = (user) => user?.name || user?.full_name || user?.username || 'User';
   const getMentionAvatar = (user) => user?.avatar_url || user?.avatarUrl || null;
@@ -162,8 +163,12 @@ function CommentsModal({ visible, onClose, shareItem, onCommentAdded, onCommentD
     const nextText = `${before.slice(0, atPos)}@${name} ${after}`;
     const nextPos = atPos + name.length + 2;
     setText(nextText);
-    const firstMention = nextText.match(/^@([A-Za-z0-9ğüşıöçĞÜŞİÖÇ._\s]+)/);
-    setReplyingTo(firstMention ? firstMention[1].trim() : null);
+    
+    if (replyingTo && !nextText.startsWith(`@${replyingTo}`)) {
+      setReplyingTo(null);
+      setReplyToCommentId(null);
+    }
+    
     setCursorPos(nextPos);
     setMentionQuery(null);
     setMentionResults([]);
@@ -171,7 +176,7 @@ function CommentsModal({ visible, onClose, shareItem, onCommentAdded, onCommentD
       inputRef.current?.focus();
       inputRef.current?.setNativeProps?.({ selection: { start: nextPos, end: nextPos } });
     });
-  }, [text, cursorPos]);
+  }, [text, cursorPos, replyingTo]);
 
   const handleReply = useCallback((comment) => {
     const name = comment?.user?.full_name || comment?.user?.name || 'User';

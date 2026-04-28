@@ -213,108 +213,109 @@ function ShareOutfitModal({ visible, onClose, onShare }) {
       >
         <View style={{ flex: 1, justifyContent: 'center', padding: 20 }}>
           <View style={{ backgroundColor: palette.surface, borderRadius: 22, padding: 18, maxHeight: '90%' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <Text style={{ fontSize: 22, fontWeight: '800', color: palette.text }}>Share an Outfit</Text>
-            <Pressable onPress={onClose} style={{ padding: 6 }}>
-              <Ionicons name="close" size={22} color={palette.textMuted} />
-            </Pressable>
-          </View>
-
-          {loading ? (
-            <View style={{ paddingVertical: 40, alignItems: 'center' }}>
-              <ActivityIndicator size="large" color={palette.primary} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <Text style={{ fontSize: 22, fontWeight: '800', color: palette.text }}>Share an Outfit</Text>
+              <Pressable onPress={onClose} style={{ padding: 6 }}>
+                <Ionicons name="close" size={22} color={palette.textMuted} />
+              </Pressable>
             </View>
-          ) : shareableOutfits.length === 0 ? (
-            <View style={{ paddingVertical: 40, alignItems: 'center', gap: 10 }}>
-              <Ionicons name="sparkles-outline" size={42} color={palette.borderStrong} />
-              <Text style={{ color: palette.textMuted, textAlign: 'center', lineHeight: 22 }}>
-                {outfits.length === 0
-                  ? 'You have no saved outfits yet.\nGenerate and save some first!'
-                  : 'All your outfits are already shared with the community.'}
-              </Text>
-            </View>
-          ) : (
-            <ScrollView
-              ref={bodyScrollRef}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ paddingBottom: 8 }}
-            >
-              <Text style={{ color: palette.textMuted, fontWeight: '800', fontSize: 14, letterSpacing: 1, marginBottom: 10 }}>
-                SELECT AN OUTFIT
-              </Text>
 
-              {shareableOutfits.map(renderOutfit)}
+            {loading ? (
+              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                <ActivityIndicator size="large" color={palette.primary} />
+              </View>
+            ) : shareableOutfits.length === 0 ? (
+              <View style={{ paddingVertical: 40, alignItems: 'center', gap: 10 }}>
+                <Ionicons name="sparkles-outline" size={42} color={palette.borderStrong} />
+                <Text style={{ color: palette.textMuted, textAlign: 'center', lineHeight: 22 }}>
+                  {outfits.length === 0
+                    ? 'You have no saved outfits yet.\nGenerate and save some first!'
+                    : 'All your outfits are already shared with the community.'}
+                </Text>
+              </View>
+            ) : (
+              <ScrollView
+                ref={bodyScrollRef}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 8 }}
+              >
+                <Text style={{ color: palette.textMuted, fontWeight: '800', fontSize: 14, letterSpacing: 1, marginBottom: 10 }}>
+                  SELECT AN OUTFIT
+                </Text>
 
-              <Text style={{ color: palette.textMuted, fontWeight: '800', fontSize: 14, letterSpacing: 1 }}>
-                DESCRIPTION <Text style={{ fontWeight: '500' }}>(optional)</Text>
-              </Text>
-              <TextInput
-                value={description}
-                onChangeText={(text) => setDescription(text.slice(0, 500))}
-                placeholder="Share what makes this outfit special..."
-                placeholderTextColor={palette.textMuted}
-                multiline
-                textAlignVertical="top"
-                returnKeyType="default"
-                onFocus={() => {
-                  setTimeout(() => bodyScrollRef.current?.scrollToEnd({ animated: true }), 120);
-                }}
-                style={{
-                  marginTop: 8,
-                  borderWidth: 1,
-                  borderColor: palette.border,
-                  borderRadius: 14,
-                  minHeight: 96,
-                  paddingHorizontal: 12,
-                  paddingVertical: 10,
-                  color: palette.text,
-                  fontSize: 17,
-                  backgroundColor: palette.surface,
-                }}
-              />
-              <Text style={{ alignSelf: 'flex-end', marginTop: 6, color: palette.textMuted, fontSize: 12 }}>
-                {description.length}/500
-              </Text>
+                {shareableOutfits.map(renderOutfit)}
 
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-                <Pressable
-                  onPress={onClose}
+                <Text style={{ color: palette.textMuted, fontWeight: '800', fontSize: 14, letterSpacing: 1 }}>
+                  DESCRIPTION <Text style={{ fontWeight: '500' }}>(optional)</Text>
+                </Text>
+                <TextInput
+                  value={description}
+                  onChangeText={(text) => setDescription(text.slice(0, 500))}
+                  placeholder="Share what makes this outfit special..."
+                  placeholderTextColor={palette.textMuted}
+                  multiline
+                  textAlignVertical="top"
+                  returnKeyType="default"
+                  onFocus={() => {
+                    setTimeout(() => bodyScrollRef.current?.scrollToEnd({ animated: true }), 120);
+                  }}
                   style={{
-                    flex: 1,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    height: 48,
-                    borderRadius: 14,
+                    marginTop: 8,
                     borderWidth: 1,
                     borderColor: palette.border,
-                    backgroundColor: palette.surfaceSoft,
-                  }}
-                >
-                  <Text style={{ color: palette.textMuted, fontSize: 17, fontWeight: '700' }}>Cancel</Text>
-                </Pressable>
-
-                <Pressable
-                  onPress={handleShare}
-                  disabled={!hasSelection || sharing}
-                  style={{
-                    flex: 1.4,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    height: 48,
                     borderRadius: 14,
-                    backgroundColor: (!hasSelection || sharing) ? '#d9bff2' : '#b78de3',
+                    minHeight: 96,
+                    paddingHorizontal: 12,
+                    paddingVertical: 10,
+                    color: palette.text,
+                    fontSize: 17,
+                    backgroundColor: palette.surface,
                   }}
-                >
-                  <Text style={{ color: '#fff', fontSize: 17, fontWeight: '800' }}>
-                    {sharing ? 'Sharing...' : 'Share to Community'}
-                  </Text>
-                </Pressable>
-              </View>
-            </ScrollView>
-          )}
+                />
+                <Text style={{ alignSelf: 'flex-end', marginTop: 6, color: palette.textMuted, fontSize: 12 }}>
+                  {description.length}/500
+                </Text>
+
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                  <Pressable
+                    onPress={onClose}
+                    style={{
+                      flex: 1,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      height: 48,
+                      borderRadius: 14,
+                      borderWidth: 1,
+                      borderColor: palette.border,
+                      backgroundColor: palette.surfaceSoft,
+                    }}
+                  >
+                    <Text style={{ color: palette.textMuted, fontSize: 17, fontWeight: '700' }}>Cancel</Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={handleShare}
+                    disabled={!hasSelection || sharing}
+                    style={{
+                      flex: 1.4,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      height: 48,
+                      borderRadius: 14,
+                      backgroundColor: palette.primary,
+                      opacity: (!hasSelection || sharing) ? 0.45 : 1,
+                    }}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 17, fontWeight: '800' }}>
+                      {sharing ? 'Sharing...' : 'Share to Community'}
+                    </Text>
+                  </Pressable>
+                </View>
+              </ScrollView>
+            )}
+          </View>
         </View>
-      </View>
       </KeyboardAvoidingView>
     </Modal>
   );

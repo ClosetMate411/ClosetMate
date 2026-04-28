@@ -20,18 +20,20 @@ const COMMUNITY_REFRESH_MS = 15000;
 
 const TYPE_ICON = {
   reaction: { emoji: '👍', bg: '#fff8e1' },
-  rating:   { emoji: '⭐', bg: '#fff8e1' },
-  comment:  { emoji: '💬', bg: '#f3f4f6' },
-  reply:    { emoji: '💬', bg: '#f3f4f6' },
+  rating: { emoji: '⭐', bg: '#fff8e1' },
+  comment: { emoji: '💬', bg: '#f3f4f6' },
+  reply: { emoji: '💬', bg: '#f3f4f6' },
   favorite: { emoji: '❤️', bg: '#fce7f3' },
+  mention: { emoji: '👋', bg: '#e0f2fe' },
 };
 
 const VERB = {
   reaction: 'reacted to',
-  rating:   'rated',
-  comment:  'commented on',
-  reply:    'replied to',
+  rating: 'rated',
+  comment: 'commented on',
+  reply: 'replied to',
   favorite: 'favorited',
+  mention: 'mentioned you on',
 };
 
 const formatTimeAgo = (dateStr) => {
@@ -63,6 +65,9 @@ export default function CommunityScreen({ navigation }) {
 
   const hasMore = useCommunityStore((s) => s.hasMore);
   const feedPagination = useCommunityStore((s) => s.feedPagination);
+  const topRatedPagination = useCommunityStore((s) => s.topRatedPagination);
+  const favoritePagination = useCommunityStore((s) => s.favoritePagination);
+  const notificationsPagination = useCommunityStore((s) => s.notificationsPagination);
 
   const fetchFeed = useCommunityStore((s) => s.fetchFeed);
   const refreshFeed = useCommunityStore((s) => s.refreshFeed);
@@ -91,16 +96,16 @@ export default function CommunityScreen({ navigation }) {
   }, [fetchFeed, fetchNotifications]);
 
   useEffect(() => {
-    if (activeTab === 'top-rated' && topRatedItems.length === 0 && !topRatedLoading) fetchTopRated(true);
-    if (activeTab === 'favorites' && favoriteItems.length === 0 && !favoritesLoading) fetchFavorites(true);
-    if (activeTab === 'notifications' && notifications.length === 0 && !notificationsLoading) fetchNotifications(true);
+    if (activeTab === 'top-rated' && topRatedPagination?.page === 0 && !topRatedLoading) fetchTopRated(true);
+    if (activeTab === 'favorites' && favoritePagination?.page === 0 && !favoritesLoading) fetchFavorites(true);
+    if (activeTab === 'notifications' && notificationsPagination?.page === 0 && !notificationsLoading) fetchNotifications(true);
   }, [
     activeTab,
-    topRatedItems.length,
+    topRatedPagination?.page,
     topRatedLoading,
-    favoriteItems.length,
+    favoritePagination?.page,
     favoritesLoading,
-    notifications.length,
+    notificationsPagination?.page,
     notificationsLoading,
     fetchTopRated,
     fetchFavorites,
@@ -213,10 +218,10 @@ export default function CommunityScreen({ navigation }) {
   }, [feedItems]);
 
   const renderNotification = useCallback(({ item }) => {
-    const actorName  = item?.actor?.name || 'Someone';
-    const isRead     = !!item?.is_read;
-    const typeCfg    = TYPE_ICON[item?.type] || { emoji: '🔔', bg: '#f3f4f6' };
-    const verb       = VERB[item?.type] || item?.type || 'interacted with';
+    const actorName = item?.actor?.name || 'Someone';
+    const isRead = !!item?.is_read;
+    const typeCfg = TYPE_ICON[item?.type] || { emoji: '🔔', bg: '#f3f4f6' };
+    const verb = VERB[item?.type] || item?.type || 'interacted with';
     const outfitName = item?.outfit_name || 'an outfit';
     const ratingText = item?.type === 'rating' && item?.detail ? ` ${item.detail}` : '';
 
@@ -407,7 +412,7 @@ export default function CommunityScreen({ navigation }) {
         items: favoriteItems,
         isLoading: favoritesLoading,
         loadingLabel: 'Loading favorites...',
-        emptyTitle: 'No favorites yet',
+        emptyTitle: 'There is no favorites',
         emptyDescription: 'Tap the heart on outfits you love!',
       })}
 
