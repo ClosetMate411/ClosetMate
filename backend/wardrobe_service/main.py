@@ -61,7 +61,26 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Database setup
-engine = create_engine(DATABASE_URL)
+# Hardened to prevent the import-time hang we hit on Apr 28 demo prep:
+#   connect_timeout=10  → fail fast if Postgres is unreachable instead of
+#                         blocking uvicorn from ever starting.
+#   statement_timeout=30s → if a startup migration (CREATE/ALTER) is blocked
+#                         by a lock from a previous replica that died mid-
+#                         transaction, give up after 30s so the new replica
+#                         can crash-loop instead of healthcheck-timing-out.
+#   pool_pre_ping=True   → drop stale connections before reuse so a Railway
+#                         pg restart doesn't poison the pool.
+#   pool_recycle=1800    → recycle every 30 min as a belt-and-braces guard
+#                         against silently-broken long-lived connections.
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={
+        "connect_timeout": 10,
+        "options": "-c statement_timeout=30000 -c lock_timeout=15000 -c idle_in_transaction_session_timeout=60000",
+    },
+    pool_pre_ping=True,
+    pool_recycle=1800,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

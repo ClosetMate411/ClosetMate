@@ -65,7 +65,17 @@ logger = logging.getLogger(__name__)
 
 # ============== DATABASE ==============
 
-engine = create_engine(DATABASE_URL)
+# Same hardening as wardrobe_service — fail-fast on stuck Postgres so a dead
+# replica's leftover lock can never wedge a fresh deploy in healthcheck retry.
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={
+        "connect_timeout": 10,
+        "options": "-c statement_timeout=30000 -c lock_timeout=15000 -c idle_in_transaction_session_timeout=60000",
+    },
+    pool_pre_ping=True,
+    pool_recycle=1800,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
