@@ -566,9 +566,9 @@ export default function OutfitsScreen() {
         </View>
       ) : null}
 
-      <Modal visible={detailOpen} transparent animationType="slide" onRequestClose={() => setDetailOpen(false)}>
-        <View style={{ flex: 1, backgroundColor: palette.overlay, justifyContent: 'flex-end' }}>
-          <View style={{ maxHeight: '75%', backgroundColor: palette.surfaceElevated, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, padding: spacing.md }}>
+      <Modal visible={detailOpen} transparent animationType="fade" onRequestClose={() => setDetailOpen(false)}>
+        <View style={{ flex: 1, backgroundColor: palette.overlay, justifyContent: 'center', alignItems: 'center', padding: 12 }}>
+          <View style={{ width: '100%', maxHeight: '92%', backgroundColor: palette.surfaceElevated, borderRadius: radius.lg, padding: spacing.md }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <Text style={{ fontSize: 20, fontWeight: '800', color: palette.text, flex: 1 }}>
                 {selectedOutfit?.name || 'Outfit'}
@@ -632,49 +632,39 @@ export default function OutfitsScreen() {
               ) : null}
 
               {Array.isArray(selectedOutfit?.items) && selectedOutfit.items.length > 0 ? (
-                <View style={{ gap: 12 }}>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingVertical: 4 }}>
-                    {selectedOutfit.items.map((item, idx) => {
-                      const image = getItemImage(item);
-                      return (
-                        <View
-                          key={getItemIdentifier(item) || `${idx}`}
-                          style={{
-                            width: 112,
-                            borderWidth: 1,
-                            borderColor: palette.border,
-                            borderRadius: 16,
-                            padding: 10,
-                            backgroundColor: palette.surface,
-                            alignItems: 'center',
-                            gap: 8,
-                          }}
-                        >
-                          <View style={{ width: 84, height: 84, borderRadius: 14, backgroundColor: palette.surfaceSoft, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                            {image ? (
-                              <Image source={{ uri: image }} style={{ width: 72, height: 72 }} resizeMode="contain" />
-                            ) : (
-                              <Ionicons name="shirt-outline" size={28} color={palette.textMuted} />
-                            )}
-                          </View>
-                          <Text numberOfLines={2} style={{ color: palette.text, fontWeight: '700', textAlign: 'center' }}>
-                            {getItemName(item, idx)}
-                          </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-start', gap: 8 }}>
+                  {selectedOutfit.items.map((item, idx) => {
+                    const image = getItemImage(item);
+                    return (
+                      <View
+                        key={getItemIdentifier(item) || `${idx}`}
+                        style={{
+                          width: '31.5%',
+                          borderWidth: 1,
+                          borderColor: palette.border,
+                          borderRadius: 14,
+                          padding: 8,
+                          backgroundColor: palette.surface,
+                          alignItems: 'center',
+                          gap: 6,
+                        }}
+                      >
+                        <View style={{ width: '100%', aspectRatio: 1, borderRadius: 10, backgroundColor: palette.surfaceSoft, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                          {image ? (
+                            <Image source={{ uri: image }} style={{ width: '85%', height: '85%' }} resizeMode="contain" />
+                          ) : (
+                            <Ionicons name="shirt-outline" size={26} color={palette.textMuted} />
+                          )}
                         </View>
-                      );
-                    })}
-                  </ScrollView>
-
-                  <View style={{ gap: 8 }}>
-                    {selectedOutfit.items.map((item, idx) => (
-                      <View key={item?.item_id || item?.id || `${idx}`} style={{ borderWidth: 1, borderColor: palette.border, borderRadius: radius.sm, padding: 10, backgroundColor: palette.surface }}>
-                        <Text style={{ fontWeight: '700', color: palette.text }}>{getItemName(item, idx)}</Text>
-                        <Text style={{ color: palette.textMuted }}>
-                          {item?.category || 'unknown'} / {item?.subcategory || 'unknown'} / {item?.color_primary || 'unknown'}
+                        <Text numberOfLines={2} style={{ color: palette.text, fontWeight: '700', textAlign: 'center', fontSize: 12 }}>
+                          {getItemName(item, idx)}
+                        </Text>
+                        <Text numberOfLines={1} style={{ color: palette.textMuted, fontSize: 10, textAlign: 'center' }}>
+                          {item?.category || ''}{item?.color_primary ? ` · ${item.color_primary}` : ''}
                         </Text>
                       </View>
-                    ))}
-                  </View>
+                    );
+                  })}
                 </View>
               ) : null}
             </ScrollView>

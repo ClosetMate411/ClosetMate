@@ -13,7 +13,11 @@
 
 .detail-items-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  /* auto-fit (not auto-fill) so 5/6 items spread edge-to-edge in the wide
+     modal without horizontal scroll. minmax(150px, 1fr) keeps each tile
+     readable while letting the row pack as many items as the modal width
+     allows. */
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 14px;
   background: var(--bg-light);
   padding: 18px;

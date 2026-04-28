@@ -154,13 +154,17 @@ const Outfits = () => {
         />
       </Modal>
 
-      {/* Detail Modal */}
+      {/* Detail Modal — wide so 5+ items lay out side-by-side without scroll */}
       <Modal
         opened={activeModal === 'detail'}
         onClose={() => setActiveModal(null)}
         title="Outfit Details"
         centered
-        size="lg"
+        size="90%"
+        styles={{
+          modal: { maxWidth: 1280 },
+          body: { paddingTop: 8 },
+        }}
       >
         {selectedOutfit && (
           <Stack spacing="lg">
