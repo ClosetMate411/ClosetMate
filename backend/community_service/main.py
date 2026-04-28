@@ -573,11 +573,24 @@ async def search_users(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """Search users by name for @mention autocomplete"""
-    query = db.query(UserRef).filter(UserRef.id != user_id)
+    """Search users by name for @mention autocomplete.
+
+    Empty q returns the first page of all named users alphabetically (so
+    typing "@" with no filter shows the directory, not just whoever happens
+    to be at the top of the insertion order). A typed query narrows it.
+    """
+    query = db.query(UserRef).filter(
+        UserRef.id != user_id,
+        UserRef.full_name.isnot(None),
+        UserRef.full_name != "",
+    )
     if q.strip():
-        query = query.filter(UserRef.full_name.ilike(f"%{q}%"))
-    users = query.limit(5).all()
+        query = query.filter(UserRef.full_name.ilike(f"%{q.strip()}%"))
+    users = (
+        query.order_by(UserRef.full_name.asc())
+             .limit(20)
+             .all()
+    )
 
     return {
         "success": True,
@@ -1316,21 +1329,27 @@ async def react_to_outfit(
 
     previous_emoji: Optional[str] = None
 
-    # Case 1: same emoji already exists → remove (toggle off)
+    # Whether we should send a notification on this request — only set when
+    # the user expresses positive intent (added a new emoji or switched to a
+    # different one). Toggle-off does not notify.
+    should_notify = False
+
+    # Case 1: same emoji already exists → remove (toggle off, no notification)
     if existing and existing.emoji_type == body.emoji_type:
         db.delete(existing)
         db.commit()
         action = "removed"
 
-    # Case 2: different emoji exists → switch (update in place)
+    # Case 2: different emoji exists → switch (update in place, notify)
     elif existing and existing.emoji_type != body.emoji_type:
         previous_emoji = existing.emoji_type
         existing.emoji_type = body.emoji_type
         existing.created_at = datetime.utcnow()
         db.commit()
         action = "switched"
+        should_notify = True
 
-    # Case 3: no reaction yet → add
+    # Case 3: no reaction yet → add (notify)
     else:
         reaction = Reaction(
             shared_outfit_id=shared_outfit_id,
@@ -1340,17 +1359,20 @@ async def react_to_outfit(
         db.add(reaction)
         db.commit()
         action = "added"
+        should_notify = True
 
-        # Notify owner only on add (skip self)
-        if shared.user_id != user_id:
-            db.add(Notification(
-                recipient_user_id=shared.user_id,
-                actor_user_id=user_id,
-                shared_outfit_id=shared_outfit_id,
-                type="reaction",
-                detail=body.emoji_type,
-            ))
-            db.commit()
+    # Notify owner on every positive reaction event (skip self).
+    # Without this, switching from heart→fire was silent because the
+    # notification used to live inside the "added" branch only.
+    if should_notify and shared.user_id != user_id:
+        db.add(Notification(
+            recipient_user_id=shared.user_id,
+            actor_user_id=user_id,
+            shared_outfit_id=shared_outfit_id,
+            type="reaction",
+            detail=body.emoji_type,
+        ))
+        db.commit()
 
     # Full updated scores + which emojis the user has active for optimistic UI
     scores = calculate_post_scores(db, shared_outfit_id)
@@ -1524,21 +1546,35 @@ async def add_comment(
         ))
         db.commit()
 
-    # Detect @mentions and notify mentioned users
-    import re
-    mentions = re.findall(r'@([A-Za-zğüşıöçĞÜŞİÖÇ\s]+?)(?:\s|$|[,.])', body.text)
-    for mention_name in mentions:
-        mention_name = mention_name.strip()
-        if not mention_name:
-            continue
-        mentioned_user = (
-            db.query(UserRef)
-            .filter(func.lower(UserRef.full_name) == func.lower(mention_name))
-            .first()
+    # Detect @mentions and notify mentioned users.
+    #
+    # The previous regex captured up to the first whitespace, so multi-word
+    # names (e.g. "Onurcan Genç", "Mirac Uzan") never matched the DB row and
+    # the mentioned user got no notification. Match against actual user names
+    # instead: pull the candidate set, then for each user check if
+    # "@{full_name}" appears in the comment (case-insensitive). This handles
+    # spaces, accented characters, and avoids regex false-negatives entirely.
+    candidate_users = (
+        db.query(UserRef)
+        .filter(
+            UserRef.id != user_id,
+            UserRef.full_name.isnot(None),
+            UserRef.full_name != "",
         )
-        if mentioned_user and mentioned_user.id != user_id:
+        .all()
+    )
+    # Longest-name first so "@Onurcan Genç" is matched and consumed before the
+    # "@Onurcan" prefix would otherwise hit and trigger a duplicate notify.
+    candidate_users.sort(key=lambda u: -len(u.full_name or ""))
+    working_text = body.text.lower()
+    mentioned_ids: set[str] = set()
+    for candidate in candidate_users:
+        token = f"@{candidate.full_name}".lower()
+        if token and token in working_text and candidate.id not in mentioned_ids:
+            mentioned_ids.add(candidate.id)
+            working_text = working_text.replace(token, " ")  # consume
             db.add(Notification(
-                recipient_user_id=mentioned_user.id,
+                recipient_user_id=candidate.id,
                 actor_user_id=user_id,
                 shared_outfit_id=shared_outfit_id,
                 type="reply",
