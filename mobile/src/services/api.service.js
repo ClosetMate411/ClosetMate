@@ -1,5 +1,6 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystemLegacy from 'expo-file-system/legacy';
 import { API_CONFIG, API_ENDPOINTS } from '../config/api.config';
 import { emitSessionExpired } from '../utils/sessionEvents';
 
@@ -36,6 +37,9 @@ axiosInstance.interceptors.request.use(
   async (config) => {
     const token = await AsyncStorage.getItem('token');
     if (token) config.headers.Authorization = `Bearer ${token}`;
+    if (config.data instanceof FormData) {
+      config.headers['Content-Type'] = 'multipart/form-data';
+    }
     return config;
   },
   (error) => Promise.reject(error)
@@ -158,7 +162,9 @@ axiosInstance.interceptors.response.use(
       newError.data = errorData;
       throw newError;
     }
-    throw new Error(error.message || 'Network error');
+    const baseMsg = error.message || 'Network error';
+    const codeSuffix = error.code ? ` (${error.code})` : '';
+    throw new Error(`${baseMsg}${codeSuffix}`);
   }
 );
 
@@ -245,9 +251,59 @@ class APIService {
   async deleteItem(id) { return axiosInstance.delete(API_ENDPOINTS.item(id)); }
 
   async processImage(file, signal) {
-    const f = new FormData();
-    f.append('image', file);
-    return axiosInstance.post(API_ENDPOINTS.processImage, f, { signal });
+    const token = await AsyncStorage.getItem('token');
+    const url = `${API_CONFIG.baseURL}${API_ENDPOINTS.processImage}`;
+    const task = FileSystemLegacy.createUploadTask(url, file.uri, {
+      httpMethod: 'POST',
+      uploadType: FileSystemLegacy.FileSystemUploadType.MULTIPART,
+      fieldName: 'image',
+      mimeType: file.type,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        Accept: 'application/json',
+      },
+    });
+
+    if (signal) {
+      if (signal.aborted) {
+        const err = new Error('Upload cancelled.');
+        err.code = 'ERR_CANCELED';
+        throw err;
+      }
+      const onAbort = () => { task.cancelAsync().catch(() => {}); };
+      signal.addEventListener('abort', onAbort);
+    }
+
+    let result;
+    try {
+      result = await task.uploadAsync();
+    } catch (e) {
+      throw new Error(`${e?.message || 'Upload failed'} (UPLOAD_FAIL)`);
+    }
+
+    if (!result) {
+      const err = new Error('Upload cancelled.');
+      err.code = 'ERR_CANCELED';
+      throw err;
+    }
+
+    let body;
+    try { body = JSON.parse(result.body); } catch { body = { message: result.body }; }
+
+    if (result.status >= 200 && result.status < 300) {
+      if (body && body.success === false) {
+        const msg = extractErrorMessage(body) || 'Operation failed';
+        const err = new Error(msg);
+        err.data = body;
+        throw err;
+      }
+      return body;
+    }
+
+    const msg = extractErrorMessage(body) || `Error: ${result.status}`;
+    const err = new Error(msg);
+    err.data = body;
+    throw err;
   }
 
   async getOutfits() {

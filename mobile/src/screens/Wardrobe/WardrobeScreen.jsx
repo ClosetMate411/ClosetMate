@@ -21,7 +21,7 @@ const withTimeout = (promise, ms, message) =>
     new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
   ]);
 
-const PROCESS_TIMEOUT_MS = 45000;
+const PROCESS_TIMEOUT_MS = 90000;
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const MIN_IMAGE_DIMENSION = 200;
 const MAX_IMAGE_DIMENSION = 4000;
