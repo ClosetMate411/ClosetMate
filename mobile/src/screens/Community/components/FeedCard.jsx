@@ -1,5 +1,5 @@
 import React, { memo, useMemo, useState, useEffect } from 'react';
-import { View, Text, Pressable, Image, StyleSheet, Modal, ScrollView } from 'react-native';
+import { View, Text, Pressable, Image, StyleSheet, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { palette } from '../../../theme/colors';
@@ -461,13 +461,13 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onNavigateToProfile, 
                 <Ionicons name="close" size={20} color={palette.textMuted} />
               </Pressable>
             </View>
-            <ScrollView contentContainerStyle={styles.expandedGrid} showsVerticalScrollIndicator={false}>
+            <View style={styles.expandedGrid}>
               {outfitItems.map((outfitItem, index) => (
                 <View key={outfitItem?.id || outfitItem?.item_id || index} style={styles.expandedGridItem}>
                   {renderOutfitItemCell(outfitItem, styles.expandedCell, true)}
                 </View>
               ))}
-            </ScrollView>
+            </View>
           </View>
         </View>
       </Modal>
@@ -603,7 +603,7 @@ const styles = StyleSheet.create({
   },
   expandedSheet: {
     width: '100%',
-    maxHeight: '82%',
+    aspectRatio: 1.18,
     borderRadius: radius.lg,
     backgroundColor: palette.surface,
     overflow: 'hidden',
@@ -640,17 +640,21 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surfaceElevated,
   },
   expandedGrid: {
+    flex: 1,
     padding: spacing.md,
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
   },
   expandedGridItem: {
-    width: '47.8%',
+    width: '31.2%',
+    flexGrow: 1,
+    flexBasis: '31.2%',
+    maxHeight: '47.5%',
   },
   expandedCell: {
     width: '100%',
-    minHeight: 150,
+    height: '100%',
   },
   expandedItemNamePill: {
     position: 'absolute',

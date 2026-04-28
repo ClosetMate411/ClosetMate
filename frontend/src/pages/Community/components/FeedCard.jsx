@@ -274,7 +274,7 @@ const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare }) => {
               </div>
               <button type="button" className="feed-expanded-close" onClick={() => setExpandedOpen(false)} aria-label="Close expanded outfit">×</button>
             </div>
-            <div className="feed-expanded-grid">
+            <div className={`feed-expanded-grid feed-expanded-grid--count-${Math.min(resolvedItems.length, 8)}`}>
               {resolvedItems.map((outfitItem, index) => (
                 <div key={outfitItem?.id || index} className="feed-expanded-grid-cell">
                   {renderOutfitItemCell(outfitItem)}
