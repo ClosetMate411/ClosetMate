@@ -261,6 +261,21 @@ VALID_OCCASIONS = [
 VALID_WEATHER = ["hot", "warm", "mild", "cool", "cold", "all-weather"]
 VALID_SEASONS = ["Spring", "Summer", "Fall", "Winter"]
 
+# Whitelists that mirror the API contract (main.py: AllowedStyle / AllowedSeason).
+# These narrower sets are used when classifying free-form Gemini tags into the
+# style / occasion / season fields persisted on Outfit rows so the values
+# always satisfy SaveOutfitRequest's Literal[...] enums.
+API_OCCASIONS = set(VALID_OCCASIONS)
+API_STYLES = {
+    "casual", "formal", "business-casual", "smart-casual",
+    "sporty", "streetwear", "bohemian", "minimalist", "preppy",
+    "vintage", "classic", "athleisure",
+}
+API_SEASONS = {
+    "spring", "summer", "fall", "winter",
+    "mild", "warm", "cold", "hot",
+}
+
 
 # ============== DESCRIPTION SANITIZATION ==============
 
@@ -470,7 +485,7 @@ REQUIRED JSON (strict JSON only, no extra text):
       "optional": [
         {{"id": "item_id_here", "category": "OUTERWEAR"}}
       ],
-      "tags": ["casual", "spring"],
+      "tags": ["everyday", "casual", "spring"],
       "cohesion_score": 8,
       "explanation": "1-2 sentences on why these items work together (max 1000 chars)"
     }}
@@ -655,20 +670,22 @@ class GeminiClothingAnalyzer:
         must not let off-topic uploads through.
         """
         prompt = (
-            "You are a STRICT domain gatekeeper for ClosetMate, a wardrobe / "
-            "outfit management app. Your job is to REJECT every image whose "
-            "primary subject is NOT a wearable clothing item, footwear item, "
-            "or fashion accessory.\n\n"
-            "DEFAULT BEHAVIOR: When uncertain, set passed=false. Only set "
-            "passed=true when the primary subject is unambiguously a "
-            "wearable item from the IN-SCOPE list below. False positives "
-            "(letting non-fashion through) are far worse than false "
-            "negatives (rejecting a borderline fashion image).\n\n"
-            "IN-SCOPE (passed=true) — primary subject MUST be one of:\n"
-            "- Single clothing item: top, shirt, t-shirt, blouse, sweater, "
-            "hoodie, jacket, coat, blazer, vest, dress, skirt, pants, "
-            "jeans, shorts, leggings, swimwear, activewear, sleepwear, "
-            "underwear, socks, tights.\n"
+            "You are a domain gatekeeper for ClosetMate, a wardrobe / outfit "
+            "management app. Decide whether the uploaded image's primary "
+            "subject is a wearable clothing item, footwear, or fashion "
+            "accessory.\n\n"
+            "DEFAULT BEHAVIOR: If the image plausibly shows a garment, shoe, "
+            "bag, or accessory — even on a hanger, mannequin, ghost-mannequin, "
+            "model, or as a flat lay product shot — set passed=true. Only set "
+            "passed=false when the primary subject is clearly something from "
+            "the OUT-OF-SCOPE list below. Rejecting a real clothing upload is "
+            "a worse user experience than letting a borderline image through.\n\n"
+            "IN-SCOPE (passed=true) — primary subject is one of:\n"
+            "- Clothing item (worn, flat-lay, on hanger/mannequin, or product "
+            "shot): top, shirt, t-shirt, blouse, sweater, hoodie, jacket, "
+            "coat, blazer, vest, dress, skirt, pants, trousers, jeans, "
+            "shorts, leggings, swimwear, activewear, sleepwear, underwear, "
+            "socks, tights.\n"
             "- Footwear: sneakers, boots, heels, flats, sandals, slippers, "
             "loafers, oxfords, any shoe.\n"
             "- Fashion accessory: hat, cap, beanie, scarf, belt, tie, "
@@ -676,36 +693,35 @@ class GeminiClothingAnalyzer:
             "backpack, crossbody, purse, wallet); sunglasses or optical "
             "glasses; any jewelry (necklace, bracelet, earrings, ring, "
             "anklet, brooch, cufflinks).\n\n"
-            "OUT-OF-SCOPE (passed=false) — REJECT immediately:\n"
+            "OUT-OF-SCOPE (passed=false) — REJECT only if the primary "
+            "subject is one of these:\n"
             "- ANY animal (cat, dog, bird, horse, fish, insect, pet, wild "
-            "animal — even if wearing a costume or accessory). REJECT.\n"
-            "- People as the primary subject: selfies, portraits, group "
-            "photos, faces, body parts. REJECT.\n"
-            "- Food, drinks, beverages, meals, ingredients. REJECT.\n"
-            "- Plants, flowers, trees, nature, landscapes, scenery, sky. "
-            "REJECT.\n"
-            "- Vehicles (car, bike, plane, boat). REJECT.\n"
+            "animal — even if wearing a costume or accessory).\n"
+            "- People where the FACE or HEAD is the focus: selfies, "
+            "portraits, group photos, close-up faces. (A model wearing a "
+            "garment where the garment is clearly the subject is IN-SCOPE.)\n"
+            "- Food, drinks, beverages, meals, ingredients.\n"
+            "- Plants, flowers, trees, nature, landscapes, scenery, sky.\n"
+            "- Vehicles (car, bike, plane, boat).\n"
             "- Screenshots, memes, documents, charts, diagrams, "
-            "text-only images, app UI. REJECT.\n"
+            "text-only images, app UI.\n"
             "- Electronics, gadgets, phones, laptops, headphones, gaming "
-            "controllers, cameras. REJECT.\n"
+            "controllers, cameras.\n"
             "- Furniture, household items, kitchenware, decor, art, "
-            "paintings, posters, books. REJECT.\n"
-            "- Toys, tools, sports equipment that is NOT a wearable item "
-            "(balls, rackets, weights). REJECT.\n"
-            "- Adult / explicit / violent / gore content, weapons, drugs. "
-            "REJECT.\n"
-            "- Empty, blank, corrupted, abstract, or unrecognizable "
-            "images. REJECT.\n\n"
-            "EDGE CASES:\n"
-            "- Person wearing a garment: passed=true ONLY when the garment "
-            "fills most of the frame and is clearly the subject (e.g. flat "
-            "lay on body, garment-focused product shot). If the face, "
-            "head, or full body is the focus, REJECT.\n"
-            "- Multiple items: passed=true only if all items are wearable "
-            "fashion items. A clothing item next to a coffee cup → REJECT.\n"
-            "- Hangers, mannequins, or display setups with a wearable "
-            "item are IN-SCOPE.\n\n"
+            "paintings, posters, books.\n"
+            "- Toys, tools, non-wearable sports equipment (balls, rackets, "
+            "weights).\n"
+            "- Adult / explicit / violent / gore content, weapons, drugs.\n"
+            "- Empty, blank, corrupted, or completely unrecognizable images.\n\n"
+            "EDGE CASES (default to passed=true):\n"
+            "- Plain product shots of a single garment on a white/neutral "
+            "background → passed=true.\n"
+            "- Garment shown on a hanger, mannequin, or ghost-mannequin → "
+            "passed=true.\n"
+            "- Garment shown on a model where the garment fills most of the "
+            "frame → passed=true.\n"
+            "- Clothing item next to a non-fashion object (e.g. coffee cup) "
+            "but the clothing is clearly the focus → passed=true.\n\n"
             "Respond with ONLY this JSON (no markdown, no commentary):\n"
             "{\"passed\": true_or_false, "
             "\"rejection_reason\": \"short technical reason or null\"}"
@@ -727,11 +743,11 @@ class GeminiClothingAnalyzer:
 
             if not isinstance(result.get("passed"), bool):
                 logger.warning(
-                    f"Malformed image-moderation response (failing CLOSED): {str(result)[:200]}"
+                    f"Malformed image-moderation response (failing OPEN): {str(result)[:200]}"
                 )
                 return {
-                    "passed": False,
-                    "rejection_reason": "Moderation response malformed",
+                    "passed": True,
+                    "rejection_reason": None,
                 }
 
             return {
@@ -739,30 +755,57 @@ class GeminiClothingAnalyzer:
                 "rejection_reason": result.get("rejection_reason"),
             }
         except Exception as e:
-            # Fail-closed: pre-flight is the sole gatekeeper, transient
-            # Gemini errors must not silently let off-topic uploads through.
-            logger.warning(f"Image moderation failing CLOSED (Gemini error): {e}")
+            # Fail-OPEN on transient Gemini errors. Moderation now runs on the
+            # bg-removed cutout, where false positives are rare; a Gemini hiccup
+            # blocking real uploads is the worse outcome (especially demo-day).
+            logger.warning(f"Image moderation failing OPEN (Gemini error): {e}")
             return {
-                "passed": False,
-                "rejection_reason": "Moderation service unavailable",
+                "passed": True,
+                "rejection_reason": None,
             }
 
 
     async def analyze_clothing(self, image_bytes: bytes, mime_type: str = "image/png") -> dict:
         """
         Analyze a clothing image and return structured attributes.
-        
+
+        Moderation runs HERE (post-bg-removal) instead of pre-flight: on a
+        clean cutout Gemini can tell garment-vs-non-garment far more reliably
+        than on the noisy raw upload, where mannequin / model / ghost-mannequin
+        product shots routinely tripped the pre-flight gate as "person photo".
+
         Args:
             image_bytes: Raw image bytes (processed/bg-removed image)
             mime_type: MIME type of the image
-            
+
         Returns:
             Dict with validated clothing attributes
-            
+
         Raises:
-            ValueError: If Gemini response fails validation
-            Exception: If Gemini API call fails
+            ContentModerationError: If the image is not a wearable item.
+            ValueError: If Gemini response fails validation.
+            Exception: If Gemini API call fails.
         """
+        # ── Moderation gate (post-bg-removal) ─────────────────────────────
+        # Fail-OPEN on Gemini errors: a transient hiccup must not lock real
+        # uploads out the night before demo. Only an explicit passed=false
+        # blocks the upload.
+        try:
+            mod = await self.moderate_image(image_bytes, mime_type)
+        except Exception as e:
+            logger.warning(f"Post-bg-removal moderation errored, failing OPEN: {e}")
+            mod = {"passed": True, "rejection_reason": None}
+
+        if mod.get("passed") is False:
+            raise ContentModerationError(
+                user_message=(
+                    "This image was not recognised as a clothing item, "
+                    "footwear, or fashion accessory. Please upload an image "
+                    "of the garment itself."
+                ),
+                internal_reason=(mod.get("rejection_reason") or "moderation rejected"),
+            )
+
         image_part = {
             "mime_type": mime_type,
             "data": base64.b64encode(image_bytes).decode("utf-8")
@@ -782,9 +825,8 @@ class GeminiClothingAnalyzer:
                     repaired = repair_json(response.text)
                     result = json.loads(repaired)
 
-                # Moderation gate has been removed; pre-flight is the sole
-                # gatekeeper. Strip any leftover moderation_passed field so
-                # _validate_analysis does not need to know about it.
+                # Moderation runs separately above — strip any stray fields
+                # the model includes so _validate_analysis is unaffected.
                 result.pop("moderation_passed", None)
                 result.pop("rejection_reason", None)
 
@@ -1154,15 +1196,39 @@ class GeminiClothingAnalyzer:
             if not isinstance(tags, list):
                 tags = []
 
+            # Map Gemini's free-form tags to the strict enums the API contract
+            # accepts (main.py AllowedStyle / AllowedOccasion / AllowedSeason).
+            # Tag order is not guaranteed (Gemini emits style+season more often
+            # than occasion), so classify each tag by which whitelist it belongs
+            # to instead of trusting position. Anything off-whitelist falls back
+            # to a safe default so SaveOutfitRequest never 422s on its own data.
+            style_val = "casual"
+            occasion_val = "everyday"
+            season_val = "all"
+            style_set = occasion_set = season_set = False
+            for tag in tags:
+                t = str(tag).strip().lower()
+                if not t:
+                    continue
+                if not occasion_set and t in API_OCCASIONS:
+                    occasion_val = t
+                    occasion_set = True
+                elif not style_set and t in API_STYLES:
+                    style_val = t
+                    style_set = True
+                elif not season_set and t in API_SEASONS:
+                    season_val = t
+                    season_set = True
+
             validated_outfits.append({
                 "name": str(outfit.get("title", outfit.get("name", "Unnamed Outfit")))[:50],
                 "item_ids": all_ids,
                 "required": required,
                 "optional": optional,
                 "tags": tags,
-                "style": tags[0] if tags else "casual",
-                "occasion": tags[1] if len(tags) > 1 else "everyday",
-                "season": tags[2] if len(tags) > 2 else "all",
+                "style": style_val,
+                "occasion": occasion_val,
+                "season": season_val,
                 "cohesion_score": max(1, min(10, int(outfit.get("cohesion_score", 5)))),
                 "reasoning": str(outfit.get("explanation", outfit.get("reasoning", "")))[:1000],
             })

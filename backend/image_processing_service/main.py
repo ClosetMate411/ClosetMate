@@ -18,7 +18,6 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
-import httpx
 import numpy as np
 from fastapi import FastAPI, UploadFile, File, Header, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -342,42 +341,12 @@ async def process_image(
     if len(content) > MAX_FILE_SIZE:
         return create_error_response("FILE_TOO_LARGE", "File exceeds 10MB limit")
 
-    # ── Pre-flight Gemini moderation on the RAW upload ─────────────────────
-    # Reject obviously off-topic images (selfies, food, screenshots, random
-    # objects, animals) BEFORE running BiRefNet. Fail-CLOSED: pre-flight is
-    # the sole moderation gate (the post-bg-removal gate in /analyze has
-    # been removed), so any unreachable / non-200 / unexpected response
-    # rejects the upload rather than letting it through.
-    not_fashion_message = (
-        "This image was not recognised as a clothing item, footwear, or "
-        "fashion accessory. Please upload an image of the garment or "
-        "accessory itself."
-    )
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(
-                f"{OUTFIT_SERVICE_URL}/moderate/image",
-                files={"image": (image.filename or "upload", content, image.content_type or "image/png")},
-                headers={"X-API-Key": INTERNAL_API_KEY or ""},
-            )
-        if resp.status_code != 200:
-            logger.warning(
-                f"Pre-flight moderation returned {resp.status_code}; rejecting upload"
-            )
-            return create_error_response("MODERATION_UNAVAILABLE", not_fashion_message, 503)
-
-        mod = resp.json()
-        if not mod.get("success"):
-            logger.warning(f"Pre-flight moderation success=false; rejecting: {mod}")
-            return create_error_response("MODERATION_UNAVAILABLE", not_fashion_message, 503)
-
-        if mod.get("passed") is not True:
-            reason = mod.get("rejection_reason") or "Image is not a clothing item, footwear, or fashion accessory."
-            logger.info(f"Pre-flight moderation rejected upload: {reason}")
-            return create_error_response("NOT_FASHION", not_fashion_message, 400)
-    except Exception as e:
-        logger.warning(f"Pre-flight moderation unreachable; rejecting upload: {e}")
-        return create_error_response("MODERATION_UNAVAILABLE", not_fashion_message, 503)
+    # NOTE: Pre-flight Gemini moderation on the RAW upload was removed —
+    # it produced too many false positives on plain garment shots
+    # (mannequins, ghost-mannequins, model shots) where Gemini saw "person"
+    # and rejected. Moderation is now handled inside outfit_service /analyze
+    # on the BACKGROUND-REMOVED image, where the cutout makes the subject
+    # unambiguous. See outfit_service/main.py /analyze for the gate.
 
     try:
         file_id = str(uuid.uuid4())

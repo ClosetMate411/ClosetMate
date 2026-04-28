@@ -319,12 +319,34 @@ class GenerateOutfitsRequest(BaseModel):
     style: AllowedStyle = "any"
     season: AllowedSeason = "all"
 
+_ALLOWED_OCCASIONS_SET = {
+    "everyday", "work", "formal-event", "date-night", "party",
+    "outdoor", "gym", "beach", "travel", "lounging", "wedding",
+}
+_ALLOWED_STYLES_SET = {
+    "any", "casual", "formal", "business-casual", "smart-casual",
+    "sporty", "streetwear", "bohemian", "minimalist", "preppy",
+    "vintage", "classic", "athleisure",
+}
+_ALLOWED_SEASONS_SET = {
+    "all", "spring", "summer", "fall", "winter",
+    "mild", "warm", "cold", "hot",
+}
+
+
 class SaveOutfitRequest(BaseModel):
+    """
+    Save-outfit payload.
+
+    style/occasion/season use plain Optional[str] (not Literal[]) so legacy or
+    out-of-whitelist values from older Gemini generations don't 422 the user
+    at save-time. Validators coerce invalid values to None instead of failing.
+    """
     name: str = Field(min_length=1, max_length=100)
     item_ids: List[str] = Field(min_length=2, max_length=10)
-    style: Optional[AllowedStyle] = None
-    occasion: Optional[AllowedOccasion] = None
-    season: Optional[AllowedSeason] = None
+    style: Optional[str] = None
+    occasion: Optional[str] = None
+    season: Optional[str] = None
     cohesion_score: Optional[int] = Field(default=None, ge=1, le=10)
     reasoning: Optional[str] = Field(default=None, max_length=1000)
 
@@ -342,6 +364,43 @@ class SaveOutfitRequest(BaseModel):
         if len(set(v)) != len(v):
             raise ValueError("item_ids must be unique")
         return v
+
+    @field_validator("style", mode="before")
+    @classmethod
+    def _coerce_style(cls, v):
+        if v is None:
+            return None
+        s = str(v).strip().lower()
+        return s if s in _ALLOWED_STYLES_SET else None
+
+    @field_validator("occasion", mode="before")
+    @classmethod
+    def _coerce_occasion(cls, v):
+        if v is None:
+            return None
+        s = str(v).strip().lower()
+        return s if s in _ALLOWED_OCCASIONS_SET else None
+
+    @field_validator("season", mode="before")
+    @classmethod
+    def _coerce_season(cls, v):
+        if v is None:
+            return None
+        s = str(v).strip().lower()
+        return s if s in _ALLOWED_SEASONS_SET else None
+
+    @field_validator("reasoning", mode="before")
+    @classmethod
+    def _strip_xss_reasoning(cls, v):
+        """Defence-in-depth: strip obvious script payloads from user-supplied
+        reasoning before persisting. Frontend should also sanitize on render."""
+        if v is None:
+            return None
+        s = str(v)
+        lowered = s.lower()
+        if "<script" in lowered or "javascript:" in lowered or "onerror=" in lowered:
+            return None
+        return s
 
 
 # ============== APP ==============
