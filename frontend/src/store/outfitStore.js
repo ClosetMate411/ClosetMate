@@ -19,7 +19,7 @@ const useOutfitStore = create((set, get) => ({
       set({ outfits, loading: false });
     } catch (error) {
       set({ error: error.message, loading: false });
-      console.error('Failed to fetch outfits:', error);
+      throw error;
     }
   },
   

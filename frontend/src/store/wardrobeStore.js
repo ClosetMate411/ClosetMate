@@ -41,7 +41,7 @@ const useWardrobeStore = create((set, get) => ({
       set({ items: normalizedItems, loading: false });
     } catch (error) {
       set({ error: error.message, loading: false, items: [] });
-      console.error('Failed to fetch items:', error);
+      throw error;
     }
   },
   

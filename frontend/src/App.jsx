@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect } from 'react';
+import React, { Suspense, lazy, useEffect, useState, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { Navbar, LogoutButton } from './components';
 import useAuthStore from './store/authStore';
@@ -64,6 +64,86 @@ const Navigation = () => {
   );
 };
 
+function OfflineBanner() {
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [justReconnected, setJustReconnected] = useState(false);
+  const reconnectTimer = useRef(null);
+
+  useEffect(() => {
+    const goOffline = () => {
+      clearTimeout(reconnectTimer.current);
+      setJustReconnected(false);
+      setIsOffline(true);
+    };
+    const goOnline = () => {
+      setJustReconnected(true);
+      setIsOffline(false);
+      reconnectTimer.current = setTimeout(() => setJustReconnected(false), 3000);
+    };
+    window.addEventListener('offline', goOffline);
+    window.addEventListener('online',  goOnline);
+    return () => {
+      window.removeEventListener('offline', goOffline);
+      window.removeEventListener('online',  goOnline);
+      clearTimeout(reconnectTimer.current);
+    };
+  }, []);
+
+  if (!isOffline && !justReconnected) return null;
+
+  return (
+    <div style={{
+      position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+      zIndex: 99999, display: 'flex', alignItems: 'center', gap: 10,
+      background: justReconnected
+        ? 'linear-gradient(135deg,#0f9b58,#07c272)'
+        : 'linear-gradient(135deg,#1a1035,#3b1fa8)',
+      color: '#fff',
+      padding: '12px 20px',
+      borderRadius: 16,
+      boxShadow: justReconnected
+        ? '0 8px 32px rgba(7,194,114,0.35)'
+        : '0 8px 32px rgba(59,31,168,0.45)',
+      fontSize: '0.875rem', fontWeight: 600,
+      letterSpacing: '0.01em',
+      animation: 'offlineSlideUp 0.35s cubic-bezier(0.22,1,0.36,1)',
+      whiteSpace: 'nowrap',
+    }}>
+      <style>{`
+        @keyframes offlineSlideUp {
+          from { opacity: 0; transform: translateX(-50%) translateY(16px); }
+          to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+        @keyframes offlinePulse {
+          0%,100% { opacity: 1; } 50% { opacity: 0.3; }
+        }
+      `}</style>
+
+      {justReconnected ? (
+        <>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          Back online!
+        </>
+      ) : (
+        <>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="1" y1="1" x2="23" y2="23"/>
+            <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
+            <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/>
+            <path d="M10.71 5.05A16 16 0 0 1 22.56 9"/>
+            <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/>
+            <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+            <circle cx="12" cy="20" r="1" fill="currentColor" style={{animation:'offlinePulse 1.2s ease-in-out infinite'}}/>
+          </svg>
+          No internet connection
+        </>
+      )}
+    </div>
+  );
+}
+
 function App() {
   useEffect(() => {
     useAuthStore.getState().init();
@@ -77,6 +157,7 @@ function App() {
 
   return (
     <Router>
+      <OfflineBanner />
       <Navigation />
       <Suspense fallback={<PageLoader />}>
         <Routes>

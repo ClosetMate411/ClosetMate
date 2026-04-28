@@ -1,4 +1,5 @@
 import React, { memo, useState, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import PropTypes from 'prop-types';
 import { Link } from 'react-router-dom';
 import { IconTrash, IconMessageCircle } from '@tabler/icons-react';
@@ -264,7 +265,7 @@ const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare }) => {
         </div>
       </div>
 
-      {expandedOpen && (
+      {expandedOpen && createPortal(
         <div className="feed-expanded-overlay" role="presentation" onClick={() => setExpandedOpen(false)}>
           <div className="feed-expanded-modal" role="dialog" aria-modal="true" aria-label={`${outfit.name} outfit items`} onClick={(e) => e.stopPropagation()}>
             <div className="feed-expanded-header">
@@ -286,7 +287,8 @@ const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare }) => {
               ))}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

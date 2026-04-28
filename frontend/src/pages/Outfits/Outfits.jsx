@@ -29,8 +29,12 @@ const Outfits = () => {
   const [selectedOutfit, setSelectedOutfit] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   useEffect(() => {
-    fetchOutfits();
-    fetchItems();
+    Promise.all([fetchOutfits(), fetchItems()]).catch(() =>
+      showError('No internet connection — could not load your outfits.')
+    );
+    const handleOnline = () => Promise.all([fetchOutfits(), fetchItems()]).catch(() => {});
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

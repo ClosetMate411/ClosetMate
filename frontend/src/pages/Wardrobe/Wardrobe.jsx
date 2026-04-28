@@ -44,7 +44,10 @@ const Wardrobe = () => {
   const handlers = useWardrobeHandlers(modal);
 
   useEffect(() => {
-    fetchItems();
+    fetchItems().catch(() => showError('No internet connection — could not load your wardrobe.'));
+    const handleOnline = () => fetchItems().catch(() => {});
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -128,8 +131,15 @@ const Wardrobe = () => {
         setUploadState("confirming");
         showSuccess("Background has been successfully removed");
       } catch (error) {
-        showError(error.message || "Failed to process image. Please try again.");
-        setUploadState("error");
+        if (!navigator.onLine) {
+          showError("No internet connection — please check your network and try again.");
+          setUploadedFile(null);
+          setUploadState("idle");
+          setOpenModal("upload");
+        } else {
+          showError(error.message || "Failed to process image. Please try again.");
+          setUploadState("error");
+        }
       }
     },
     [setOpenModal, showError, showSuccess, verifyProcessedImage]
@@ -157,10 +167,17 @@ const Wardrobe = () => {
       setUploadState("confirming");
       showSuccess("Background has been successfully removed");
     } catch (error) {
-      showError(error.message || "Processing failed. Please try again.");
-      setUploadState("error");
+      if (!navigator.onLine) {
+        showError("No internet connection — please check your network and try again.");
+        setUploadedFile(null);
+        setUploadState("idle");
+        setOpenModal("upload");
+      } else {
+        showError(error.message || "Processing failed. Please try again.");
+        setUploadState("error");
+      }
     }
-  }, [uploadedFile, retryCount, showError, showSuccess, verifyProcessedImage]);
+  }, [uploadedFile, retryCount, showError, showSuccess, verifyProcessedImage, setOpenModal]);
 
   const handleUploadDifferent = useCallback(() => {
     setUploadState("idle");
@@ -325,7 +342,7 @@ const Wardrobe = () => {
   return (
     <div className="wardrobe-page">
       {/* ── Dark purple header (hidden when empty) ── */}
-      <div className={`wardrobe-topbar-wrap${items.length === 0 && !isLoading ? " wardrobe-topbar-wrap--hidden" : ""}`}>
+      <div className={`wardrobe-topbar-wrap${items.length === 0 ? " wardrobe-topbar-wrap--hidden" : ""}`}>
         <motion.header
           className="wardrobe-topbar"
           initial={{ opacity: 0, y: -10 }}

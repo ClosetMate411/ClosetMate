@@ -55,23 +55,29 @@ const Community = () => {
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   useEffect(() => {
-    fetchFeed(1);
+    fetchFeed(1).catch(() => showError('No internet connection — could not load the community feed.'));
     fetchOutfits();
     fetchItems();
-    fetchNotifications(1);
+    fetchNotifications(1).catch(() => {});
+    const handleOnline = () => {
+      fetchFeed(1).catch(() => {});
+      fetchNotifications(1).catch(() => {});
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Fetch data when tab is first opened (only if not already loaded)
   useEffect(() => {
     if (activeTab === 'top-rated' && topRated.length === 0 && !topRatedLoading) {
-      fetchTopRated(1);
+      fetchTopRated(1).catch(() => showError('No internet connection — could not load top rated.'));
     }
     if (activeTab === 'favorites' && favorites.length === 0 && !favoritesLoading) {
-      fetchFavorites(1);
+      fetchFavorites(1).catch(() => showError('No internet connection — could not load favorites.'));
     }
     if (activeTab === 'notifications' && notifications.length === 0 && !notificationsLoading) {
-      fetchNotifications(1);
+      fetchNotifications(1).catch(() => {});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
@@ -157,14 +163,9 @@ const Community = () => {
   const hasMore = pagination.page < pagination.pages;
 
   // ── Notification click → go to post ───────────────────
-  const handleNotificationClick = useCallback((sharedOutfitId) => {
-    const feedItem = feed.find((item) => item.id === sharedOutfitId);
-    if (feedItem) {
-      setActiveTab('feed');
-      setSelectedFeedItem(feedItem);
-      setCommentsOpen(true);
-    }
-  }, [feed]);
+  const handleNotificationClick = useCallback(() => {
+    setActiveTab('feed');
+  }, []);
 
   // ── Mark notifications read ───────────────────────────
   const handleMarkRead = useCallback(() => {

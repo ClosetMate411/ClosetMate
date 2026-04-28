@@ -27,15 +27,18 @@ const useAuthStore = create((set, get) => ({
     try {
       const response = await apiService.getCurrentUser();
       if (response.success && response.data) {
-        set({ 
-          user: response.data, 
-          isAuthenticated: true, 
-          isLoading: false 
+        set({
+          user: response.data,
+          isAuthenticated: true,
+          isLoading: false
         });
       }
     } catch (error) {
-      // If token is invalid/expired, wipe it
-      get().clearAuth();
+      // Only clear auth for actual auth failures — not network errors.
+      // A network error (offline, timeout) must not log the user out.
+      if (error.status === 401 || error.status === 403) {
+        get().clearAuth();
+      }
       set({ isLoading: false });
     }
   },
