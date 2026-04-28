@@ -568,7 +568,7 @@ export default function OutfitsScreen() {
 
       <Modal visible={detailOpen} transparent animationType="fade" onRequestClose={() => setDetailOpen(false)}>
         <View style={{ flex: 1, backgroundColor: palette.overlay, justifyContent: 'center', alignItems: 'center', padding: 12 }}>
-          <View style={{ width: '100%', maxHeight: '92%', backgroundColor: palette.surfaceElevated, borderRadius: radius.lg, padding: spacing.md }}>
+          <View style={{ width: '100%', maxHeight: '92%', minHeight: 0, backgroundColor: palette.surfaceElevated, borderRadius: radius.lg, padding: spacing.md }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <Text style={{ fontSize: 20, fontWeight: '800', color: palette.text, flex: 1 }}>
                 {selectedOutfit?.name || 'Outfit'}
@@ -593,7 +593,12 @@ export default function OutfitsScreen() {
               </View>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={{ flex: 1, minHeight: 0 }}
+              contentContainerStyle={{ paddingBottom: 12 }}
+              showsVerticalScrollIndicator={false}
+              nestedScrollEnabled
+            >
               <Text style={{ color: palette.textMuted, marginBottom: 8 }}>
                 {selectedOutfit?.item_ids?.length || selectedOutfit?.items?.length || 0} items
               </Text>

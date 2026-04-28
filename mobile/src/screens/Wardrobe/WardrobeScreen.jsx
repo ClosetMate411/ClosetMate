@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, Alert, Image as RNImage } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { Asset } from 'expo-asset';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -90,6 +91,14 @@ export default function WardrobeScreen() {
       }
     })();
   }, [fetchItems, fetchWardrobeStats]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setShowUploadInterface(false);
+      setUploadValidationError('');
+      return undefined;
+    }, [])
+  );
 
   // Load AI labels from outfits if not already loaded
   useEffect(() => {
@@ -499,18 +508,19 @@ export default function WardrobeScreen() {
       {!items.length ? (
         <EmptyWardrobe onAddClick={openUploadInterface} />
       ) : (
-        <ClothingGrid
-          items={items}
-          onAddClick={openUploadInterface}
-          selectedItem={currentSelectedItem}
-          onCardClick={handleCardClick}
-          onBack={handleBack}
-          onSave={handleSaveEdit}
-          onDelete={handleDeleteSelected}
-          onProcessImage={handleProcessEditImage}
-          isEditingItem={isEditingItem}
-          onEditToggle={setIsEditingItem}
-        />
+        <View style={{ flex: 1, minHeight: 0 }}>
+          <ClothingGrid
+            items={items}
+            selectedItem={currentSelectedItem}
+            onCardClick={handleCardClick}
+            onBack={handleBack}
+            onSave={handleSaveEdit}
+            onDelete={handleDeleteSelected}
+            onProcessImage={handleProcessEditImage}
+            isEditingItem={isEditingItem}
+            onEditToggle={setIsEditingItem}
+          />
+        </View>
       )}
 
 

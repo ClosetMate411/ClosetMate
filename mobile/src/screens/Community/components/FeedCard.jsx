@@ -1,5 +1,5 @@
 import React, { memo, useMemo, useState, useEffect } from 'react';
-import { View, Text, Pressable, Image, StyleSheet, Modal } from 'react-native';
+import { View, Text, Pressable, Image, StyleSheet, Modal, ScrollView, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { palette } from '../../../theme/colors';
@@ -106,7 +106,19 @@ const resolveUserNameFromItem = (item) => (
   )
 );
 
-function FeedCard({ item, onReact, onRate, onOpenComments, onNavigateToProfile, onToggleFavorite, onDeleteShare, forceShowDelete = false }) {
+function FeedCard({
+  item,
+  onReact,
+  onRate,
+  onOpenComments,
+  onNavigateToProfile,
+  onToggleFavorite,
+  onDeleteShare,
+  forceShowDelete = false,
+  forceExpandedOpen = false,
+  onForcedExpandedOpen,
+}) {
+  const { width: screenWidth } = useWindowDimensions();
   const authUserRaw = useAuthStore((store) => store.user);
   const authUser = authUserRaw?.user && typeof authUserRaw.user === 'object' ? authUserRaw.user : authUserRaw;
   const currentUserId = authUser?.id || authUser?._id || authUser?.user_id || authUser?.uid || null;
@@ -161,6 +173,12 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onNavigateToProfile, 
   const [isRating, setIsRating] = useState(false);
   const [isFavoriting, setIsFavoriting] = useState(false);
   const [expandedOpen, setExpandedOpen] = useState(false);
+
+  useEffect(() => {
+    if (!forceExpandedOpen) return;
+    setExpandedOpen(true);
+    onForcedExpandedOpen?.(shareId);
+  }, [forceExpandedOpen, onForcedExpandedOpen, shareId]);
 
   useEffect(() => {
     let mounted = true;
@@ -244,8 +262,21 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onNavigateToProfile, 
     const items = detailedOutfit?.items || item?.outfit?.items || item?.items || [];
     return Array.isArray(items) ? items : [];
   }, [item, detailedOutfit]);
-  const previewItems = outfitItems.slice(0, 4);
-  const extraItemCount = Math.max(0, outfitItems.length - 4);
+  const orderedOutfitItems = useMemo(() => {
+    const activeItems = [];
+    const deletedItems = [];
+    outfitItems.forEach((outfitItem) => {
+      const isDeleted = !!(outfitItem?.deleted || outfitItem?.is_deleted || outfitItem?.deleted_at);
+      if (isDeleted) {
+        deletedItems.push(outfitItem);
+      } else {
+        activeItems.push(outfitItem);
+      }
+    });
+    return [...activeItems, ...deletedItems];
+  }, [outfitItems]);
+  const previewItems = orderedOutfitItems.slice(0, 4);
+  const extraItemCount = Math.max(0, orderedOutfitItems.length - 4);
 
   const handleReactPress = async (targetShareId, key) => {
     if (!targetShareId || isReacting) return;
@@ -286,6 +317,14 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onNavigateToProfile, 
     return result.filter(Boolean);
   }, [item, detailedOutfit]);
 
+  const gridViewportHeight = useMemo(() => {
+    const sheetWidth = screenWidth * 0.96;
+    const gridInnerWidth = Math.max(240, sheetWidth - (22 * 2) - (16 * 2));
+    const cellWidth = gridInnerWidth * 0.485;
+    const cellHeight = cellWidth * 0.95;
+    return Math.round((cellHeight * 2) + 12 + 8);
+  }, [screenWidth]);
+
   const renderOutfitItemCell = (outfitItem, cellStyle = null, showName = false) => {
     const image = outfitItem ? getItemImage(outfitItem) : null;
     const isDeleted = !!(outfitItem?.deleted || outfitItem?.is_deleted || outfitItem?.deleted_at);
@@ -293,15 +332,21 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onNavigateToProfile, 
 
     return (
       <View style={[styles.collageCell, cellStyle]}>
-        {image ? (
-          <Image source={{ uri: image }} style={styles.itemImage} resizeMode="contain" />
-        ) : isDeleted ? (
-          <View style={styles.deletedItemBox}>
-            <Text style={styles.deletedItemText}>{getDeletedItemMessage(outfitItem)}</Text>
-          </View>
-        ) : (
-          <Ionicons name="shirt-outline" size={28} color={palette.borderStrong} />
-        )}
+        <View style={showName ? styles.expandedImageWrap : styles.collageImageWrap}>
+          {image ? (
+            <Image
+              source={{ uri: image }}
+              style={showName ? styles.expandedItemImage : styles.itemImage}
+              resizeMode="contain"
+            />
+          ) : isDeleted ? (
+            <View style={styles.deletedItemBox}>
+              <Text style={styles.deletedItemText}>{getDeletedItemMessage(outfitItem)}</Text>
+            </View>
+          ) : (
+            <Ionicons name="shirt-outline" size={28} color={palette.borderStrong} />
+          )}
+        </View>
         {showName && itemName && !isDeleted ? (
           <View style={styles.expandedItemNamePill}>
             <Text style={styles.expandedItemName} numberOfLines={2}>{itemName}</Text>
@@ -456,19 +501,26 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onNavigateToProfile, 
               <View style={{ flex: 1 }}>
                 <Text style={styles.expandedEyebrow}>Outfit Details</Text>
                 <Text style={styles.expandedTitle}>{outfitName}</Text>
-                <Text style={styles.expandedSubtitle}>{outfitItems.length} items</Text>
+                <Text style={styles.expandedSubtitle}>{orderedOutfitItems.length} items</Text>
               </View>
               <Pressable onPress={() => setExpandedOpen(false)} style={styles.expandedCloseButton} hitSlop={8}>
                 <Ionicons name="close" size={20} color={palette.textMuted} />
               </Pressable>
             </View>
-            <View style={styles.expandedGrid}>
-              {outfitItems.map((outfitItem, index) => (
-                <View key={outfitItem?.id || outfitItem?.item_id || index} style={styles.expandedGridItem}>
-                  {renderOutfitItemCell(outfitItem, styles.expandedCell, true)}
-                </View>
-              ))}
-            </View>
+            <ScrollView
+              style={[styles.expandedScroll, { height: gridViewportHeight }]}
+              contentContainerStyle={styles.expandedScrollContent}
+              showsVerticalScrollIndicator={false}
+              nestedScrollEnabled
+            >
+              <View style={styles.expandedGrid}>
+                {orderedOutfitItems.map((outfitItem, index) => (
+                  <View key={outfitItem?.id || outfitItem?.item_id || index} style={styles.expandedGridItem}>
+                    {renderOutfitItemCell(outfitItem, styles.expandedCell, true)}
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -556,6 +608,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
+  collageImageWrap: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   itemImage: {
     width: '80%',
     height: '80%',
@@ -610,6 +668,20 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...shadow.soft,
   },
+  expandedScroll: {
+    flex: 1,
+    minHeight: 0,
+    marginHorizontal: 22,
+    marginBottom: 22,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e6e0ef',
+    borderRadius: 22,
+    backgroundColor: '#f8f2ff',
+  },
+  expandedScrollContent: {
+    paddingBottom: 8,
+  },
   expandedHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -648,47 +720,47 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surfaceElevated,
   },
   expandedGrid: {
-    flex: 1,
-    marginHorizontal: 22,
-    marginBottom: 22,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#e6e0ef',
-    borderRadius: 22,
-    backgroundColor: '#f8f2ff',
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    justifyContent: 'space-between',
+    alignContent: 'flex-start',
   },
   expandedGridItem: {
-    width: '30.6%',
-    flexGrow: 1,
-    flexBasis: '30.6%',
-    maxHeight: '48%',
+    width: '48.5%',
+    marginBottom: 12,
   },
   expandedCell: {
     width: '100%',
-    height: '100%',
-    aspectRatio: undefined,
+    aspectRatio: 0.95,
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: '#e5e7eb',
     borderRadius: 18,
+    alignItems: 'stretch',
+    justifyContent: 'flex-start',
+    padding: 10,
+  },
+  expandedImageWrap: {
+    width: '100%',
+    flex: 1,
+    minHeight: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  expandedItemImage: {
+    width: '72%',
+    height: '72%',
   },
   expandedItemNamePill: {
-    position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: 12,
-    borderRadius: 0,
-    paddingHorizontal: 0,
-    paddingVertical: 0,
+    marginTop: 8,
+    minHeight: 36,
+    justifyContent: 'center',
     backgroundColor: 'transparent',
   },
   expandedItemName: {
     color: palette.text,
     fontWeight: '500',
-    textAlign: 'left',
+    textAlign: 'center',
     fontSize: 14,
     lineHeight: 18,
   },

@@ -6,7 +6,7 @@ import { ActivityIndicator, View, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 import useAuthStore from '../store/authStore';
-import { Home, Wardrobe, Outfits, Community, Profile, Login, Register, ForgotPassword, ResetPassword, VerifyLogin, VerifySignup, Logout } from '../screens';
+import { Home, Wardrobe, Outfits, Community, Profile, Favorites, Login, Register, ForgotPassword, ResetPassword, VerifyLogin, VerifySignup, Logout } from '../screens';
 import CustomDrawerContent from './CustomDrawerContent';
 import { palette } from '../theme/colors';
 import { motion, shadow } from '../theme/tokens';
@@ -110,6 +110,16 @@ export default function RootNavigator() {
             options={{
               presentation: 'modal',
               title: 'Logout',
+              headerStyle: { backgroundColor: palette.surface },
+              headerTitleStyle: { color: palette.text, fontWeight: '700' },
+              headerTintColor: palette.primaryStrong,
+            }}
+          />
+          <Stack.Screen
+            name="Favorites"
+            component={Favorites}
+            options={{
+              title: 'Outfit Favorites',
               headerStyle: { backgroundColor: palette.surface },
               headerTitleStyle: { color: palette.text, fontWeight: '700' },
               headerTintColor: palette.primaryStrong,

@@ -124,7 +124,12 @@ export default function NotificationsScreen() {
 
   const handlePress = useCallback((item) => {
     if (item?.shared_outfit_id) {
-      navigation.navigate('Community');
+      const notificationType = String(item?.type || '').toLowerCase();
+      const openComments = notificationType === 'comment' || notificationType === 'reply';
+      navigation.navigate('Community', {
+        openSharedOutfitId: String(item.shared_outfit_id),
+        openComments,
+      });
     }
   }, [navigation]);
 

@@ -6,6 +6,7 @@ import { palette } from '../../theme/colors';
 import { radius, shadow, spacing, type } from '../../theme/tokens';
 import useAuthStore from '../../store/authStore';
 import useWardrobeStore from '../../store/wardrobeStore';
+import useCommunityStore from '../../store/communityStore';
 import FeedCard from '../Community/components/FeedCard';
 import CommentsModal from '../Community/components/CommentsModal';
 import apiService from '../../services/api.service';
@@ -76,6 +77,7 @@ export default function ProfileScreen({ navigation, route }) {
   const setAvatarUrl = useAuthStore((store) => store.setAvatarUrl);
   const authUser = useMemo(() => resolveUserEntity(authUserRaw), [authUserRaw]);
   const fetchWardrobeItems = useWardrobeStore((store) => store.fetchItems);
+  const toggleFavoriteShared = useCommunityStore((store) => store.toggleFavorite);
 
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -328,6 +330,10 @@ export default function ProfileScreen({ navigation, route }) {
                       },
                     },
                   ]);
+                }}
+                onToggleFavorite={async (shareId) => {
+                  await toggleFavoriteShared(shareId);
+                  navigation.navigate('Favorites');
                 }}
                 forceShowDelete={isSelfProfile}
               />

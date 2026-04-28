@@ -4,6 +4,7 @@ export { default as Outfits } from './Outfits/OutfitsScreen';
 export { default as Community } from './Community/CommunityScreen';
 export { default as Notifications } from './Notifications/NotificationsScreen';
 export { default as Profile } from './Profile/ProfileScreen';
+export { default as Favorites } from './Favorites/FavoritesScreen';
 export { default as Login } from './Auth/LoginScreen';
 export { default as Register } from './Auth/RegisterScreen';
 export { default as ForgotPassword } from './Auth/ForgotPasswordScreen';

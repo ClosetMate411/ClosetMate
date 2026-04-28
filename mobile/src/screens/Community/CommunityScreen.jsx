@@ -49,7 +49,7 @@ const formatTimeAgo = (dateStr) => {
   return `${Math.floor(days / 30)}mo ago`;
 };
 
-export default function CommunityScreen({ navigation }) {
+export default function CommunityScreen({ navigation, route }) {
   const feedItems = useCommunityStore((s) => s.feedItems);
   const topRatedItems = useCommunityStore((s) => s.topRatedItems);
   const favoriteItems = useCommunityStore((s) => s.favoriteItems);
@@ -89,6 +89,7 @@ export default function CommunityScreen({ navigation }) {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [expandedShareId, setExpandedShareId] = useState(null);
 
   useEffect(() => {
     fetchFeed(true);
@@ -111,6 +112,25 @@ export default function CommunityScreen({ navigation }) {
     fetchFavorites,
     fetchNotifications,
   ]);
+
+  useEffect(() => {
+    const targetShareId = route?.params?.openSharedOutfitId;
+    if (!targetShareId) return;
+    const shouldOpenComments = !!route?.params?.openComments;
+    setActiveTab('feed');
+    const normalizedTargetId = String(targetShareId);
+    const targetFeedItem = feedItems.find((item) => String(item?.id || item?._id || '') === normalizedTargetId);
+
+    if (shouldOpenComments && targetFeedItem) {
+      setExpandedShareId(null);
+      setCommentsItem(targetFeedItem);
+    } else {
+      setCommentsItem(null);
+      setExpandedShareId(normalizedTargetId);
+    }
+
+    navigation.setParams?.({ openSharedOutfitId: undefined, openComments: undefined });
+  }, [feedItems, navigation, route?.params?.openComments, route?.params?.openSharedOutfitId]);
 
   useEffect(() => {
     let currentAppState = AppState.currentState;
@@ -200,8 +220,10 @@ export default function CommunityScreen({ navigation }) {
       onOpenComments={handleOpenComments}
       onNavigateToProfile={handleNavigateToProfile}
       onDeleteShare={handleDeleteShare}
+      forceExpandedOpen={expandedShareId != null && String(item?.id || item?._id || '') === String(expandedShareId)}
+      onForcedExpandedOpen={() => setExpandedShareId(null)}
     />
-  ), [handleReact, handleRate, handleToggleFavorite, handleOpenComments, handleNavigateToProfile, handleDeleteShare]);
+  ), [expandedShareId, handleReact, handleRate, handleToggleFavorite, handleOpenComments, handleNavigateToProfile, handleDeleteShare]);
 
   const keyExtractor = useCallback((item) => String(item?.id || item?._id || Math.random()), []);
 
@@ -210,11 +232,20 @@ export default function CommunityScreen({ navigation }) {
   const handleNotificationPress = useCallback((notification) => {
     const sharedOutfitId = notification?.shared_outfit_id;
     if (!sharedOutfitId) return;
-    const feedItem = feedItems.find((item) => (item?.id || item?._id) === sharedOutfitId);
-    if (feedItem) {
-      setActiveTab('feed');
-      setCommentsItem(feedItem);
+    const notificationType = String(notification?.type || '').toLowerCase();
+    const shouldOpenComments = notificationType === 'comment' || notificationType === 'reply';
+    setActiveTab('feed');
+    const normalizedTargetId = String(sharedOutfitId);
+    const targetFeedItem = feedItems.find((item) => String(item?.id || item?._id || '') === normalizedTargetId);
+
+    if (shouldOpenComments && targetFeedItem) {
+      setExpandedShareId(null);
+      setCommentsItem(targetFeedItem);
+      return;
     }
+
+    setCommentsItem(null);
+    setExpandedShareId(normalizedTargetId);
   }, [feedItems]);
 
   const renderNotification = useCallback(({ item }) => {
