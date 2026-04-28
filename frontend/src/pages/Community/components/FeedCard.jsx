@@ -48,6 +48,8 @@ const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare }) => {
         id: i.id,
         name: i.name || 'Unknown',
         image: i.image_url,
+        deleted: !!i.deleted,
+        deletedMessage: i.deleted_message,
       }));
     }
     // Fallback for old data without resolved items
@@ -125,8 +127,12 @@ const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare }) => {
           }
           return (
             <div key={i} className={`feed-collage-cell feed-collage-cell--${i + 1}`}>
-              {outfitItem ? (
+              {outfitItem?.image ? (
                 <img src={outfitItem.image} alt={outfitItem.name} loading="lazy" referrerPolicy="no-referrer" />
+              ) : outfitItem?.deleted ? (
+                <div className="feed-collage-deleted">
+                  <span>{outfitItem.deletedMessage || `User deleted ${outfitItem.name || 'this item'}`}</span>
+                </div>
               ) : (
                 <div className="feed-collage-placeholder" aria-hidden="true">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

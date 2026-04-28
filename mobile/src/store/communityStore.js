@@ -75,13 +75,14 @@ const useCommunityStore = create((set, get) => ({
   notificationsHasMore: true,
   error: null,
 
-  fetchFeed: async (reset = false) => {
+  fetchFeed: async (reset = false, options = {}) => {
+    const { silent = false } = options;
     const state = get();
     if (state.loading || state.loadingMore || (!reset && !state.hasMore)) return;
     const nextPage = reset ? 1 : (state.feedPagination.page || 0) + 1;
     set({
       error: null,
-      ...(reset ? { loading: true, refreshing: true } : { loadingMore: true }),
+      ...(!silent ? (reset ? { loading: true, refreshing: true } : { loadingMore: true }) : {}),
     });
     try {
       const response = await withTimeout(
@@ -100,20 +101,19 @@ const useCommunityStore = create((set, get) => ({
           limit: pagination.limit || PAGE_LIMIT,
         },
         hasMore: hasMoreFrom(pagination, items.length, PAGE_LIMIT),
-        loading: false,
-        refreshing: false,
-        loadingMore: false,
+        ...(!silent ? { loading: false, refreshing: false, loadingMore: false } : {}),
       }));
     } catch (error) {
-      set({ error: error.message, loading: false, refreshing: false, loadingMore: false });
+      set({ error: error.message, ...(!silent ? { loading: false, refreshing: false, loadingMore: false } : {}) });
     }
   },
 
-  fetchTopRated: async (reset = false) => {
+  fetchTopRated: async (reset = false, options = {}) => {
+    const { silent = false } = options;
     const state = get();
     if (state.topRatedLoading || state.topRatedLoadingMore || (!reset && !state.topRatedHasMore)) return;
     const nextPage = reset ? 1 : (state.topRatedPagination.page || 0) + 1;
-    set({ error: null, ...(reset ? { topRatedLoading: true } : { topRatedLoadingMore: true }) });
+    set({ error: null, ...(!silent ? (reset ? { topRatedLoading: true } : { topRatedLoadingMore: true }) : {}) });
     try {
       const response = await withTimeout(
         apiService.getCommunityTopRated(nextPage, PAGE_LIMIT),
@@ -131,19 +131,19 @@ const useCommunityStore = create((set, get) => ({
           limit: pagination.limit || PAGE_LIMIT,
         },
         topRatedHasMore: hasMoreFrom(pagination, items.length, PAGE_LIMIT),
-        topRatedLoading: false,
-        topRatedLoadingMore: false,
+        ...(!silent ? { topRatedLoading: false, topRatedLoadingMore: false } : {}),
       }));
     } catch (error) {
-      set({ error: error.message, topRatedLoading: false, topRatedLoadingMore: false });
+      set({ error: error.message, ...(!silent ? { topRatedLoading: false, topRatedLoadingMore: false } : {}) });
     }
   },
 
-  fetchFavorites: async (reset = false) => {
+  fetchFavorites: async (reset = false, options = {}) => {
+    const { silent = false } = options;
     const state = get();
     if (state.favoritesLoading || state.favoritesLoadingMore || (!reset && !state.favoritesHasMore)) return;
     const nextPage = reset ? 1 : (state.favoritePagination.page || 0) + 1;
-    set({ error: null, ...(reset ? { favoritesLoading: true } : { favoritesLoadingMore: true }) });
+    set({ error: null, ...(!silent ? (reset ? { favoritesLoading: true } : { favoritesLoadingMore: true }) : {}) });
     try {
       const response = await withTimeout(
         apiService.getCommunityFavorites(nextPage, PAGE_LIMIT),
@@ -161,19 +161,19 @@ const useCommunityStore = create((set, get) => ({
           limit: pagination.limit || PAGE_LIMIT,
         },
         favoritesHasMore: hasMoreFrom(pagination, items.length, PAGE_LIMIT),
-        favoritesLoading: false,
-        favoritesLoadingMore: false,
+        ...(!silent ? { favoritesLoading: false, favoritesLoadingMore: false } : {}),
       }));
     } catch (error) {
-      set({ error: error.message, favoritesLoading: false, favoritesLoadingMore: false });
+      set({ error: error.message, ...(!silent ? { favoritesLoading: false, favoritesLoadingMore: false } : {}) });
     }
   },
 
-  fetchNotifications: async (reset = false) => {
+  fetchNotifications: async (reset = false, options = {}) => {
+    const { silent = false } = options;
     const state = get();
     if (state.notificationsLoading || state.notificationsLoadingMore || (!reset && !state.notificationsHasMore)) return;
     const nextPage = reset ? 1 : (state.notificationsPagination.page || 0) + 1;
-    set({ error: null, ...(reset ? { notificationsLoading: true } : { notificationsLoadingMore: true }) });
+    set({ error: null, ...(!silent ? (reset ? { notificationsLoading: true } : { notificationsLoadingMore: true }) : {}) });
     try {
       const response = await withTimeout(
         apiService.getCommunityNotifications(nextPage, PAGE_LIMIT),
@@ -192,11 +192,10 @@ const useCommunityStore = create((set, get) => ({
         },
         notificationsHasMore: hasMoreFrom(pagination, items.length, PAGE_LIMIT),
         unreadCount: Number(response?.unread_count ?? prev.unreadCount ?? 0),
-        notificationsLoading: false,
-        notificationsLoadingMore: false,
+        ...(!silent ? { notificationsLoading: false, notificationsLoadingMore: false } : {}),
       }));
     } catch (error) {
-      set({ error: error.message, notificationsLoading: false, notificationsLoadingMore: false });
+      set({ error: error.message, ...(!silent ? { notificationsLoading: false, notificationsLoadingMore: false } : {}) });
     }
   },
 

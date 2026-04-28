@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, Pressable, FlatList, ActivityIndicator, RefreshControl, StyleSheet, ScrollView, Alert, Modal } from 'react-native';
+import { View, Text, Pressable, FlatList, ActivityIndicator, RefreshControl, StyleSheet, ScrollView, Alert, Modal, AppState } from 'react-native';
 import useCommunityStore from '../../store/communityStore';
 import FeedCard from './components/FeedCard';
 import CommentsModal from './components/CommentsModal';
@@ -15,6 +15,24 @@ const TABS = [
   { key: 'favorites', label: 'Favorites', icon: '❤️' },
   { key: 'notifications', label: 'Notifications', icon: '🔔' },
 ];
+
+const COMMUNITY_REFRESH_MS = 15000;
+
+const TYPE_ICON = {
+  reaction: { emoji: '👍', bg: '#fff8e1' },
+  rating:   { emoji: '⭐', bg: '#fff8e1' },
+  comment:  { emoji: '💬', bg: '#f3f4f6' },
+  reply:    { emoji: '💬', bg: '#f3f4f6' },
+  favorite: { emoji: '❤️', bg: '#fce7f3' },
+};
+
+const VERB = {
+  reaction: 'reacted to',
+  rating:   'rated',
+  comment:  'commented on',
+  reply:    'replied to',
+  favorite: 'favorited',
+};
 
 const formatTimeAgo = (dateStr) => {
   if (!dateStr) return '';
@@ -89,6 +107,33 @@ export default function CommunityScreen({ navigation }) {
     fetchNotifications,
   ]);
 
+  useEffect(() => {
+    let currentAppState = AppState.currentState;
+
+    const refreshCommunity = () => {
+      if (currentAppState !== 'active') return;
+
+      Promise.allSettled([
+        fetchFeed(true, { silent: true }),
+        fetchTopRated(true, { silent: true }),
+        fetchFavorites(true, { silent: true }),
+        fetchNotifications(true, { silent: true }),
+      ]);
+    };
+
+    const intervalId = setInterval(refreshCommunity, COMMUNITY_REFRESH_MS);
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      const wasInactive = currentAppState !== 'active';
+      currentAppState = nextAppState;
+      if (wasInactive && nextAppState === 'active') refreshCommunity();
+    });
+
+    return () => {
+      clearInterval(intervalId);
+      subscription.remove();
+    };
+  }, [fetchFeed, fetchTopRated, fetchFavorites, fetchNotifications]);
+
   const handleReact = useCallback(async (shareId, emojiType) => {
     await addReaction(shareId, emojiType);
   }, [addReaction]);
@@ -125,7 +170,7 @@ export default function CommunityScreen({ navigation }) {
       name: item?.outfit?.name || item?.outfit_name || item?.name || 'this outfit',
     });
     setDeleteModalOpen(true);
-  }, [unshareOutfit]);
+  }, []);
 
   const confirmDeleteShare = useCallback(async () => {
     const shareId = String(deleteTarget?.id || '');
@@ -167,22 +212,6 @@ export default function CommunityScreen({ navigation }) {
     }
   }, [feedItems]);
 
-  const TYPE_ICON = {
-    reaction: { emoji: '👍', bg: '#fff8e1' },
-    rating:   { emoji: '⭐', bg: '#fff8e1' },
-    comment:  { emoji: '💬', bg: '#f3f4f6' },
-    reply:    { emoji: '💬', bg: '#f3f4f6' },
-    favorite: { emoji: '❤️', bg: '#fce7f3' },
-  };
-
-  const VERB = {
-    reaction: 'reacted to',
-    rating:   'rated',
-    comment:  'commented on',
-    reply:    'replied to',
-    favorite: 'favorited',
-  };
-
   const renderNotification = useCallback(({ item }) => {
     const actorName  = item?.actor?.name || 'Someone';
     const isRead     = !!item?.is_read;
@@ -212,7 +241,7 @@ export default function CommunityScreen({ navigation }) {
             {' '}
             <Text style={styles.notifVerb}>{verb}</Text>
             {' '}
-            <Text style={styles.notifOutfit}>"{outfitName}"</Text>
+            <Text style={styles.notifOutfit}>{`"${outfitName}"`}</Text>
             {ratingText ? <Text style={styles.notifVerb}>{ratingText}</Text> : null}
           </Text>
           <Text style={styles.notifTime}>{formatTimeAgo(item?.created_at || item?.createdAt)}</Text>
@@ -410,7 +439,7 @@ export default function CommunityScreen({ navigation }) {
             </View>
             <Text style={styles.deleteTitle}>Delete</Text>
             <Text style={styles.deleteMessage}>
-              Are you sure that you want to delete "{deleteTarget?.name || 'this outfit'}"?
+              {`Are you sure that you want to delete "${deleteTarget?.name || 'this outfit'}"?`}
             </Text>
             <View style={styles.deleteActions}>
               <Pressable

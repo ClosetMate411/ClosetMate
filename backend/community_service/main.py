@@ -19,6 +19,7 @@ Endpoints:
 import os
 import uuid
 import logging
+import json
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -142,6 +143,8 @@ class SharedOutfit(Base):
     outfit_id = Column(String, nullable=False, index=True)
     user_id = Column(String, nullable=False, index=True)
     description = Column(Text, nullable=True)
+    outfit_snapshot = Column(Text, nullable=True)
+    item_snapshot = Column(Text, nullable=True)
     shared_at = Column(DateTime, default=datetime.utcnow)
 
     def to_dict(self):
@@ -263,6 +266,8 @@ with engine.connect() as _conn:
         "ALTER TABLE users ADD COLUMN comment_banned_until TIMESTAMP DEFAULT NULL",
         "ALTER TABLE users ADD COLUMN comment_ban_permanent BOOLEAN DEFAULT FALSE",
         "ALTER TABLE moderation_logs ADD COLUMN detection_layer VARCHAR(20) DEFAULT NULL",
+        "ALTER TABLE shared_outfits ADD COLUMN outfit_snapshot TEXT DEFAULT NULL",
+        "ALTER TABLE shared_outfits ADD COLUMN item_snapshot TEXT DEFAULT NULL",
     ):
         try:
             _conn.execute(sa_text(_stmt))
@@ -279,20 +284,25 @@ with engine.connect() as _conn:
         # Children of SharedOutfits whose parent Outfit row no longer exists.
         "DELETE FROM notifications WHERE shared_outfit_id IN ("
         "  SELECT so.id FROM shared_outfits so "
-        "  LEFT JOIN outfits o ON o.id = so.outfit_id WHERE o.id IS NULL)",
+        "  LEFT JOIN outfits o ON o.id = so.outfit_id "
+        "  WHERE o.id IS NULL AND so.outfit_snapshot IS NULL)",
         "DELETE FROM ratings WHERE shared_outfit_id IN ("
         "  SELECT so.id FROM shared_outfits so "
-        "  LEFT JOIN outfits o ON o.id = so.outfit_id WHERE o.id IS NULL)",
+        "  LEFT JOIN outfits o ON o.id = so.outfit_id "
+        "  WHERE o.id IS NULL AND so.outfit_snapshot IS NULL)",
         "DELETE FROM reactions WHERE shared_outfit_id IN ("
         "  SELECT so.id FROM shared_outfits so "
-        "  LEFT JOIN outfits o ON o.id = so.outfit_id WHERE o.id IS NULL)",
+        "  LEFT JOIN outfits o ON o.id = so.outfit_id "
+        "  WHERE o.id IS NULL AND so.outfit_snapshot IS NULL)",
         "DELETE FROM comments WHERE shared_outfit_id IN ("
         "  SELECT so.id FROM shared_outfits so "
-        "  LEFT JOIN outfits o ON o.id = so.outfit_id WHERE o.id IS NULL)",
+        "  LEFT JOIN outfits o ON o.id = so.outfit_id "
+        "  WHERE o.id IS NULL AND so.outfit_snapshot IS NULL)",
         "DELETE FROM community_favorites WHERE shared_outfit_id IN ("
         "  SELECT so.id FROM shared_outfits so "
-        "  LEFT JOIN outfits o ON o.id = so.outfit_id WHERE o.id IS NULL)",
-        "DELETE FROM shared_outfits WHERE outfit_id NOT IN (SELECT id FROM outfits)",
+        "  LEFT JOIN outfits o ON o.id = so.outfit_id "
+        "  WHERE o.id IS NULL AND so.outfit_snapshot IS NULL)",
+        "DELETE FROM shared_outfits WHERE outfit_id NOT IN (SELECT id FROM outfits) AND outfit_snapshot IS NULL",
         # Rows whose SharedOutfit itself is gone (unshare didn't cascade pre-fix).
         "DELETE FROM notifications WHERE shared_outfit_id NOT IN (SELECT id FROM shared_outfits)",
         "DELETE FROM community_favorites WHERE shared_outfit_id NOT IN (SELECT id FROM shared_outfits)",
@@ -714,6 +724,8 @@ async def share_outfit(
         outfit_id=body.outfit_id,
         user_id=user_id,
         description=body.description,
+        outfit_snapshot=json.dumps(_build_outfit_snapshot(outfit)),
+        item_snapshot=json.dumps(_build_outfit_item_snapshot(body.outfit_id, db)),
     )
     db.add(shared)
 
@@ -800,18 +812,81 @@ async def purge_outfit_community_data(
 
 # ── Helper: assemble a feed item from a SharedOutfit row ─────────────────────
 
-def _assemble_feed_item(shared: SharedOutfit, user_id: str, db: Session) -> dict | None:
-    """Build a single feed-item dict. Returns None if the outfit no longer exists."""
-    outfit = db.query(OutfitRef).filter(OutfitRef.id == shared.outfit_id).first()
-    if not outfit:
-        return None
-
+def _build_outfit_item_snapshot(outfit_id: str, db: Session) -> list[dict]:
     outfit_items = (
         db.query(OutfitItemRef)
-        .filter(OutfitItemRef.outfit_id == shared.outfit_id)
+        .filter(OutfitItemRef.outfit_id == outfit_id)
         .order_by(OutfitItemRef.position)
         .all()
     )
+    item_ids = [oi.item_id for oi in outfit_items]
+    clothing_items = db.query(ClothingItemRef).filter(
+        ClothingItemRef.id.in_(item_ids)
+    ).all() if item_ids else []
+    items_map = {ci.id: ci for ci in clothing_items}
+
+    return [
+        {
+            "id": oi.item_id,
+            "name": items_map[oi.item_id].item_name if oi.item_id in items_map else None,
+            "image_url": items_map[oi.item_id].image_url if oi.item_id in items_map else None,
+            "position": oi.position,
+        }
+        for oi in outfit_items
+    ]
+
+
+def _build_outfit_snapshot(outfit: OutfitRef) -> dict:
+    return {
+        "id": outfit.id,
+        "name": outfit.name,
+        "style": outfit.style,
+        "occasion": outfit.occasion,
+        "season": outfit.season,
+        "cohesion_score": outfit.cohesion_score,
+        "reasoning": outfit.reasoning,
+    }
+
+
+def _read_item_snapshot(shared: SharedOutfit) -> list[dict]:
+    if not shared.item_snapshot:
+        return []
+    try:
+        snapshot = json.loads(shared.item_snapshot)
+        return snapshot if isinstance(snapshot, list) else []
+    except Exception:
+        return []
+
+
+def _read_outfit_snapshot(shared: SharedOutfit) -> dict:
+    if not shared.outfit_snapshot:
+        return {}
+    try:
+        snapshot = json.loads(shared.outfit_snapshot)
+        return snapshot if isinstance(snapshot, dict) else {}
+    except Exception:
+        return {}
+
+
+def _assemble_feed_item(shared: SharedOutfit, user_id: str, db: Session) -> dict | None:
+    """Build a single feed-item dict. Returns None if the outfit no longer exists."""
+    outfit = db.query(OutfitRef).filter(OutfitRef.id == shared.outfit_id).first()
+    outfit_snapshot = _read_outfit_snapshot(shared)
+    if not outfit and not outfit_snapshot:
+        return None
+    if outfit and not outfit_snapshot:
+        outfit_snapshot = _build_outfit_snapshot(outfit)
+        shared.outfit_snapshot = json.dumps(outfit_snapshot)
+        db.add(shared)
+
+    item_snapshot = _read_item_snapshot(shared)
+    if not item_snapshot:
+        item_snapshot = _build_outfit_item_snapshot(shared.outfit_id, db)
+        if item_snapshot:
+            shared.item_snapshot = json.dumps(item_snapshot)
+            db.add(shared)
+    if shared in db.dirty:
+        db.commit()
 
     user_ref = db.query(UserRef).filter(UserRef.id == shared.user_id).first()
     user_name = user_ref.full_name if user_ref else "Unknown"
@@ -856,19 +931,26 @@ def _assemble_feed_item(shared: SharedOutfit, user_id: str, db: Session) -> dict
         CommunityFavorite.user_id == user_id,
     ).first() is not None
 
-    item_ids = [oi.item_id for oi in outfit_items]
+    item_ids = [entry.get("id") for entry in item_snapshot if entry.get("id")]
     clothing_items = db.query(ClothingItemRef).filter(
         ClothingItemRef.id.in_(item_ids)
     ).all() if item_ids else []
     items_map = {ci.id: ci for ci in clothing_items}
-    resolved_items = [
-        {
+    resolved_items = []
+    for entry in item_snapshot:
+        iid = entry.get("id")
+        if not iid:
+            continue
+        current_item = items_map.get(iid)
+        deleted = current_item is None
+        fallback_name = entry.get("name") or "this item"
+        resolved_items.append({
             "id": iid,
-            "name": items_map[iid].item_name if iid in items_map else "Unknown",
-            "image_url": items_map[iid].image_url if iid in items_map else None,
-        }
-        for iid in item_ids
-    ]
+            "name": current_item.item_name if current_item else fallback_name,
+            "image_url": current_item.image_url if current_item else None,
+            "deleted": deleted,
+            "deleted_message": f"User deleted {fallback_name}" if deleted else None,
+        })
 
     # v4 engagement scores (star_score + emoji_bonus → sort_score)
     scores = calculate_post_scores(db, shared.id)
@@ -877,15 +959,16 @@ def _assemble_feed_item(shared: SharedOutfit, user_id: str, db: Session) -> dict
     return {
         "id": shared.id,
         "outfit": {
-            "id": outfit.id,
-            "name": outfit.name,
-            "style": outfit.style,
-            "occasion": outfit.occasion,
-            "season": outfit.season,
-            "cohesion_score": outfit.cohesion_score,
-            "reasoning": outfit.reasoning,
+            "id": outfit.id if outfit else outfit_snapshot.get("id") or shared.outfit_id,
+            "name": outfit.name if outfit else outfit_snapshot.get("name") or "Outfit",
+            "style": outfit.style if outfit else outfit_snapshot.get("style"),
+            "occasion": outfit.occasion if outfit else outfit_snapshot.get("occasion"),
+            "season": outfit.season if outfit else outfit_snapshot.get("season"),
+            "cohesion_score": outfit.cohesion_score if outfit else outfit_snapshot.get("cohesion_score"),
+            "reasoning": outfit.reasoning if outfit else outfit_snapshot.get("reasoning"),
             "item_ids": item_ids,
             "items": resolved_items,
+            "deleted": outfit is None,
         },
         "shared_by": {
             "user_id": shared.user_id,

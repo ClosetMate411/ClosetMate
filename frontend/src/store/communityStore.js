@@ -24,10 +24,11 @@ const useCommunityStore = create((set, get) => ({
   favoritesPagination: { page: 1, limit: 20, total: 0, pages: 0 },
   favoritesLoading: false,
 
-  fetchFeed: async (page = 1) => {
-    if (page === 1) {
+  fetchFeed: async (page = 1, options = {}) => {
+    const { silent = false } = options;
+    if (page === 1 && !silent) {
       set({ loading: true, error: null });
-    } else {
+    } else if (!silent) {
       set({ loadingMore: true });
     }
     try {
@@ -36,11 +37,10 @@ const useCommunityStore = create((set, get) => ({
       set((state) => ({
         feed: page === 1 ? data : [...state.feed, ...data],
         pagination,
-        loading: false,
-        loadingMore: false,
+        ...(!silent ? { loading: false, loadingMore: false } : {}),
       }));
     } catch (error) {
-      set({ error: error.message, loading: false, loadingMore: false });
+      set({ error: error.message, ...(!silent ? { loading: false, loadingMore: false } : {}) });
       throw error;
     }
   },
@@ -119,34 +119,36 @@ const useCommunityStore = create((set, get) => ({
   },
 
   // ── Top Rated ──
-  fetchTopRated: async (page = 1) => {
-    set({ topRatedLoading: true });
+  fetchTopRated: async (page = 1, options = {}) => {
+    const { silent = false } = options;
+    if (!silent) set({ topRatedLoading: true });
     try {
       const response = await apiService.getTopRated(page);
       set({
         topRated: response.data || [],
         topRatedPagination: response.pagination || { page, limit: 20, total: 0, pages: 0 },
-        topRatedLoading: false,
+        ...(!silent ? { topRatedLoading: false } : {}),
       });
     } catch (error) {
-      set({ topRatedLoading: false });
+      if (!silent) set({ topRatedLoading: false });
       throw error;
     }
   },
 
   // ── Notifications ──
-  fetchNotifications: async (page = 1) => {
-    set({ notificationsLoading: true });
+  fetchNotifications: async (page = 1, options = {}) => {
+    const { silent = false } = options;
+    if (!silent) set({ notificationsLoading: true });
     try {
       const response = await apiService.getNotifications(page);
       set({
         notifications: response.data || [],
         unreadCount: response.unread_count || 0,
         notificationsPagination: response.pagination || { page, limit: 20, total: 0, pages: 0 },
-        notificationsLoading: false,
+        ...(!silent ? { notificationsLoading: false } : {}),
       });
     } catch (error) {
-      set({ notificationsLoading: false });
+      if (!silent) set({ notificationsLoading: false });
       throw error;
     }
   },
@@ -164,17 +166,18 @@ const useCommunityStore = create((set, get) => ({
   },
 
   // ── Favorites ──
-  fetchFavorites: async (page = 1) => {
-    set({ favoritesLoading: true });
+  fetchFavorites: async (page = 1, options = {}) => {
+    const { silent = false } = options;
+    if (!silent) set({ favoritesLoading: true });
     try {
       const response = await apiService.getFavorites(page);
       set({
         favorites: response.data || [],
         favoritesPagination: response.pagination || { page, limit: 20, total: 0, pages: 0 },
-        favoritesLoading: false,
+        ...(!silent ? { favoritesLoading: false } : {}),
       });
     } catch (error) {
-      set({ favoritesLoading: false });
+      if (!silent) set({ favoritesLoading: false });
       throw error;
     }
   },

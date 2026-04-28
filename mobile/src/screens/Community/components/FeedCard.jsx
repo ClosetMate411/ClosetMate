@@ -38,6 +38,23 @@ const getItemImage = (item) => {
   );
 };
 
+const getItemName = (item) => (
+  pickString(
+    item?.name,
+    item?.item_name,
+    item?.itemName,
+    item?.wardrobe_item?.name,
+    item?.wardrobe_item?.item_name,
+    item?.clothing_item?.name,
+    item?.clothing_item?.item_name
+  )
+);
+
+const getDeletedItemMessage = (item) => (
+  pickString(item?.deleted_message, item?.deletedMessage) ||
+  `User deleted ${getItemName(item) || 'this item'}`
+);
+
 const formatRelativeTime = (dateStr) => {
   if (!dateStr) return '';
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -204,7 +221,7 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onNavigateToProfile, 
       });
 
     return () => { mounted = false; };
-  }, [item, userId, inlineUserName, safeInlineUserName, currentUserId, currentUserName, authUser]);
+  }, [item, userId, inlineUserName, safeInlineUserName, currentUserId, currentUserName, authUser, isSelfPost]);
 
   useEffect(() => {
     let mounted = true;
@@ -305,10 +322,15 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onNavigateToProfile, 
         {[0, 1, 2, 3].map((idx) => {
           const outfitItem = outfitItems[idx];
           const image = outfitItem ? getItemImage(outfitItem) : null;
+          const isDeleted = !!(outfitItem?.deleted || outfitItem?.is_deleted || outfitItem?.deleted_at);
           return (
             <View key={idx} style={styles.collageCell}>
               {image ? (
                 <Image source={{ uri: image }} style={{ width: '80%', height: '80%' }} resizeMode="contain" />
+              ) : isDeleted ? (
+                <View style={styles.deletedItemBox}>
+                  <Text style={styles.deletedItemText}>{getDeletedItemMessage(outfitItem)}</Text>
+                </View>
               ) : (
                 <Ionicons name="shirt-outline" size={28} color={palette.borderStrong} />
               )}
@@ -479,6 +501,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+  },
+  deletedItemBox: {
+    width: '100%',
+    height: '100%',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: palette.borderStrong,
+    backgroundColor: '#f8fafc',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  deletedItemText: {
+    ...type.caption,
+    color: palette.textMuted,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 16,
   },
   outfitMetaRow: {
     flexDirection: 'row',

@@ -12,6 +12,8 @@ import CommentsModal from './components/CommentsModal';
 import ShareOutfitModal from './components/ShareOutfitModal';
 import './Community.css';
 
+const COMMUNITY_REFRESH_MS = 15000;
+
 const TABS = [
   { key: 'feed', label: 'Feed' },
   { key: 'top-rated', label: 'Top Rated', icon: '⭐' },
@@ -31,17 +33,14 @@ const Community = () => {
     incrementCommentCount,
     decrementCommentCount,
     topRated,
-    topRatedPagination,
     topRatedLoading,
     fetchTopRated,
     notifications,
-    notificationsPagination,
     notificationsLoading,
     unreadCount,
     fetchNotifications,
     markAllRead,
     favorites,
-    favoritesPagination,
     favoritesLoading,
     fetchFavorites,
   } = useCommunityStore();
@@ -76,6 +75,30 @@ const Community = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
+
+  useEffect(() => {
+    const refreshCommunity = () => {
+      if (document.hidden) return;
+
+      Promise.allSettled([
+        fetchFeed(1, { silent: true }),
+        fetchTopRated(1, { silent: true }),
+        fetchFavorites(1, { silent: true }),
+        fetchNotifications(1, { silent: true }),
+      ]);
+    };
+
+    const intervalId = window.setInterval(refreshCommunity, COMMUNITY_REFRESH_MS);
+    const handleVisibilityChange = () => {
+      if (!document.hidden) refreshCommunity();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [fetchFeed, fetchTopRated, fetchFavorites, fetchNotifications]);
 
   // ── Comments ─────────────────────────────────────────
   const handleOpenComments = useCallback((item) => {

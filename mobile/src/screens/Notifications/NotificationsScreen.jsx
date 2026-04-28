@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, FlatList, ActivityIndicator,
-  RefreshControl, Pressable, StyleSheet, Image,
+  RefreshControl, Pressable, StyleSheet, Image, AppState,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -29,6 +29,8 @@ const VERBS = {
   reply:    'replied to your comment on',
   favorite: 'favorited',
 };
+
+const NOTIFICATIONS_REFRESH_MS = 15000;
 
 /* ─── single notification row ─────────────────────────────── */
 const NotificationRow = React.memo(function NotificationRow({ item, onPress }) {
@@ -91,6 +93,28 @@ export default function NotificationsScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => { fetchNotifications(true); }, [fetchNotifications]);
+
+  useEffect(() => {
+    let currentAppState = AppState.currentState;
+
+    const refreshNotifications = () => {
+      if (currentAppState === 'active') {
+        fetchNotifications(true, { silent: true });
+      }
+    };
+
+    const intervalId = setInterval(refreshNotifications, NOTIFICATIONS_REFRESH_MS);
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      const wasInactive = currentAppState !== 'active';
+      currentAppState = nextAppState;
+      if (wasInactive && nextAppState === 'active') refreshNotifications();
+    });
+
+    return () => {
+      clearInterval(intervalId);
+      subscription.remove();
+    };
+  }, [fetchNotifications]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
