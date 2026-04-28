@@ -8,6 +8,36 @@ const sortNewestFirst = (items = []) =>
     return bTime - aTime;
   });
 
+// Mirror of community_service /community/top-rated formula
+// (backend: SUM(rating.score) * 10 + COUNT(reactions) * 10).
+// Used to optimistically re-rank Top Rated items in-place after a rating
+// change or reaction toggle so the user's own action is reflected
+// immediately, without waiting for the silent background re-fetch.
+const computeTopRatedScore = (item) => {
+  const avg = Number(item?.ratings?.average || 0);
+  const count = Number(item?.ratings?.count || 0);
+  const ratingPoints = avg * count * 10;
+
+  const counts = item?.reactions?.counts || {};
+  const reactionCount = Object.values(counts).reduce(
+    (sum, n) => sum + (Number(n) || 0),
+    0,
+  );
+  const reactionPoints = reactionCount * 10;
+
+  return ratingPoints + reactionPoints;
+};
+
+const sortByTopRated = (items = []) =>
+  [...items].sort((a, b) => {
+    const scoreDiff = computeTopRatedScore(b) - computeTopRatedScore(a);
+    if (scoreDiff !== 0) return scoreDiff;
+    // Tie-break: newer first, matches backend ORDER BY shared_at DESC
+    const aTime = new Date(a?.shared_at || 0).getTime();
+    const bTime = new Date(b?.shared_at || 0).getTime();
+    return bTime - aTime;
+  });
+
 const useCommunityStore = create((set, get) => ({
   feed: [],
   pagination: { page: 1, limit: 20, total: 0, pages: 0 },
@@ -70,30 +100,36 @@ const useCommunityStore = create((set, get) => ({
     }));
   },
 
-  // Rate and update from backend response (accurate average/count)
+  // Rate and update from backend response (accurate average/count).
+  // Top Rated is re-sorted in place using the backend formula so the user
+  // sees their action move the post immediately, then a silent re-fetch
+  // reconciles in case other users rated/reacted concurrently.
   rateOutfit: async (sharedOutfitId, score) => {
     const response = await apiService.rateOutfit(sharedOutfitId, score);
     const { average, count } = response.data;
     const newRatings = { average, count, user_rating: score };
 
-    set((state) => {
-      const updatedTopRated = state.topRated
-        .map((item) => (item.id === sharedOutfitId ? { ...item, ratings: newRatings } : item))
-        .sort((a, b) => {
-          const avgDiff = (b.ratings.average || 0) - (a.ratings.average || 0);
-          return avgDiff !== 0 ? avgDiff : (b.ratings.count || 0) - (a.ratings.count || 0);
-        });
-
-      return {
-        feed: state.feed.map((item) =>
+    set((state) => ({
+      feed: state.feed.map((item) =>
+        item.id === sharedOutfitId ? { ...item, ratings: newRatings } : item
+      ),
+      topRated: sortByTopRated(
+        state.topRated.map((item) =>
           item.id === sharedOutfitId ? { ...item, ratings: newRatings } : item
-        ),
-        topRated: updatedTopRated,
-      };
-    });
+        )
+      ),
+      favorites: state.favorites.map((item) =>
+        item.id === sharedOutfitId ? { ...item, ratings: newRatings } : item
+      ),
+    }));
+
+    // Background reconcile so concurrent activity from other users is
+    // reflected. Uses silent flag so the spinner doesn't flash.
+    get().fetchTopRated(1, { silent: true }).catch(() => {});
   },
 
-  // Use backend's authoritative emoji_counts + my_reactions for accuracy
+  // Use backend's authoritative emoji_counts + my_reactions for accuracy.
+  // Reactions count toward the same Top Rated score, so re-sort + reconcile.
   reactToOutfit: async (sharedOutfitId, emojiType) => {
     const response = await apiService.reactToOutfit(sharedOutfitId, emojiType);
     const { emoji_counts, my_reactions } = response.data;
@@ -104,9 +140,11 @@ const useCommunityStore = create((set, get) => ({
 
     set((state) => ({
       feed: state.feed.map(applyUpdate),
-      topRated: state.topRated.map(applyUpdate),
+      topRated: sortByTopRated(state.topRated.map(applyUpdate)),
       favorites: state.favorites.map(applyUpdate),
     }));
+
+    get().fetchTopRated(1, { silent: true }).catch(() => {});
   },
 
   incrementCommentCount: (sharedOutfitId) => {

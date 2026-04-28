@@ -46,6 +46,41 @@ const updatePostAcrossLists = (state, shareId, updater) => {
   };
 };
 
+// Mirror of community_service /community/top-rated formula
+// (backend: SUM(rating.score) * 10 + COUNT(reactions) * 10).
+// Used to optimistically re-rank Top Rated items in-place after a rating
+// change or reaction toggle so the user's own action is reflected
+// immediately, before the silent background re-fetch reconciles.
+const computeTopRatedScore = (item) => {
+  const avg = Number(item?.ratings?.average ?? item?.average_rating ?? 0);
+  const count = Number(item?.ratings?.count ?? item?.rating_count ?? 0);
+  const ratingPoints = avg * count * 10;
+
+  const counts = item?.reactions?.counts || {};
+  const reactionCount = Object.values(counts).reduce(
+    (sum, n) => sum + (Number(n) || 0),
+    0,
+  );
+  const reactionPoints = reactionCount * 10;
+
+  return ratingPoints + reactionPoints;
+};
+
+const sortByTopRated = (items = []) =>
+  [...items].sort((a, b) => {
+    const scoreDiff = computeTopRatedScore(b) - computeTopRatedScore(a);
+    if (scoreDiff !== 0) return scoreDiff;
+    // Tie-break: newer first, matches backend ORDER BY shared_at DESC
+    const aTime = new Date(a?.shared_at || 0).getTime();
+    const bTime = new Date(b?.shared_at || 0).getTime();
+    return bTime - aTime;
+  });
+
+const updateAndResortTopRated = (state, shareId, updater) => {
+  const updated = updatePostAcrossLists(state, shareId, updater);
+  return { ...updated, topRatedItems: sortByTopRated(updated.topRatedItems) };
+};
+
 const useCommunityStore = create((set, get) => ({
   feedItems: [],
   topRatedItems: [],
@@ -269,11 +304,13 @@ const useCommunityStore = create((set, get) => ({
       const emojiCounts = response?.data?.emoji_counts || {};
       const myReactions = Array.isArray(response?.data?.my_reactions) ? response.data.my_reactions : [];
       const newReactions = { counts: emojiCounts, user_reactions: myReactions };
-      set((state) => updatePostAcrossLists(state, shareId, (item) => ({
+      set((state) => updateAndResortTopRated(state, shareId, (item) => ({
         ...item,
         reactions: newReactions,
         my_reactions: myReactions,
       })));
+      // Reconcile against backend in case other users reacted concurrently.
+      get().fetchTopRated(true, { silent: true }).catch(() => {});
     } catch (_e) {
       await Promise.all([get().fetchFeed(true), get().fetchTopRated(true), get().fetchFavorites(true)]);
     }
@@ -303,7 +340,7 @@ const useCommunityStore = create((set, get) => ({
       const response = await apiService.rateOutfit(shareId, score);
       const average = response?.data?.average;
       const count = Number(response?.data?.count || 0);
-      set((state) => updatePostAcrossLists(state, shareId, (item) => ({
+      set((state) => updateAndResortTopRated(state, shareId, (item) => ({
         ...item,
         my_rating: score,
         ratings: {
@@ -315,6 +352,9 @@ const useCommunityStore = create((set, get) => ({
         average_rating: average,
         rating_count: count,
       })));
+      // Background reconcile so concurrent activity from other users is
+      // reflected in Top Rated ranking.
+      get().fetchTopRated(true, { silent: true }).catch(() => {});
     } catch (_e) {
       await Promise.all([get().fetchFeed(true), get().fetchTopRated(true), get().fetchFavorites(true)]);
     }
