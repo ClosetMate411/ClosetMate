@@ -113,6 +113,7 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
           user: {
             user_id: user?.id || '',
             name: user?.full_name || 'You',
+            avatar_url: user?.avatar_url || user?.avatarUrl || null,
             is_self: true,
           },
         };
@@ -358,7 +359,7 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
               <div key={comment.id} className="comment-item">
                 <div className="comment-avatar" aria-hidden="true">
                   {comment.user.avatar_url ? (
-                    <img src={comment.user.avatar_url} alt="" loading="lazy" referrerPolicy="no-referrer" />
+                    <img src={comment.user.avatar_url} alt="" referrerPolicy="no-referrer" />
                   ) : (
                     comment.user.name.charAt(0).toUpperCase()
                   )}

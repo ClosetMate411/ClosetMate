@@ -19,6 +19,43 @@ const formatDateTime = (dateStr) => {
 };
 const AVATAR_GRADIENT = ['#7c3aed', '#c026d3'];
 
+const CommentAvatar = memo(function CommentAvatar({ avatarUrl, letter }) {
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    setLoaded(false);
+  }, [avatarUrl]);
+
+  return (
+    <View style={{ width: 36, height: 36, borderRadius: 18, overflow: 'hidden' }}>
+      <LinearGradient
+        colors={AVATAR_GRADIENT}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{
+          ...StyleSheet.absoluteFillObject,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>{letter}</Text>
+      </LinearGradient>
+      {avatarUrl ? (
+        <Image
+          source={{ uri: avatarUrl }}
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 18,
+            opacity: loaded ? 1 : 0,
+          }}
+          onLoad={() => setLoaded(true)}
+          onError={() => setLoaded(false)}
+        />
+      ) : null}
+    </View>
+  );
+});
+
 function CommentsModal({ visible, onClose, shareItem, onCommentAdded, onCommentDeleted, onNavigateToProfile }) {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -66,6 +103,18 @@ function CommentsModal({ visible, onClose, shareItem, onCommentAdded, onCommentD
   useEffect(() => () => {
     if (mentionTimerRef.current) clearTimeout(mentionTimerRef.current);
   }, []);
+
+  useEffect(() => {
+    const avatarUrls = Array.from(new Set(
+      comments
+        .map((comment) => comment?.user?.avatar_url || comment?.user?.avatarUrl)
+        .filter(Boolean)
+    ));
+
+    avatarUrls.forEach((avatarUrl) => {
+      Image.prefetch(avatarUrl).catch(() => {});
+    });
+  }, [comments]);
 
   const runMentionSearch = useCallback((query) => {
     if (mentionTimerRef.current) clearTimeout(mentionTimerRef.current);
@@ -227,23 +276,7 @@ function CommentsModal({ visible, onClose, shareItem, onCommentAdded, onCommentD
       }}>
         {/* Avatar */}
         <Pressable onPress={handleProfileClick}>
-          {avatarUrl ? (
-            <Image
-              source={{ uri: avatarUrl }}
-              style={{ width: 36, height: 36, borderRadius: 18 }}
-            />
-          ) : (
-            <LinearGradient
-              colors={AVATAR_GRADIENT}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={{
-                width: 36, height: 36, borderRadius: 18,
-                alignItems: 'center', justifyContent: 'center',
-              }}>
-              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>{letter}</Text>
-            </LinearGradient>
-          )}
+          <CommentAvatar avatarUrl={avatarUrl} letter={letter} />
         </Pressable>
 
         {/* Bubble */}
