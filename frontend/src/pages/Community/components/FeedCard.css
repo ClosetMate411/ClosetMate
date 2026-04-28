@@ -137,6 +137,18 @@
   overflow: hidden;
 }
 
+.feed-collage-button {
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: initial;
+}
+
+.feed-collage-button:focus-visible {
+  outline: 2px solid var(--primary, #6c5ce7);
+  outline-offset: 3px;
+}
+
 .feed-collage-cell {
   width: 100%;
   height: 100%;
@@ -207,6 +219,97 @@
   border-radius: 10px;
   font-size: 11px;
   font-weight: 600;
+  pointer-events: none;
+}
+
+.feed-expanded-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(17, 24, 39, 0.52);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.feed-expanded-modal {
+  width: min(720px, 100%);
+  max-height: min(760px, 88vh);
+  overflow: hidden;
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+  display: flex;
+  flex-direction: column;
+}
+
+.feed-expanded-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.feed-expanded-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--text-primary, #1a1a1a);
+}
+
+.feed-expanded-header span {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.78rem;
+  color: var(--text-muted, #888);
+  font-weight: 700;
+}
+
+.feed-expanded-close {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  color: #6b7280;
+  cursor: pointer;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.feed-expanded-close:hover {
+  background: #f9fafb;
+  color: #111827;
+}
+
+.feed-expanded-grid {
+  padding: 18px 20px 20px;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.feed-expanded-grid-cell {
+  min-width: 0;
+}
+
+.feed-expanded-grid-cell .feed-collage-cell {
+  aspect-ratio: 1 / 1;
+  border-radius: 12px;
+  border: 1px solid #eef2f7;
+}
+
+.feed-expanded-item-name {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #4b5563;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 /* ── Outfit Info ─────────────────────────────────────── */

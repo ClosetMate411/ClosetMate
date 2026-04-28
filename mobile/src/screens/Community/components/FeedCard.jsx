@@ -1,5 +1,5 @@
 import React, { memo, useMemo, useState, useEffect } from 'react';
-import { View, Text, Pressable, Image, StyleSheet } from 'react-native';
+import { View, Text, Pressable, Image, StyleSheet, Modal, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { palette } from '../../../theme/colors';
@@ -160,6 +160,7 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onNavigateToProfile, 
   const [isReacting, setIsReacting] = useState(false);
   const [isRating, setIsRating] = useState(false);
   const [isFavoriting, setIsFavoriting] = useState(false);
+  const [expandedOpen, setExpandedOpen] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -241,8 +242,10 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onNavigateToProfile, 
   const outfitItems = useMemo(() => {
     // Prefer detailedOutfit items if we fetched them
     const items = detailedOutfit?.items || item?.outfit?.items || item?.items || [];
-    return Array.isArray(items) ? items.slice(0, 4) : [];
+    return Array.isArray(items) ? items : [];
   }, [item, detailedOutfit]);
+  const previewItems = outfitItems.slice(0, 4);
+  const extraItemCount = Math.max(0, outfitItems.length - 4);
 
   const handleReactPress = async (targetShareId, key) => {
     if (!targetShareId || isReacting) return;
@@ -283,6 +286,31 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onNavigateToProfile, 
     return result.filter(Boolean);
   }, [item, detailedOutfit]);
 
+  const renderOutfitItemCell = (outfitItem, cellStyle = null, showName = false) => {
+    const image = outfitItem ? getItemImage(outfitItem) : null;
+    const isDeleted = !!(outfitItem?.deleted || outfitItem?.is_deleted || outfitItem?.deleted_at);
+    const itemName = getItemName(outfitItem);
+
+    return (
+      <View style={[styles.collageCell, cellStyle]}>
+        {image ? (
+          <Image source={{ uri: image }} style={styles.itemImage} resizeMode="contain" />
+        ) : isDeleted ? (
+          <View style={styles.deletedItemBox}>
+            <Text style={styles.deletedItemText}>{getDeletedItemMessage(outfitItem)}</Text>
+          </View>
+        ) : (
+          <Ionicons name="shirt-outline" size={28} color={palette.borderStrong} />
+        )}
+        {showName && itemName && !isDeleted ? (
+          <View style={styles.expandedItemNamePill}>
+            <Text style={styles.expandedItemName} numberOfLines={2}>{itemName}</Text>
+          </View>
+        ) : null}
+      </View>
+    );
+  };
+
   return (
     <View style={styles.card}>
       {/* User Header */}
@@ -318,26 +346,21 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onNavigateToProfile, 
         ) : null}
       </View>
 
-      <View style={styles.collage}>
+      <Pressable style={styles.collage} onPress={() => setExpandedOpen(true)}>
         {[0, 1, 2, 3].map((idx) => {
-          const outfitItem = outfitItems[idx];
-          const image = outfitItem ? getItemImage(outfitItem) : null;
-          const isDeleted = !!(outfitItem?.deleted || outfitItem?.is_deleted || outfitItem?.deleted_at);
+          const outfitItem = previewItems[idx];
           return (
-            <View key={idx} style={styles.collageCell}>
-              {image ? (
-                <Image source={{ uri: image }} style={{ width: '80%', height: '80%' }} resizeMode="contain" />
-              ) : isDeleted ? (
-                <View style={styles.deletedItemBox}>
-                  <Text style={styles.deletedItemText}>{getDeletedItemMessage(outfitItem)}</Text>
-                </View>
-              ) : (
-                <Ionicons name="shirt-outline" size={28} color={palette.borderStrong} />
-              )}
-            </View>
+            <React.Fragment key={idx}>
+              {renderOutfitItemCell(outfitItem)}
+            </React.Fragment>
           );
         })}
-      </View>
+        {extraItemCount > 0 ? (
+          <View style={styles.moreBadge}>
+            <Text style={styles.moreBadgeText}>+{extraItemCount}</Text>
+          </View>
+        ) : null}
+      </Pressable>
 
       {/* Outfit Info */}
       <View style={styles.outfitMetaRow}>
@@ -419,6 +442,35 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onNavigateToProfile, 
           </View>
         </View>
       </View>
+
+      <Modal
+        visible={expandedOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setExpandedOpen(false)}
+      >
+        <View style={styles.expandedOverlay}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setExpandedOpen(false)} />
+          <View style={styles.expandedSheet}>
+            <View style={styles.expandedHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.expandedTitle}>{outfitName}</Text>
+                <Text style={styles.expandedSubtitle}>{outfitItems.length} items</Text>
+              </View>
+              <Pressable onPress={() => setExpandedOpen(false)} style={styles.expandedCloseButton} hitSlop={8}>
+                <Ionicons name="close" size={20} color={palette.textMuted} />
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={styles.expandedGrid} showsVerticalScrollIndicator={false}>
+              {outfitItems.map((outfitItem, index) => (
+                <View key={outfitItem?.id || outfitItem?.item_id || index} style={styles.expandedGridItem}>
+                  {renderOutfitItemCell(outfitItem, styles.expandedCell, true)}
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -492,6 +544,7 @@ const styles = StyleSheet.create({
     gap: 6,
     borderRadius: radius.md,
     overflow: 'hidden',
+    position: 'relative',
   },
   collageCell: {
     width: '48.5%',
@@ -501,6 +554,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+  },
+  itemImage: {
+    width: '80%',
+    height: '80%',
+  },
+  moreBadge: {
+    position: 'absolute',
+    right: 8,
+    bottom: 8,
+    minWidth: 36,
+    height: 28,
+    borderRadius: 14,
+    paddingHorizontal: 9,
+    backgroundColor: 'rgba(17, 24, 39, 0.76)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  moreBadgeText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
   },
   deletedItemBox: {
     width: '100%',
@@ -519,6 +593,80 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
     lineHeight: 16,
+  },
+  expandedOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(17, 24, 39, 0.56)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.md,
+  },
+  expandedSheet: {
+    width: '100%',
+    maxHeight: '82%',
+    borderRadius: radius.lg,
+    backgroundColor: palette.surface,
+    overflow: 'hidden',
+    ...shadow.soft,
+  },
+  expandedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: palette.border,
+  },
+  expandedTitle: {
+    ...type.title,
+    color: palette.text,
+  },
+  expandedSubtitle: {
+    ...type.caption,
+    color: palette.textMuted,
+    marginTop: 2,
+    fontWeight: '700',
+  },
+  expandedCloseButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: palette.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: palette.surfaceElevated,
+  },
+  expandedGrid: {
+    padding: spacing.md,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  expandedGridItem: {
+    width: '47.8%',
+  },
+  expandedCell: {
+    width: '100%',
+    minHeight: 150,
+  },
+  expandedItemNamePill: {
+    position: 'absolute',
+    left: 8,
+    right: 8,
+    bottom: 8,
+    borderRadius: radius.sm,
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+  },
+  expandedItemName: {
+    ...type.caption,
+    color: palette.text,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   outfitMetaRow: {
     flexDirection: 'row',

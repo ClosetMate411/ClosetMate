@@ -8,6 +8,15 @@ import './FeedCard.css';
 const EMOJI_MAP = { heart: '❤️', fire: '🔥', clap: '👏', love_eyes: '😍', idea: '💡' };
 const EMOJI_TYPES = ['heart', 'fire', 'clap', 'love_eyes', 'idea'];
 
+const getWardrobeImage = (item) => (
+  item?.image ||
+  item?.image_url ||
+  item?.processed_image_url ||
+  item?.imageUrl ||
+  item?.processedImageUrl ||
+  null
+);
+
 const formatRelativeTime = (isoString) => {
   const diff = Date.now() - new Date(isoString).getTime();
   const mins = Math.floor(diff / 60000);
@@ -30,6 +39,7 @@ const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare }) => {
   const [isReacting, setIsReacting] = useState(false);
   const [isFavoriting, setIsFavoriting] = useState(false);
   const [hoverRating, setHoverRating] = useState(null);
+  const [expandedOpen, setExpandedOpen] = useState(false);
 
   const handleFavorite = useCallback(async () => {
     if (isFavoriting) return;
@@ -44,7 +54,7 @@ const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare }) => {
   // Use backend-resolved items (with image_url), fallback to local wardrobe match
   const resolvedItems = useMemo(() => {
     if (outfit.items && outfit.items.length > 0) {
-      return outfit.items.slice(0, 4).map((i) => ({
+      return outfit.items.map((i) => ({
         id: i.id,
         name: i.name || 'Unknown',
         image: i.image_url,
@@ -53,8 +63,36 @@ const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare }) => {
       }));
     }
     // Fallback for old data without resolved items
-    return outfit.item_ids.slice(0, 4).map((id) => wardrobeItems.find((w) => w.id === id) || null);
+    return outfit.item_ids.map((id) => {
+      const wardrobeItem = wardrobeItems.find((w) => w.id === id);
+      return wardrobeItem ? {
+        id,
+        name: wardrobeItem.item_name || wardrobeItem.name || 'Unknown',
+        image: getWardrobeImage(wardrobeItem),
+      } : null;
+    });
   }, [outfit.items, outfit.item_ids, wardrobeItems]);
+
+  const previewItems = resolvedItems.slice(0, 4);
+  const extraItemCount = Math.max(0, resolvedItems.length - 4);
+
+  const renderOutfitItemCell = (outfitItem, className = '') => (
+    <div className={`feed-collage-cell ${className}`}>
+      {outfitItem?.image ? (
+        <img src={outfitItem.image} alt={outfitItem.name || 'Outfit item'} loading="lazy" referrerPolicy="no-referrer" />
+      ) : outfitItem?.deleted ? (
+        <div className="feed-collage-deleted">
+          <span>{outfitItem.deletedMessage || `User deleted ${outfitItem.name || 'this item'}`}</span>
+        </div>
+      ) : (
+        <div className="feed-collage-placeholder" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.57a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.57a2 2 0 0 0-1.34-2.23z" />
+          </svg>
+        </div>
+      )}
+    </div>
+  );
 
   const handleReact = useCallback(
     async (emojiType) => {
@@ -118,35 +156,24 @@ const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare }) => {
       </div>
 
       {/* ── Outfit Collage ──────────────────────────────── */}
-      <div className="feed-collage">
+      <button
+        className="feed-collage feed-collage-button"
+        type="button"
+        onClick={() => setExpandedOpen(true)}
+        aria-label={`Open ${outfit.name} outfit items`}
+      >
         {[0, 1, 2, 3].map((i) => {
-          const outfitItem = resolvedItems[i];
+          const outfitItem = previewItems[i];
           // Only render a cell if there's a corresponding item_id slot
-          if (i >= outfit.item_ids.length) {
+          if (i >= resolvedItems.length) {
             return <div key={i} className={`feed-collage-cell feed-collage-cell--empty feed-collage-cell--${i + 1}`} />;
           }
-          return (
-            <div key={i} className={`feed-collage-cell feed-collage-cell--${i + 1}`}>
-              {outfitItem?.image ? (
-                <img src={outfitItem.image} alt={outfitItem.name} loading="lazy" referrerPolicy="no-referrer" />
-              ) : outfitItem?.deleted ? (
-                <div className="feed-collage-deleted">
-                  <span>{outfitItem.deletedMessage || `User deleted ${outfitItem.name || 'this item'}`}</span>
-                </div>
-              ) : (
-                <div className="feed-collage-placeholder" aria-hidden="true">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.57a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.57a2 2 0 0 0-1.34-2.23z" />
-                  </svg>
-                </div>
-              )}
-            </div>
-          );
+          return <React.Fragment key={i}>{renderOutfitItemCell(outfitItem, `feed-collage-cell--${i + 1}`)}</React.Fragment>;
         })}
-        {outfit.item_ids.length > 4 && (
-          <div className="feed-collage-more">+{outfit.item_ids.length - 4}</div>
+        {extraItemCount > 0 && (
+          <div className="feed-collage-more">+{extraItemCount}</div>
         )}
-      </div>
+      </button>
 
       {/* ── Outfit Info ─────────────────────────────────── */}
       <div className="feed-card-info">
@@ -236,6 +263,30 @@ const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare }) => {
           </button>
         </div>
       </div>
+
+      {expandedOpen && (
+        <div className="feed-expanded-overlay" role="presentation" onClick={() => setExpandedOpen(false)}>
+          <div className="feed-expanded-modal" role="dialog" aria-modal="true" aria-label={`${outfit.name} outfit items`} onClick={(e) => e.stopPropagation()}>
+            <div className="feed-expanded-header">
+              <div>
+                <h3>{outfit.name}</h3>
+                <span>{resolvedItems.length} items</span>
+              </div>
+              <button type="button" className="feed-expanded-close" onClick={() => setExpandedOpen(false)} aria-label="Close expanded outfit">×</button>
+            </div>
+            <div className="feed-expanded-grid">
+              {resolvedItems.map((outfitItem, index) => (
+                <div key={outfitItem?.id || index} className="feed-expanded-grid-cell">
+                  {renderOutfitItemCell(outfitItem)}
+                  {outfitItem?.name && !outfitItem?.deleted && (
+                    <span className="feed-expanded-item-name">{outfitItem.name}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
