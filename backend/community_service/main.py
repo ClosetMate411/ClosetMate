@@ -503,6 +503,7 @@ class ReactRequest(BaseModel):
 
 class CommentRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=500)
+    reply_to_comment_id: Optional[str] = None
 
     @validator("text")
     def text_not_blank(cls, v):
@@ -1474,6 +1475,15 @@ async def add_comment(
     if not shared:
         return create_error_response("NOT_FOUND", "Shared outfit not found", 404)
 
+    reply_to_comment = None
+    if body.reply_to_comment_id:
+        reply_to_comment = db.query(Comment).filter(
+            Comment.id == body.reply_to_comment_id,
+            Comment.shared_outfit_id == shared_outfit_id,
+        ).first()
+        if not reply_to_comment:
+            return create_error_response("NOT_FOUND", "Reply target comment not found", 404)
+
     # ── Step 1: Load user ──
     user = db.query(UserRef).filter(UserRef.id == user_id).first()
     if not user:
@@ -1545,8 +1555,21 @@ async def add_comment(
     db.commit()
     db.refresh(comment)
 
+    notified_recipient_ids: set[str] = set()
+
+    # Create notification for explicit comment replies (skip self).
+    if reply_to_comment and reply_to_comment.user_id != user_id:
+        db.add(Notification(
+            recipient_user_id=reply_to_comment.user_id,
+            actor_user_id=user_id,
+            shared_outfit_id=shared_outfit_id,
+            type="reply",
+            detail=body.text[:50],
+        ))
+        notified_recipient_ids.add(reply_to_comment.user_id)
+
     # Create notification for comment (skip self)
-    if shared.user_id != user_id:
+    if shared.user_id != user_id and shared.user_id not in notified_recipient_ids:
         db.add(Notification(
             recipient_user_id=shared.user_id,
             actor_user_id=user_id,
@@ -1554,7 +1577,7 @@ async def add_comment(
             type="comment",
             detail=body.text[:50],
         ))
-        db.commit()
+        notified_recipient_ids.add(shared.user_id)
 
     # Detect @mentions and notify mentioned users.
     #
@@ -1577,7 +1600,7 @@ async def add_comment(
     # "@Onurcan" prefix would otherwise hit and trigger a duplicate notify.
     candidate_users.sort(key=lambda u: -len(u.full_name or ""))
     working_text = body.text.lower()
-    mentioned_ids: set[str] = set()
+    mentioned_ids: set[str] = set(notified_recipient_ids)
     for candidate in candidate_users:
         token = f"@{candidate.full_name}".lower()
         if token and token in working_text and candidate.id not in mentioned_ids:

@@ -6,19 +6,6 @@ import apiService from '../../../services/api.service';
 import useAuthStore from '../../../store/authStore';
 import { palette } from '../../../theme/colors';
 
-const formatTimeAgo = (dateStr) => {
-  if (!dateStr) return '';
-  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
-  if (seconds < 60) return 'just now';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return `${Math.floor(days / 30)}mo ago`;
-};
-
 const formatDateTime = (dateStr) => {
   if (!dateStr) return '';
   const d = new Date(dateStr);
@@ -38,6 +25,7 @@ function CommentsModal({ visible, onClose, shareItem, onCommentAdded, onCommentD
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [replyingTo, setReplyingTo] = useState(null);
+  const [replyToCommentId, setReplyToCommentId] = useState(null);
   const [mentionResults, setMentionResults] = useState([]);
   const [mentionQuery, setMentionQuery] = useState(null);
   const [cursorPos, setCursorPos] = useState(0);
@@ -69,6 +57,7 @@ function CommentsModal({ visible, onClose, shareItem, onCommentAdded, onCommentD
       setComments([]);
       setText('');
       setReplyingTo(null);
+      setReplyToCommentId(null);
       setMentionQuery(null);
       setMentionResults([]);
     }
@@ -95,6 +84,9 @@ function CommentsModal({ visible, onClose, shareItem, onCommentAdded, onCommentD
     setText(value);
     const firstMention = value.match(/^@([A-Za-z0-9ğüşıöçĞÜŞİÖÇ._\s]+)/);
     setReplyingTo(firstMention ? firstMention[1].trim() : null);
+    if (!firstMention) {
+      setReplyToCommentId(null);
+    }
     const currentCursor = Math.min(cursorPos, value.length);
     const textBefore = value.slice(0, currentCursor);
     const atMatch = textBefore.match(/@([A-Za-z0-9ğüşıöçĞÜŞİÖÇ._\s]*)$/) || value.match(/@([A-Za-z0-9ğüşıöçĞÜŞİÖÇ._\s]*)$/);
@@ -134,8 +126,10 @@ function CommentsModal({ visible, onClose, shareItem, onCommentAdded, onCommentD
 
   const handleReply = useCallback((comment) => {
     const name = comment?.user?.full_name || comment?.user?.name || 'User';
+    const commentId = comment?.id || comment?._id;
     const replyText = `@${name} `;
     setReplyingTo(name);
+    setReplyToCommentId(commentId || null);
     setText(replyText);
     setCursorPos(replyText.length);
     setMentionQuery(null);
@@ -148,6 +142,7 @@ function CommentsModal({ visible, onClose, shareItem, onCommentAdded, onCommentD
 
   const cancelReply = useCallback(() => {
     setReplyingTo(null);
+    setReplyToCommentId(null);
     setText('');
     setMentionQuery(null);
     setMentionResults([]);
@@ -159,9 +154,10 @@ function CommentsModal({ visible, onClose, shareItem, onCommentAdded, onCommentD
     setSending(true);
     Keyboard.dismiss();
     try {
-      await apiService.addComment(shareId, trimmed);
+      await apiService.addComment(shareId, trimmed, replyToCommentId);
       setText('');
       setReplyingTo(null);
+      setReplyToCommentId(null);
       setMentionQuery(null);
       setMentionResults([]);
       onCommentAdded?.(shareId);

@@ -129,7 +129,7 @@ axiosInstance.interceptors.response.use(
         originalRequest.headers = originalRequest.headers || {};
         originalRequest.headers['Authorization'] = `Bearer ${newAccess}`;
         return axiosInstance(originalRequest);
-      } catch (_refreshErr) {
+      } catch {
         // Refresh itself failed → fall through to the session-expired path
         localStorage.removeItem('token');
         localStorage.removeItem('refresh_token');
@@ -347,8 +347,11 @@ class APIService {
     return axiosInstance.get(API_ENDPOINTS.communityComments(sharedOutfitId), { params: { page, limit } });
   }
 
-  async addComment(sharedOutfitId, text) {
-    return axiosInstance.post(API_ENDPOINTS.communityComments(sharedOutfitId), { text });
+  async addComment(sharedOutfitId, text, replyToCommentId = null) {
+    return axiosInstance.post(API_ENDPOINTS.communityComments(sharedOutfitId), {
+      text,
+      ...(replyToCommentId ? { reply_to_comment_id: replyToCommentId } : {}),
+    });
   }
 
   async deleteComment(commentId) {

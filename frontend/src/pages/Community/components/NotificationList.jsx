@@ -28,7 +28,7 @@ const getNotificationText = (n) => {
     case 'favorite':
       return { icon: '❤️', text: `saved ${outfit} to favorites` };
     case 'reply':
-      return { icon: '💬', text: `mentioned you on ${outfit}` };
+      return { icon: '💬', text: `replied to your comment on ${outfit}` };
     default:
       return { icon: '🔔', text: `interacted with ${outfit}` };
   }

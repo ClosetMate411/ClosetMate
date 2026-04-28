@@ -28,7 +28,8 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
   const [warning, setWarning] = useState(null); // 'moderation' | 'rate_limit' | null
   const [rateLimitSecondsLeft, setRateLimitSecondsLeft] = useState(0);
   const [replyingTo, setReplyingTo] = useState(null);
-  const [mentionQuery, setMentionQuery] = useState(null);
+  const [replyToCommentId, setReplyToCommentId] = useState(null);
+  const [, setMentionQuery] = useState(null);
   const [mentionResults, setMentionResults] = useState([]);
   const [mentionIndex, setMentionIndex] = useState(0);
   const mentionTimerRef = useRef(null);
@@ -55,6 +56,8 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
     if (opened && feedItem) {
       fetchComments();
       setText('');
+      setReplyingTo(null);
+      setReplyToCommentId(null);
       setError(null);
       setWarning(null);
     }
@@ -103,7 +106,7 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
       setError(null);
       setWarning(null);
       try {
-        const response = await apiService.addComment(feedItem.id, trimmed);
+        const response = await apiService.addComment(feedItem.id, trimmed, replyToCommentId);
         commentTimestampsRef.current.push(Date.now());
         const newComment = {
           ...response.data,
@@ -116,6 +119,7 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
         setComments((prev) => [newComment, ...prev]);
         setText('');
         setReplyingTo(null);
+        setReplyToCommentId(null);
         onCommentAdded(feedItem.id);
       } catch (err) {
         const code = err.data?.error?.code;
@@ -130,7 +134,7 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
         setSubmitting(false);
       }
     },
-    [text, submitting, feedItem, user, onCommentAdded, startRateLimitCountdown]
+    [text, submitting, feedItem, user, replyToCommentId, onCommentAdded, startRateLimitCountdown]
   );
 
   const handleDelete = useCallback(
@@ -158,6 +162,7 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
       setReplyingTo(firstMention[1].trim());
     } else {
       setReplyingTo(null);
+      setReplyToCommentId(null);
     }
 
     // Detect @mention trigger at cursor
@@ -203,12 +208,14 @@ const CommentsModal = ({ opened, onClose, feedItem, onCommentAdded, onCommentDel
   const handleReply = useCallback((comment) => {
     const name = comment.user.name;
     setReplyingTo(name);
+    setReplyToCommentId(comment.id);
     setText(`@${name} `);
     inputRef.current?.focus();
   }, []);
 
   const cancelReply = useCallback(() => {
     setReplyingTo(null);
+    setReplyToCommentId(null);
     setText('');
   }, []);
 

@@ -26,12 +26,12 @@ const VERBS = {
   comment:  'commented on',
   rating:   'rated',
   reaction: 'reacted to',
-  reply:    'replied to',
+  reply:    'replied to your comment on',
   favorite: 'favorited',
 };
 
 /* ─── single notification row ─────────────────────────────── */
-const NotificationRow = React.memo(({ item, onPress }) => {
+const NotificationRow = React.memo(function NotificationRow({ item, onPress }) {
   const actorName   = item?.actor?.name  || 'Someone';
   const actorAvatar = item?.actor?.avatar_url;
   const outfitName  = item?.outfit_name  || 'an outfit';
@@ -67,7 +67,7 @@ const NotificationRow = React.memo(({ item, onPress }) => {
           {' '}
           <Text style={styles.verb}>{verb}</Text>
           {' '}
-          <Text style={styles.outfitName}>"{outfitName}"</Text>
+          <Text style={styles.outfitName}>{`"${outfitName}"`}</Text>
         </Text>
         <Text style={styles.time}>{formatAgo(item?.created_at)}</Text>
       </View>

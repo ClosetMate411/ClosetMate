@@ -417,8 +417,11 @@ class APIService {
     return axiosInstance.get(API_ENDPOINTS.communityComments(shareId));
   }
 
-  async addComment(shareId, text) {
-    return axiosInstance.post(API_ENDPOINTS.communityComments(shareId), { text });
+  async addComment(shareId, text, replyToCommentId = null) {
+    return axiosInstance.post(API_ENDPOINTS.communityComments(shareId), {
+      text,
+      ...(replyToCommentId ? { reply_to_comment_id: replyToCommentId } : {}),
+    });
   }
 
   async deleteComment(commentId) {
