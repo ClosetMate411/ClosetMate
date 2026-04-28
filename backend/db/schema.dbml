@@ -1,0 +1,274 @@
+// ClosetMate database schema — dbdiagram.io DBML format
+// Paste into https://dbdiagram.io/d (no import needed; it parses DBML natively).
+// Generated from production pg_dump on 2026-04-28.
+
+Project ClosetMate {
+  database_type: 'PostgreSQL'
+  Note: 'Single shared Postgres used by wardrobe, outfit, community, and email services. Image processing has no DB.'
+}
+
+// ─────────────────────────── AUTH ───────────────────────────
+
+Table users {
+  id varchar [pk]
+  email varchar(254) [not null, unique]
+  password_hash varchar(255) [not null]
+  full_name varchar(100) [not null]
+  created_at timestamp
+  last_login timestamp
+  failed_login_attempts integer
+  lockout_until timestamp
+  is_verified boolean
+  avatar_url varchar(500)
+  comment_strike_count integer [default: 0]
+  comment_banned_until timestamp
+  comment_ban_permanent boolean [default: false]
+  role varchar(20) [not null, default: 'user']
+}
+
+Table refresh_tokens {
+  id varchar [pk]
+  user_id varchar [not null]
+  token_hash varchar(64) [not null, unique]
+  expires_at timestamp [not null]
+  created_at timestamp
+  revoked_at timestamp
+  replaced_by varchar(64)
+  user_agent varchar(255)
+
+  Indexes {
+    user_id
+  }
+}
+
+Table password_reset_tokens {
+  id varchar [pk]
+  user_id varchar [not null]
+  token varchar(255) [not null, unique]
+  expires_at timestamp [not null]
+  created_at timestamp
+  used boolean
+}
+
+Table otp_codes {
+  id varchar [pk]
+  email varchar(254) [not null]
+  code varchar(6) [not null]
+  purpose varchar(20) [not null]
+  expires_at timestamp [not null]
+  created_at timestamp
+  used boolean
+  failed_attempts integer [default: 0]
+
+  Indexes {
+    email
+    (email, purpose)
+  }
+}
+
+// ───────────────────────── WARDROBE ─────────────────────────
+
+Table clothing_items {
+  id varchar [pk]
+  user_id varchar [not null]
+  item_name varchar(255)
+  season varchar(50)
+  image_url varchar [not null]
+  file_name varchar(255)
+  file_size integer
+  created_at timestamp
+  updated_at timestamp
+
+  Indexes {
+    user_id
+    (user_id, created_at) [name: 'idx_clothing_items_created']
+  }
+}
+
+Table clothing_attributes {
+  id varchar [pk]
+  item_id varchar [not null, unique]
+  user_id varchar [not null]
+  category varchar(50) [not null]
+  subcategory varchar(50) [not null]
+  color_primary varchar(30) [not null]
+  color_secondary varchar(30)
+  pattern varchar(30)
+  material varchar(30)
+  style varchar(30)
+  fit varchar(30)
+  formality_level integer
+  weather_suitability json
+  suitable_occasions json
+  description text
+  analyzed_at timestamp
+  analysis_version varchar(20)
+  name varchar(60)
+  seasons json [default: `'[]'::json`]
+}
+
+// ────────────────────────── OUTFITS ─────────────────────────
+
+Table outfits {
+  id varchar [pk]
+  user_id varchar [not null]
+  name varchar(100) [not null]
+  style varchar(30)
+  occasion varchar(30)
+  season varchar(20)
+  cohesion_score integer
+  reasoning text
+  is_favorite boolean
+  created_at timestamp
+  updated_at timestamp
+  is_shareable boolean [default: false]
+
+  Indexes {
+    user_id
+  }
+}
+
+Table outfit_items {
+  id varchar [pk]
+  outfit_id varchar [not null]
+  item_id varchar [not null]
+  position integer
+
+  Indexes {
+    outfit_id
+    item_id
+  }
+}
+
+// ─────────────────────────── COMMUNITY ──────────────────────
+
+Table shared_outfits {
+  id varchar [pk]
+  outfit_id varchar [not null]
+  user_id varchar [not null]
+  description text
+  shared_at timestamp
+  outfit_snapshot text
+  item_snapshot text
+
+  Indexes {
+    outfit_id
+    user_id
+  }
+}
+
+Table comments {
+  id varchar [pk]
+  shared_outfit_id varchar [not null]
+  user_id varchar [not null]
+  text text [not null]
+  created_at timestamp
+
+  Indexes {
+    shared_outfit_id
+    user_id
+  }
+}
+
+Table ratings {
+  id varchar [pk]
+  shared_outfit_id varchar [not null]
+  user_id varchar [not null]
+  score integer [not null]
+  created_at timestamp
+
+  Indexes {
+    shared_outfit_id
+    user_id
+    (shared_outfit_id, user_id) [unique, name: 'uq_rating_user']
+  }
+}
+
+Table reactions {
+  id varchar [pk]
+  shared_outfit_id varchar [not null]
+  user_id varchar [not null]
+  emoji_type varchar(20) [not null]
+  created_at timestamp
+
+  Indexes {
+    shared_outfit_id
+    user_id
+    (shared_outfit_id, user_id) [unique, name: 'uq_reaction_user']
+  }
+}
+
+Table community_favorites {
+  id varchar [pk]
+  shared_outfit_id varchar [not null]
+  user_id varchar [not null]
+  created_at timestamp
+
+  Indexes {
+    shared_outfit_id
+    user_id
+    (shared_outfit_id, user_id) [unique, name: 'uq_favorite_user']
+  }
+}
+
+// ─────────────────────────── NOTIFICATIONS ──────────────────
+
+Table notifications {
+  id varchar [pk]
+  recipient_user_id varchar [not null]
+  actor_user_id varchar [not null]
+  shared_outfit_id varchar [not null]
+  type varchar(20) [not null, note: 'reaction | comment | rating | favorite | reply']
+  detail varchar(50)
+  is_read boolean
+  created_at timestamp
+
+  Indexes {
+    recipient_user_id
+  }
+}
+
+Table moderation_logs {
+  id varchar [pk]
+  user_id varchar [not null]
+  action_type varchar(20) [not null]
+  content_preview varchar(200)
+  internal_reason varchar(500)
+  severity varchar(10)
+  detection_layer varchar(20)
+  strike_number integer [not null]
+  punishment varchar(50) [not null]
+  created_at timestamp
+
+  Indexes {
+    user_id
+  }
+}
+
+// ───────────── RELATIONSHIPS (foreign keys, real + logical) ─────────────
+
+// Real FKs (enforced in DB via pg_dump output)
+Ref: clothing_items.user_id > users.id
+Ref: clothing_attributes.item_id > clothing_items.id [delete: cascade]
+Ref: outfit_items.item_id > clothing_items.id [delete: cascade]
+Ref: outfit_items.outfit_id > outfits.id [delete: cascade]
+Ref: refresh_tokens.user_id > users.id
+Ref: password_reset_tokens.user_id > users.id
+
+// Logical FKs (no DB constraint, but always populated by service code)
+Ref: clothing_attributes.user_id > users.id
+Ref: outfits.user_id > users.id
+Ref: shared_outfits.outfit_id > outfits.id
+Ref: shared_outfits.user_id > users.id
+Ref: comments.shared_outfit_id > shared_outfits.id
+Ref: comments.user_id > users.id
+Ref: ratings.shared_outfit_id > shared_outfits.id
+Ref: ratings.user_id > users.id
+Ref: reactions.shared_outfit_id > shared_outfits.id
+Ref: reactions.user_id > users.id
+Ref: community_favorites.shared_outfit_id > shared_outfits.id
+Ref: community_favorites.user_id > users.id
+Ref: notifications.recipient_user_id > users.id
+Ref: notifications.actor_user_id > users.id
+Ref: notifications.shared_outfit_id > shared_outfits.id
+Ref: moderation_logs.user_id > users.id
