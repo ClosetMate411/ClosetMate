@@ -234,9 +234,8 @@
 }
 
 .feed-expanded-modal {
-  width: min(860px, 94vw);
-  max-height: 88vh;
-  aspect-ratio: 16 / 10;
+  width: min(1240px, calc(100vw - 32px));
+  height: min(900px, calc(100vh - 32px));
   overflow: hidden;
   background: #fff;
   border-radius: 18px;
@@ -250,33 +249,42 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 18px 20px 14px;
-  border-bottom: 1px solid #eef2f7;
+  padding: 28px 32px 22px;
+}
+
+.feed-expanded-eyebrow {
+  display: block;
+  margin-bottom: 22px;
+  font-size: 1rem;
+  color: #111827;
+  font-weight: 500;
 }
 
 .feed-expanded-header h3 {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: clamp(1.8rem, 3.5vw, 3.3rem);
+  line-height: 1.05;
+  letter-spacing: 0;
   color: var(--text-primary, #1a1a1a);
 }
 
 .feed-expanded-header span {
   display: block;
-  margin-top: 3px;
-  font-size: 0.78rem;
+  margin-top: 10px;
+  font-size: 1rem;
   color: var(--text-muted, #888);
   font-weight: 700;
 }
 
 .feed-expanded-close {
-  width: 34px;
-  height: 34px;
+  width: 70px;
+  height: 70px;
   border: 1px solid #e5e7eb;
-  border-radius: 10px;
+  border-radius: 18px;
   background: #fff;
   color: #6b7280;
   cursor: pointer;
-  font-size: 1.4rem;
+  font-size: 2.8rem;
   line-height: 1;
 }
 
@@ -288,12 +296,16 @@
 .feed-expanded-grid {
   flex: 1;
   min-height: 0;
-  padding: 18px 20px 20px;
+  margin: 0 32px 32px;
+  padding: 36px;
+  border: 1px solid #e6e0ef;
+  border-radius: 28px;
+  background: #f8f2ff;
   overflow: hidden;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-auto-rows: minmax(0, 1fr);
-  gap: 12px;
+  gap: 24px 28px;
 }
 
 .feed-expanded-grid--count-1,
@@ -316,29 +328,54 @@
 
 .feed-expanded-grid-cell .feed-collage-cell {
   height: 100%;
-  border-radius: 12px;
-  border: 1px solid #eef2f7;
+  border-radius: 20px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06);
 }
 
 .feed-expanded-item-name {
   position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 8px;
-  padding: 5px 7px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.92);
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: #4b5563;
-  text-align: center;
+  left: 26px;
+  right: 26px;
+  bottom: 22px;
+  padding: 0;
+  background: transparent;
+  font-size: clamp(0.95rem, 1.8vw, 1.7rem);
+  line-height: 1.25;
+  font-weight: 500;
+  color: #111827;
+  text-align: left;
   overflow-wrap: anywhere;
 }
 
 @media (max-width: 640px) {
   .feed-expanded-modal {
     width: 94vw;
-    aspect-ratio: 4 / 5;
+    height: 82vh;
+  }
+
+  .feed-expanded-header {
+    padding: 22px 22px 16px;
+  }
+
+  .feed-expanded-eyebrow {
+    margin-bottom: 12px;
+    font-size: 0.9rem;
+  }
+
+  .feed-expanded-close {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    font-size: 2rem;
+  }
+
+  .feed-expanded-grid {
+    margin: 0 22px 22px;
+    padding: 18px;
+    border-radius: 22px;
+    gap: 14px;
   }
 
   .feed-expanded-grid,

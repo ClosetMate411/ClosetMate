@@ -269,6 +269,7 @@ const FeedCard = ({ item, wardrobeItems, onCommentClick, onUnshare }) => {
           <div className="feed-expanded-modal" role="dialog" aria-modal="true" aria-label={`${outfit.name} outfit items`} onClick={(e) => e.stopPropagation()}>
             <div className="feed-expanded-header">
               <div>
+                <span className="feed-expanded-eyebrow">Outfit Details</span>
                 <h3>{outfit.name}</h3>
                 <span>{resolvedItems.length} items</span>
               </div>
