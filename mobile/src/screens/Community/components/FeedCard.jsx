@@ -136,10 +136,13 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onNavigateToProfile, 
   const hasRatingSummary = averageRating != null || Number(ratingCount) > 0;
   const averageRatingValue = averageRating != null ? Number(averageRating) : null;
   const averageRatingLabel = averageRatingValue != null && Number.isFinite(averageRatingValue)
-    ? averageRatingValue.toFixed(1)
+    ? (Number.isInteger(averageRatingValue) ? String(averageRatingValue) : averageRatingValue.toFixed(1))
     : null;
 
   const [detailedOutfit, setDetailedOutfit] = useState(null);
+  const [isReacting, setIsReacting] = useState(false);
+  const [isRating, setIsRating] = useState(false);
+  const [isFavoriting, setIsFavoriting] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -223,6 +226,36 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onNavigateToProfile, 
     const items = detailedOutfit?.items || item?.outfit?.items || item?.items || [];
     return Array.isArray(items) ? items.slice(0, 4) : [];
   }, [item, detailedOutfit]);
+
+  const handleReactPress = async (targetShareId, key) => {
+    if (!targetShareId || isReacting) return;
+    setIsReacting(true);
+    try {
+      await onReact?.(targetShareId, key);
+    } finally {
+      setIsReacting(false);
+    }
+  };
+
+  const handleRatePress = async (targetShareId, star) => {
+    if (!targetShareId || isRating) return;
+    setIsRating(true);
+    try {
+      await onRate?.(targetShareId, star);
+    } finally {
+      setIsRating(false);
+    }
+  };
+
+  const handleFavoritePress = async (targetShareId) => {
+    if (!targetShareId || isFavoriting) return;
+    setIsFavoriting(true);
+    try {
+      await onToggleFavorite?.(targetShareId);
+    } finally {
+      setIsFavoriting(false);
+    }
+  };
 
   const tags = useMemo(() => {
     const sourceOutfit = detailedOutfit || item?.outfit || item;
@@ -317,7 +350,8 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onNavigateToProfile, 
             return (
               <Pressable
                 key={key}
-                onPress={() => onReact?.(shareId, key)}
+                onPress={() => handleReactPress(shareId, key)}
+                disabled={isReacting}
                 style={[styles.reactionButton, isActive ? styles.reactionActive : null]}
               >
                 <Text style={styles.reactionEmoji}>{emoji}</Text>
@@ -330,7 +364,7 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onNavigateToProfile, 
         <View style={styles.metaRow}>
           <View style={styles.starRow}>
             {[1, 2, 3, 4, 5].map((star) => (
-              <Pressable key={star} onPress={() => onRate?.(shareId, star)} hitSlop={4}>
+              <Pressable key={star} onPress={() => handleRatePress(shareId, star)} hitSlop={4} disabled={isRating}>
                 <Text style={{
                   fontSize: 16,
                   color: star <= myRating ? '#f59e0b' : '#d1d5db',
@@ -345,11 +379,12 @@ function FeedCard({ item, onReact, onRate, onOpenComments, onNavigateToProfile, 
           </View>
           <View style={styles.rightMetaRow}>
             <Pressable
-              onPress={() => onToggleFavorite?.(shareId)}
+              onPress={() => handleFavoritePress(shareId)}
+              disabled={isFavoriting}
               style={styles.favoriteButton}
             >
               <Text style={styles.favoriteEmoji}>{isFavoritedByMe ? '❤️' : '🤍'}</Text>
-              <Text style={styles.favoriteCount}>{favoriteCount}</Text>
+              {favoriteCount > 0 ? <Text style={styles.favoriteCount}>{favoriteCount}</Text> : null}
             </Pressable>
 
             <Pressable

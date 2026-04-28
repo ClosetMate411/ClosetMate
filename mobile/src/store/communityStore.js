@@ -212,6 +212,11 @@ const useCommunityStore = create((set, get) => ({
     }
   },
 
+  // alias for backward compatibility
+  markNotificationsRead: async () => {
+    await get().markAllRead();
+  },
+
   refreshFeed: async () => {
     await get().fetchFeed(true);
   },
@@ -260,54 +265,22 @@ const useCommunityStore = create((set, get) => ({
   },
 
   addReaction: async (shareId, emojiType) => {
-    set((state) => updatePostAcrossLists(state, shareId, (item) => {
-      const rawReactions = item?.reactions || {};
-      const hasNestedCounts = rawReactions?.counts && typeof rawReactions.counts === 'object';
-      const reactions = hasNestedCounts
-        ? { ...(rawReactions.counts || {}) }
-        : { ...rawReactions };
-      const myReactions = [...(item.my_reactions || [])];
-      const alreadyReacted = myReactions.includes(emojiType);
-      if (alreadyReacted) {
-        reactions[emojiType] = Math.max(0, (reactions[emojiType] || 1) - 1);
-        const idx = myReactions.indexOf(emojiType);
-        if (idx > -1) myReactions.splice(idx, 1);
-      } else {
-        reactions[emojiType] = (reactions[emojiType] || 0) + 1;
-        myReactions.push(emojiType);
-      }
-      if (hasNestedCounts) {
-        return {
-          ...item,
-          reactions: {
-            ...rawReactions,
-            counts: reactions,
-            user_reactions: myReactions,
-          },
-          my_reactions: myReactions,
-        };
-      }
-      return { ...item, reactions, my_reactions: myReactions };
-    }));
     try {
-      await apiService.addReaction(shareId, emojiType);
+      const response = await apiService.addReaction(shareId, emojiType);
+      const emojiCounts = response?.data?.emoji_counts || {};
+      const myReactions = Array.isArray(response?.data?.my_reactions) ? response.data.my_reactions : [];
+      const newReactions = { counts: emojiCounts, user_reactions: myReactions };
+      set((state) => updatePostAcrossLists(state, shareId, (item) => ({
+        ...item,
+        reactions: newReactions,
+        my_reactions: myReactions,
+      })));
     } catch (_e) {
       await Promise.all([get().fetchFeed(true), get().fetchTopRated(true), get().fetchFavorites(true)]);
     }
   },
 
   toggleFavorite: async (shareId) => {
-    set((state) => updatePostAcrossLists(state, shareId, (item) => {
-      const favorites = { ...(item?.favorites || {}) };
-      const currentlyFavorited = !!favorites.user_has_favorited;
-      const currentCount = Number(favorites.count || 0);
-      favorites.user_has_favorited = !currentlyFavorited;
-      favorites.count = currentlyFavorited
-        ? Math.max(0, currentCount - 1)
-        : currentCount + 1;
-      return { ...item, favorites };
-    }));
-
     try {
       const response = await apiService.toggleCommunityFavorite(shareId);
       const action = response?.data?.action;
@@ -327,9 +300,22 @@ const useCommunityStore = create((set, get) => ({
   },
 
   rateOutfit: async (shareId, score) => {
-    set((state) => updatePostAcrossLists(state, shareId, (item) => ({ ...item, my_rating: score })));
     try {
-      await apiService.rateOutfit(shareId, score);
+      const response = await apiService.rateOutfit(shareId, score);
+      const average = response?.data?.average;
+      const count = Number(response?.data?.count || 0);
+      set((state) => updatePostAcrossLists(state, shareId, (item) => ({
+        ...item,
+        my_rating: score,
+        ratings: {
+          ...(item?.ratings || {}),
+          average,
+          count,
+          user_rating: score,
+        },
+        average_rating: average,
+        rating_count: count,
+      })));
     } catch (_e) {
       await Promise.all([get().fetchFeed(true), get().fetchTopRated(true), get().fetchFavorites(true)]);
     }

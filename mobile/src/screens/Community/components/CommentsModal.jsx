@@ -18,6 +18,18 @@ const formatTimeAgo = (dateStr) => {
   if (days < 30) return `${days}d ago`;
   return `${Math.floor(days / 30)}mo ago`;
 };
+
+const formatDateTime = (dateStr) => {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  const month = d.toLocaleString('en-US', { month: 'short' });
+  const day = d.getDate();
+  const hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  const hour12 = hours % 12 || 12;
+  return `${month} ${day}, ${String(hour12).padStart(2, '0')}:${minutes} ${ampm}`;
+};
 const AVATAR_GRADIENT = ['#7c3aed', '#c026d3'];
 
 function CommentsModal({ visible, onClose, shareItem, onCommentAdded, onCommentDeleted, onNavigateToProfile }) {
@@ -180,8 +192,18 @@ function CommentsModal({ visible, onClose, shareItem, onCommentAdded, onCommentD
   };
 
   const isOwn = (comment) => {
-    const userId = currentUser?.id || currentUser?._id;
-    const commentUserId = comment?.user?.id || comment?.user?._id || comment?.user_id;
+    const userId =
+      currentUser?.id ||
+      currentUser?._id ||
+      currentUser?.user_id ||
+      currentUser?.userId;
+    const commentUserId =
+      comment?.user?.id ||
+      comment?.user?._id ||
+      comment?.user?.user_id ||
+      comment?.user?.userId ||
+      comment?.user_id ||
+      comment?.userId;
     return userId && commentUserId && String(userId) === String(commentUserId);
   };
 
@@ -190,6 +212,7 @@ function CommentsModal({ visible, onClose, shareItem, onCommentAdded, onCommentD
     const avatarUrl = item?.user?.avatar_url || item?.user?.avatarUrl || null;
     const letter = name.charAt(0).toUpperCase();
     const commentUserId = item?.user?.id || item?.user?._id || item?.user?.user_id || item?.user_id;
+    const ownComment = isOwn(item);
 
     const handleProfileClick = () => {
       console.log('Clicked comment user id:', commentUserId, 'Full user:', item?.user);
@@ -201,12 +224,17 @@ function CommentsModal({ visible, onClose, shareItem, onCommentAdded, onCommentD
     };
 
     return (
-      <View style={{ flexDirection: 'row', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: palette.border }}>
+      <View style={{
+        flexDirection: 'row',
+        gap: 10,
+        paddingVertical: 8,
+      }}>
+        {/* Avatar */}
         <Pressable onPress={handleProfileClick}>
           {avatarUrl ? (
             <Image
               source={{ uri: avatarUrl }}
-              style={{ width: 32, height: 32, borderRadius: 16 }}
+              style={{ width: 36, height: 36, borderRadius: 18 }}
             />
           ) : (
             <LinearGradient
@@ -214,24 +242,49 @@ function CommentsModal({ visible, onClose, shareItem, onCommentAdded, onCommentD
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={{
-                width: 32, height: 32, borderRadius: 16,
+                width: 36, height: 36, borderRadius: 18,
                 alignItems: 'center', justifyContent: 'center',
               }}>
               <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>{letter}</Text>
             </LinearGradient>
           )}
         </Pressable>
-        <View style={{ flex: 1 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+
+        {/* Bubble */}
+        <View style={{
+          flex: 1,
+          backgroundColor: '#f0e8ff',
+          borderRadius: 14,
+          paddingHorizontal: 12,
+          paddingVertical: 10,
+        }}>
+          {/* Name + Date row */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
             <Pressable onPress={handleProfileClick}>
-              <Text style={{ fontWeight: '700', color: palette.text, fontSize: 13 }}>{name}</Text>
+              <Text style={{ fontWeight: '700', color: palette.text, fontSize: 14 }}>{name}</Text>
             </Pressable>
-            <Text style={{ color: palette.textMuted, fontSize: 11 }}>{formatTimeAgo(item?.created_at || item?.createdAt)}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ color: palette.textMuted, fontSize: 11 }}>
+                {formatDateTime(item?.created_at || item?.createdAt)}
+              </Text>
+              {ownComment ? (
+                <Pressable onPress={() => handleDelete(item.id || item._id)} hitSlop={8}>
+                  <Ionicons name="trash-outline" size={16} color={palette.danger} />
+                </Pressable>
+              ) : null}
+            </View>
           </View>
-          <Text style={{ color: palette.text, marginTop: 3, fontSize: 14, lineHeight: 20 }}>{item?.text || item?.content || ''}</Text>
+
+          {/* Comment text */}
+          <Text style={{ color: palette.text, fontSize: 14, lineHeight: 20 }}>
+            {item?.text || item?.content || ''}
+          </Text>
+
+          {/* Reply / Delete */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 6 }}>
-            {isOwn(item) ? (
-              <Pressable onPress={() => handleDelete(item.id || item._id)}>
+            {ownComment ? (
+              <Pressable onPress={() => handleDelete(item.id || item._id)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="trash-outline" size={14} color={palette.danger} />
                 <Text style={{ color: palette.danger, fontSize: 13, fontWeight: '700' }}>Delete</Text>
               </Pressable>
             ) : (
@@ -263,11 +316,11 @@ function CommentsModal({ visible, onClose, shareItem, onCommentAdded, onCommentD
         }}>
             {/* Header */}
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <Text style={{ fontSize: 20, fontWeight: '500', color: palette.text }}>
-                Comments
+              <Text style={{ fontSize: 20, fontWeight: '600', color: palette.text }}>
+                Comments{comments.length > 0 ? ` · ${comments.length}` : ''}
               </Text>
-              <Pressable onPress={onClose} style={{ padding: 6 }}>
-                <Ionicons name="close" size={22} color={palette.textMuted} />
+              <Pressable onPress={onClose} style={{ padding: 6, borderWidth: 1.5, borderColor: palette.primary, borderRadius: 10 }}>
+                <Ionicons name="close" size={22} color={palette.primary} />
               </Pressable>
             </View>
 

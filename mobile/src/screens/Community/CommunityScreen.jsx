@@ -40,16 +40,10 @@ export default function CommunityScreen({ navigation }) {
   const refreshing = useCommunityStore((s) => s.refreshing);
   const loadingMore = useCommunityStore((s) => s.loadingMore);
   const topRatedLoading = useCommunityStore((s) => s.topRatedLoading);
-  const topRatedLoadingMore = useCommunityStore((s) => s.topRatedLoadingMore);
   const favoritesLoading = useCommunityStore((s) => s.favoritesLoading);
-  const favoritesLoadingMore = useCommunityStore((s) => s.favoritesLoadingMore);
   const notificationsLoading = useCommunityStore((s) => s.notificationsLoading);
-  const notificationsLoadingMore = useCommunityStore((s) => s.notificationsLoadingMore);
 
   const hasMore = useCommunityStore((s) => s.hasMore);
-  const topRatedHasMore = useCommunityStore((s) => s.topRatedHasMore);
-  const favoritesHasMore = useCommunityStore((s) => s.favoritesHasMore);
-  const notificationsHasMore = useCommunityStore((s) => s.notificationsHasMore);
   const feedPagination = useCommunityStore((s) => s.feedPagination);
 
   const fetchFeed = useCommunityStore((s) => s.fetchFeed);
@@ -95,16 +89,16 @@ export default function CommunityScreen({ navigation }) {
     fetchNotifications,
   ]);
 
-  const handleReact = useCallback((shareId, emojiType) => {
-    addReaction(shareId, emojiType);
+  const handleReact = useCallback(async (shareId, emojiType) => {
+    await addReaction(shareId, emojiType);
   }, [addReaction]);
 
-  const handleRate = useCallback((shareId, score) => {
-    rateOutfit(shareId, score);
+  const handleRate = useCallback(async (shareId, score) => {
+    await rateOutfit(shareId, score);
   }, [rateOutfit]);
 
-  const handleToggleFavorite = useCallback((shareId) => {
-    toggleFavorite(shareId);
+  const handleToggleFavorite = useCallback(async (shareId) => {
+    await toggleFavorite(shareId);
   }, [toggleFavorite]);
 
   const handleOpenComments = useCallback((item) => {
@@ -163,45 +157,69 @@ export default function CommunityScreen({ navigation }) {
 
   const subtitleCount = feedPagination?.total || feedItems.length;
 
-  const findPostBySharedId = useCallback((sharedOutfitId) => {
-    const allPosts = [...feedItems, ...topRatedItems, ...favoriteItems];
-    return allPosts.find((item) => (item?.id || item?._id) === sharedOutfitId) || null;
-  }, [feedItems, topRatedItems, favoriteItems]);
-
-  const handleNotificationPress = useCallback(async (notification) => {
+  const handleNotificationPress = useCallback((notification) => {
     const sharedOutfitId = notification?.shared_outfit_id;
     if (!sharedOutfitId) return;
-    const target = findPostBySharedId(sharedOutfitId);
-    if (target) {
+    const feedItem = feedItems.find((item) => (item?.id || item?._id) === sharedOutfitId);
+    if (feedItem) {
       setActiveTab('feed');
-      setCommentsItem(target);
-      return;
+      setCommentsItem(feedItem);
     }
-    await fetchFeed(true);
-    const refreshed = findPostBySharedId(sharedOutfitId);
-    if (refreshed) {
-      setActiveTab('feed');
-      setCommentsItem(refreshed);
-    }
-  }, [findPostBySharedId, fetchFeed]);
+  }, [feedItems]);
+
+  const TYPE_ICON = {
+    reaction: { emoji: '👍', bg: '#fff8e1' },
+    rating:   { emoji: '⭐', bg: '#fff8e1' },
+    comment:  { emoji: '💬', bg: '#f3f4f6' },
+    reply:    { emoji: '💬', bg: '#f3f4f6' },
+    favorite: { emoji: '❤️', bg: '#fce7f3' },
+  };
+
+  const VERB = {
+    reaction: 'reacted to',
+    rating:   'rated',
+    comment:  'commented on',
+    reply:    'replied to',
+    favorite: 'favorited',
+  };
 
   const renderNotification = useCallback(({ item }) => {
-    const actorName = item?.actor?.name || 'Someone';
-    const detail = item?.detail ? ` • ${item.detail}` : '';
-    const isRead = !!item?.is_read;
+    const actorName  = item?.actor?.name || 'Someone';
+    const isRead     = !!item?.is_read;
+    const typeCfg    = TYPE_ICON[item?.type] || { emoji: '🔔', bg: '#f3f4f6' };
+    const verb       = VERB[item?.type] || item?.type || 'interacted with';
+    const outfitName = item?.outfit_name || 'an outfit';
+    const ratingText = item?.type === 'rating' && item?.detail ? ` ${item.detail}` : '';
+
     return (
       <Pressable
         onPress={() => handleNotificationPress(item)}
-        style={[styles.notificationCard, !isRead ? styles.notificationUnread : null]}
+        style={({ pressed }) => [
+          styles.notificationCard,
+          !isRead && styles.notificationUnread,
+          pressed && { opacity: 0.75 },
+        ]}
       >
-        <View style={styles.notificationHeader}>
-          <Text style={styles.notificationActor}>{actorName}</Text>
-          <Text style={styles.notificationTime}>{formatTimeAgo(item?.created_at || item?.createdAt)}</Text>
+        {/* Action icon */}
+        <View style={[styles.notifIconWrap, { backgroundColor: typeCfg.bg }]}>
+          <Text style={styles.notifIconEmoji}>{typeCfg.emoji}</Text>
         </View>
-        <Text style={styles.notificationText}>
-          {item?.type || 'activity'}{detail}
-        </Text>
-        {item?.outfit_name ? <Text style={styles.notificationOutfit}>{item.outfit_name}</Text> : null}
+
+        {/* Text */}
+        <View style={styles.notifBody}>
+          <Text style={styles.notifMessage} numberOfLines={2}>
+            <Text style={styles.notifActor}>{actorName}</Text>
+            {' '}
+            <Text style={styles.notifVerb}>{verb}</Text>
+            {' '}
+            <Text style={styles.notifOutfit}>"{outfitName}"</Text>
+            {ratingText ? <Text style={styles.notifVerb}>{ratingText}</Text> : null}
+          </Text>
+          <Text style={styles.notifTime}>{formatTimeAgo(item?.created_at || item?.createdAt)}</Text>
+        </View>
+
+        {/* Chevron */}
+        <Ionicons name="chevron-forward" size={15} color={palette.textSoft} />
       </Pressable>
     );
   }, [handleNotificationPress]);
@@ -264,17 +282,17 @@ export default function CommunityScreen({ navigation }) {
   }, [keyExtractor, renderFeedItem, renderLoading, renderEmpty]);
 
   const notificationSection = useMemo(() => {
-    if (notificationsLoading && notifications.length === 0) return renderLoading('Loading notifications...');
+    if (notificationsLoading) return renderLoading('Loading notifications...');
     return (
       <>
-        <View style={styles.notificationActions}>
-          <Text style={styles.notificationSummary}>
-            {unreadCount > 0 ? `${unreadCount} unread` : 'All caught up'}
-          </Text>
-          <Pressable onPress={markAllRead} style={styles.markReadButton}>
-            <Text style={styles.markReadText}>Mark all read</Text>
-          </Pressable>
-        </View>
+        {unreadCount > 0 ? (
+          <View style={styles.notificationActions}>
+            <Text style={styles.notificationSummary}>{unreadCount} unread</Text>
+            <Pressable onPress={markAllRead} style={styles.markReadButton}>
+              <Text style={styles.markReadText}>Mark all read</Text>
+            </Pressable>
+          </View>
+        ) : null}
         {notifications.length === 0 ? (
           renderEmpty('No notifications yet', 'You will see reactions, ratings, and comments here.')
         ) : (
@@ -283,11 +301,6 @@ export default function CommunityScreen({ navigation }) {
             keyExtractor={keyExtractor}
             renderItem={renderNotification}
             contentContainerStyle={styles.notificationList}
-            onEndReached={() => {
-              if (notificationsHasMore && !notificationsLoadingMore) fetchNotifications(false);
-            }}
-            onEndReachedThreshold={0.5}
-            ListFooterComponent={notificationsLoadingMore ? <ActivityIndicator color={palette.primary} style={styles.loadMoreSpinner} /> : null}
           />
         )}
       </>
@@ -301,9 +314,6 @@ export default function CommunityScreen({ navigation }) {
     renderEmpty,
     keyExtractor,
     renderNotification,
-    notificationsHasMore,
-    notificationsLoadingMore,
-    fetchNotifications,
   ]);
 
   return (
@@ -359,10 +369,6 @@ export default function CommunityScreen({ navigation }) {
       {activeTab === 'top-rated' && renderFeedList({
         items: topRatedItems,
         isLoading: topRatedLoading,
-        onRefresh: () => fetchTopRated(true),
-        onEndReached: () => fetchTopRated(false),
-        hasMoreItems: topRatedHasMore,
-        loadingMoreItems: topRatedLoadingMore,
         loadingLabel: 'Loading top rated...',
         emptyTitle: 'No top-rated outfits yet',
         emptyDescription: 'Rate some outfits to see the highest-ranked looks here.',
@@ -371,13 +377,9 @@ export default function CommunityScreen({ navigation }) {
       {activeTab === 'favorites' && renderFeedList({
         items: favoriteItems,
         isLoading: favoritesLoading,
-        onRefresh: () => fetchFavorites(true),
-        onEndReached: () => fetchFavorites(false),
-        hasMoreItems: favoritesHasMore,
-        loadingMoreItems: favoritesLoadingMore,
         loadingLabel: 'Loading favorites...',
         emptyTitle: 'No favorites yet',
-        emptyDescription: 'Favorite outfits from the feed to build your collection.',
+        emptyDescription: 'Tap the heart on outfits you love!',
       })}
 
       {activeTab === 'notifications' && notificationSection}
@@ -518,16 +520,13 @@ const styles = StyleSheet.create({
     color: palette.primaryStrong,
   },
   badge: {
-    position: 'absolute',
-    top: 2,
-    right: 4,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
     backgroundColor: palette.danger,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 4,
+    paddingHorizontal: 5,
   },
   badgeText: {
     color: '#fff',
@@ -609,40 +608,58 @@ const styles = StyleSheet.create({
     gap: spacing.xs + 2,
   },
   notificationCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     borderWidth: 1,
     borderColor: palette.border,
     borderRadius: radius.md,
     backgroundColor: palette.surfaceElevated,
-    padding: spacing.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     ...shadow.soft,
   },
   notificationUnread: {
     borderColor: palette.primaryLighter,
     backgroundColor: palette.primarySoft,
   },
-  notificationHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  /* icon */
+  notifIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
-    marginBottom: 4,
+    justifyContent: 'center',
+    flexShrink: 0,
   },
-  notificationActor: {
-    ...type.label,
+  notifIconEmoji: {
+    fontSize: 18,
+  },
+  /* text block */
+  notifBody: {
+    flex: 1,
+  },
+  notifMessage: {
+    fontSize: 14,
     color: palette.text,
+    lineHeight: 20,
+  },
+  notifActor: {
     fontWeight: '700',
-  },
-  notificationTime: {
-    ...type.caption,
-    color: palette.textMuted,
-  },
-  notificationText: {
-    ...type.body,
     color: palette.text,
   },
-  notificationOutfit: {
-    marginTop: 4,
-    ...type.caption,
-    color: palette.primaryStrong,
+  notifVerb: {
+    color: palette.textMuted,
+    fontWeight: '400',
+  },
+  notifOutfit: {
+    fontWeight: '600',
+    color: palette.text,
+  },
+  notifTime: {
+    fontSize: 12,
+    color: palette.textMuted,
+    marginTop: 3,
   },
   deleteOverlay: {
     flex: 1,
