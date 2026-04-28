@@ -344,11 +344,15 @@ async def process_image(
 
     # ── Pre-flight Gemini moderation on the RAW upload ─────────────────────
     # Reject obviously off-topic images (selfies, food, screenshots, random
-    # objects) BEFORE running BiRefNet, so we don't waste 3-8 seconds and
-    # produce a useless processed file the user will only end up rejecting
-    # at the confirm screen anyway. Fail-OPEN: a transient outfit_service
-    # error must not block legitimate uploads — the post-bg-removal
-    # moderation in /analyze still runs as defense-in-depth.
+    # objects, animals) BEFORE running BiRefNet. Fail-CLOSED: pre-flight is
+    # the sole moderation gate (the post-bg-removal gate in /analyze has
+    # been removed), so any unreachable / non-200 / unexpected response
+    # rejects the upload rather than letting it through.
+    not_fashion_message = (
+        "This image was not recognised as a clothing item, footwear, or "
+        "fashion accessory. Please upload an image of the garment or "
+        "accessory itself."
+    )
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(
@@ -356,22 +360,24 @@ async def process_image(
                 files={"image": (image.filename or "upload", content, image.content_type or "image/png")},
                 headers={"X-API-Key": INTERNAL_API_KEY or ""},
             )
-            if resp.status_code == 200:
-                mod = resp.json()
-                if mod.get("success") and mod.get("passed") is False:
-                    reason = mod.get("rejection_reason") or "Image is not a clothing item, footwear, or fashion accessory."
-                    logger.info(f"Pre-flight moderation rejected upload: {reason}")
-                    return create_error_response(
-                        "NOT_FASHION",
-                        "This image was not recognised as a clothing item, footwear, or fashion accessory. Please upload an image of the garment or accessory itself.",
-                        400,
-                    )
-            else:
-                logger.warning(
-                    f"Pre-flight moderation returned {resp.status_code}; proceeding with bg removal"
-                )
+        if resp.status_code != 200:
+            logger.warning(
+                f"Pre-flight moderation returned {resp.status_code}; rejecting upload"
+            )
+            return create_error_response("MODERATION_UNAVAILABLE", not_fashion_message, 503)
+
+        mod = resp.json()
+        if not mod.get("success"):
+            logger.warning(f"Pre-flight moderation success=false; rejecting: {mod}")
+            return create_error_response("MODERATION_UNAVAILABLE", not_fashion_message, 503)
+
+        if mod.get("passed") is not True:
+            reason = mod.get("rejection_reason") or "Image is not a clothing item, footwear, or fashion accessory."
+            logger.info(f"Pre-flight moderation rejected upload: {reason}")
+            return create_error_response("NOT_FASHION", not_fashion_message, 400)
     except Exception as e:
-        logger.warning(f"Pre-flight moderation skipped (outfit_service unreachable): {e}")
+        logger.warning(f"Pre-flight moderation unreachable; rejecting upload: {e}")
+        return create_error_response("MODERATION_UNAVAILABLE", not_fashion_message, 503)
 
     try:
         file_id = str(uuid.uuid4())

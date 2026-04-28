@@ -454,9 +454,10 @@ async def moderate_image_endpoint(
     random objects) without spending 3-8 seconds on background removal.
 
     Returns: {success, passed, rejection_reason}.
-    Fails OPEN on any Gemini error so transient hiccups never block a
-    legitimate upload — a fuller second-pass moderation still runs after
-    bg-removal in /analyze.
+    Fails CLOSED: pre-flight is the sole gatekeeper, so any Gemini error
+    rejects the upload (passed=false). The post-bg-removal moderation
+    gate in /analyze has been removed in favour of relying on this
+    single check.
     """
     if not verify_internal_request(x_api_key):
         return create_error_response("UNAUTHORIZED", "Invalid API key", 401)
@@ -472,8 +473,12 @@ async def moderate_image_endpoint(
     try:
         result = await analyzer.moderate_image(content, mime_type)
     except Exception as e:
-        logger.warning(f"Image moderation endpoint failed open: {e}")
-        return {"success": True, "passed": True, "rejection_reason": None}
+        logger.warning(f"Image moderation endpoint failing closed: {e}")
+        return {
+            "success": True,
+            "passed": False,
+            "rejection_reason": "Moderation service unavailable",
+        }
 
     return {
         "success": True,
