@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 import apiService from '../services/api.service';
 
+const sortNewestFirst = (items = []) =>
+  [...items].sort((a, b) => {
+    const aTime = new Date(a?.shared_at || a?.created_at || a?.createdAt || 0).getTime();
+    const bTime = new Date(b?.shared_at || b?.created_at || b?.createdAt || 0).getTime();
+    return bTime - aTime;
+  });
+
 const useCommunityStore = create((set, get) => ({
   feed: [],
   pagination: { page: 1, limit: 20, total: 0, pages: 0 },
@@ -35,7 +42,7 @@ const useCommunityStore = create((set, get) => ({
       const response = await apiService.getCommunityFeed(page);
       const { data, pagination } = response;
       set((state) => ({
-        feed: page === 1 ? data : [...state.feed, ...data],
+        feed: sortNewestFirst(page === 1 ? data : [...state.feed, ...data]),
         pagination,
         ...(!silent ? { loading: false, loadingMore: false } : {}),
       }));
