@@ -22,7 +22,7 @@ from fastapi import FastAPI, Depends, HTTPException, Header, Query, Request, Upl
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from sqlalchemy import (
     create_engine, Column, String, Integer, Text, DateTime,
@@ -306,7 +306,11 @@ AllowedStyle = Literal[
     "vintage", "classic", "athleisure",
 ]
 
-AllowedSeason = Literal["all", "spring", "summer", "fall", "winter"]
+AllowedSeason = Literal[
+    "all", "spring", "summer", "fall", "winter",
+    # Weather-suitability values that Gemini emits as the outfit "season" tag
+    "mild", "warm", "cold", "hot",
+]
 
 
 class GenerateOutfitsRequest(BaseModel):
@@ -316,13 +320,28 @@ class GenerateOutfitsRequest(BaseModel):
     season: AllowedSeason = "all"
 
 class SaveOutfitRequest(BaseModel):
-    name: str
-    item_ids: List[str]
-    style: Optional[str] = None
-    occasion: Optional[str] = None
-    season: Optional[str] = None
-    cohesion_score: Optional[int] = None
-    reasoning: Optional[str] = None
+    name: str = Field(min_length=1, max_length=100)
+    item_ids: List[str] = Field(min_length=2, max_length=10)
+    style: Optional[AllowedStyle] = None
+    occasion: Optional[AllowedOccasion] = None
+    season: Optional[AllowedSeason] = None
+    cohesion_score: Optional[int] = Field(default=None, ge=1, le=10)
+    reasoning: Optional[str] = Field(default=None, max_length=1000)
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("name cannot be blank")
+        return v
+
+    @field_validator("item_ids")
+    @classmethod
+    def _no_duplicate_items(cls, v: List[str]) -> List[str]:
+        if len(set(v)) != len(v):
+            raise ValueError("item_ids must be unique")
+        return v
 
 
 # ============== APP ==============
@@ -832,9 +851,6 @@ async def save_outfit(
         "reasoning": "Great color combination"
     }
     """
-    if len(body.item_ids) < 2:
-        return create_error_response("INVALID_INPUT", "An outfit must have at least 2 items", 400)
-
     # Verify all items belong to this user
     user_items = db.query(ClothingAttribute).filter(
         ClothingAttribute.user_id == user_id,
@@ -851,16 +867,17 @@ async def save_outfit(
             400
         )
 
-    # Create outfit
+    # All field values were normalized by SaveOutfitRequest (length bounds,
+    # enum membership, score clamping, item_ids dedupe).
     outfit = Outfit(
         id=str(uuid.uuid4()),
         user_id=user_id,
-        name=body.name[:100],
-        style=body.style[:30] if body.style else None,
-        occasion=body.occasion[:30] if body.occasion else None,
-        season=body.season[:20] if body.season else None,
-        cohesion_score=max(1, min(10, body.cohesion_score)) if body.cohesion_score else None,
-        reasoning=body.reasoning[:1000] if body.reasoning else None,
+        name=body.name,
+        style=body.style,
+        occasion=body.occasion,
+        season=body.season,
+        cohesion_score=body.cohesion_score,
+        reasoning=body.reasoning,
     )
     db.add(outfit)
     db.flush()
