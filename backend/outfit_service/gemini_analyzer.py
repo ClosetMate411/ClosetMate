@@ -468,6 +468,16 @@ SELECTION RULES:
 - If DRESS items exist in the wardrobe, at least 1 outfit MUST use Option B (DRESS + SHOES).
 - You MUST generate at least 1 outfit if items are sufficient. NEVER return an empty list.
 
+COHESION SCORING RUBRIC (1-10, use the FULL range — do NOT cluster around 7-9):
+- 10: Perfect — every piece reinforces a single clear aesthetic. Rare.
+- 8-9: Strong — items align well in colour, formality, and style with at most one minor tension. Use only when notably good.
+- 6-7: Solid — the items work together but the combination is unsurprising or has mild colour/formality friction.
+- 4-5: Functional — wearable but disconnected (mixed formality levels, clashing undertones, season mismatch under "all").
+- 2-3: Weak — items technically satisfy the hard rule but visibly clash in colour, season, or style register.
+- 1: Forced — the combination only exists because no better option remained in the wardrobe.
+
+Distribution guidance: in a typical wardrobe expect ~30% of generated outfits at 8-9, ~50% at 5-7, ~20% at 2-4. If every outfit you produce scores 7-9, you are not scoring honestly — recalibrate downward.
+
 WARDROBE ITEMS:
 {wardrobe_items}
 
@@ -499,7 +509,7 @@ REQUIRED JSON (strict JSON only, no extra text):
         {{"id": "item_id_here", "category": "OUTERWEAR"}}
       ],
       "tags": ["everyday", "casual", "spring"],
-      "cohesion_score": 8,
+      "cohesion_score": <integer 1-10 per the COHESION SCORING RUBRIC above>,
       "explanation": "1-2 sentences on why these items work together (max 1000 chars)"
     }}
   ]
