@@ -10,6 +10,19 @@ import random
 from typing import Optional
 
 import google.generativeai as genai
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
+
+# Gemini built-in safety filters at maximum strictness so explicit nudity,
+# pornography, gore, and hate are blocked at the SDK layer regardless of
+# what our custom prompt says. Without this, BLOCK_NONE is the default and
+# explicit content slips through to our prompt-based "REJECT explicit"
+# rule, which depends on Gemini reasoning correctly — unreliable.
+GEMINI_SAFETY_SETTINGS = {
+    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+}
 
 logger = logging.getLogger(__name__)
 
@@ -551,6 +564,7 @@ class GeminiClothingAnalyzer:
                 temperature=0.1,  # Low temperature = more deterministic, less hallucination
                 max_output_tokens=1024,
             ),
+            safety_settings=GEMINI_SAFETY_SETTINGS,
         )
         self.outfit_model = genai.GenerativeModel(
             model_name=MODEL_NAME,
@@ -559,6 +573,7 @@ class GeminiClothingAnalyzer:
                 temperature=0.5,  # Higher for creative outfit combinations
                 max_output_tokens=4096,
             ),
+            safety_settings=GEMINI_SAFETY_SETTINGS,
         )
         self.text_moderation_model = genai.GenerativeModel(
             model_name=MODEL_NAME,
@@ -567,6 +582,7 @@ class GeminiClothingAnalyzer:
                 temperature=0.0,  # Deterministic moderation decisions
                 max_output_tokens=256,
             ),
+            safety_settings=GEMINI_SAFETY_SETTINGS,
         )
 
     async def moderate_text(self, text: str) -> dict:
@@ -674,18 +690,36 @@ class GeminiClothingAnalyzer:
             "management app. Decide whether the uploaded image's primary "
             "subject is a wearable clothing item, footwear, or fashion "
             "accessory.\n\n"
+            "STEP 1 — HARD-REJECT CHECK (do this FIRST, override everything else):\n"
+            "If ANY of the following is visible in the image, set passed=false "
+            "immediately, regardless of whether a garment is also present:\n"
+            "  • EXPLICIT NUDITY: exposed genitals, breasts, buttocks, anus, "
+            "    or any exposed primary/secondary sexual anatomy. REJECT.\n"
+            "  • PARTIAL NUDITY focused on intimate body areas (close-ups of "
+            "    chest, crotch, buttocks even if technically covered). REJECT.\n"
+            "  • SEXUALLY SUGGESTIVE POSING: model lying down, reclining, "
+            "    arms above head, parted lips with seductive expression, "
+            "    body language designed to emphasize sensuality rather than "
+            "    the garment. Glamour / editorial / boudoir photography "
+            "    aesthetic. REJECT.\n"
+            "  • PORNOGRAPHIC OR FETISH content. REJECT.\n"
+            "  • VIOLENCE, GORE, BLOOD, weapons used aggressively. REJECT.\n"
+            "  • ILLEGAL substances, drug paraphernalia. REJECT.\n"
+            "Only proceed to STEP 2 if the image passes Step 1.\n\n"
+            "STEP 2 — DOMAIN CHECK:\n"
             "DEFAULT BEHAVIOR: If the image plausibly shows a garment, shoe, "
             "bag, or accessory — even on a hanger, mannequin, ghost-mannequin, "
-            "model, or as a flat lay product shot — set passed=true. Only set "
+            "or as a flat lay product shot — set passed=true. Only set "
             "passed=false when the primary subject is clearly something from "
-            "the OUT-OF-SCOPE list below. Rejecting a real clothing upload is "
-            "a worse user experience than letting a borderline image through.\n\n"
+            "the OUT-OF-SCOPE list below.\n\n"
             "IN-SCOPE (passed=true) — primary subject is one of:\n"
-            "- Clothing item (worn, flat-lay, on hanger/mannequin, or product "
-            "shot): top, shirt, t-shirt, blouse, sweater, hoodie, jacket, "
-            "coat, blazer, vest, dress, skirt, pants, trousers, jeans, "
-            "shorts, leggings, swimwear, activewear, sleepwear, underwear, "
-            "socks, tights.\n"
+            "- Clothing item (flat-lay, on hanger/mannequin, or front-facing "
+            "neutral product shot): top, shirt, t-shirt, blouse, sweater, "
+            "hoodie, jacket, coat, blazer, vest, dress, skirt, pants, trousers, "
+            "jeans, shorts, leggings, swimwear, activewear, sleepwear, "
+            "underwear, socks, tights. LINGERIE/SWIMWEAR allowed ONLY as "
+            "flat-lay, mannequin, or neutral standing front-facing product "
+            "shots — NOT on a posing model (see Step 1).\n"
             "- Footwear: sneakers, boots, heels, flats, sandals, slippers, "
             "loafers, oxfords, any shoe.\n"
             "- Fashion accessory: hat, cap, beanie, scarf, belt, tie, "
@@ -693,13 +727,11 @@ class GeminiClothingAnalyzer:
             "backpack, crossbody, purse, wallet); sunglasses or optical "
             "glasses; any jewelry (necklace, bracelet, earrings, ring, "
             "anklet, brooch, cufflinks).\n\n"
-            "OUT-OF-SCOPE (passed=false) — REJECT only if the primary "
-            "subject is one of these:\n"
+            "OUT-OF-SCOPE (passed=false) — REJECT if primary subject is:\n"
             "- ANY animal (cat, dog, bird, horse, fish, insect, pet, wild "
             "animal — even if wearing a costume or accessory).\n"
             "- People where the FACE or HEAD is the focus: selfies, "
-            "portraits, group photos, close-up faces. (A model wearing a "
-            "garment where the garment is clearly the subject is IN-SCOPE.)\n"
+            "portraits, group photos, close-up faces.\n"
             "- Food, drinks, beverages, meals, ingredients.\n"
             "- Plants, flowers, trees, nature, landscapes, scenery, sky.\n"
             "- Vehicles (car, bike, plane, boat).\n"
@@ -736,6 +768,31 @@ class GeminiClothingAnalyzer:
             response = await self.text_moderation_model.generate_content_async(
                 [prompt, image_part]
             )
+
+            # ── Gemini built-in safety filter triggered ──
+            # When safety_settings block the response, response.candidates is
+            # empty (or candidate has finish_reason SAFETY) and response.text
+            # raises. Treat this as an explicit reject — the SDK already
+            # decided this is unsafe content (nudity/explicit/etc).
+            block_reason = getattr(getattr(response, "prompt_feedback", None), "block_reason", None)
+            if block_reason:
+                logger.info(f"Gemini safety filter blocked image (block_reason={block_reason}); rejecting upload")
+                return {
+                    "passed": False,
+                    "rejection_reason": "Image rejected by safety filter",
+                }
+
+            candidates = getattr(response, "candidates", None) or []
+            if not candidates or any(
+                getattr(c, "finish_reason", None) in (3, "SAFETY")  # 3 = SAFETY in proto enum
+                for c in candidates
+            ):
+                logger.info("Gemini returned no candidates / SAFETY finish reason; rejecting upload")
+                return {
+                    "passed": False,
+                    "rejection_reason": "Image rejected by safety filter",
+                }
+
             try:
                 result = json.loads(response.text)
             except json.JSONDecodeError:

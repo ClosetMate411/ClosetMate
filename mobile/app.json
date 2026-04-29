@@ -9,7 +9,13 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.closetmate.mobile",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "ClosetMate needs access to your photos so you can add clothing items to your wardrobe.",
+        "NSCameraUsageDescription": "ClosetMate needs camera access so you can capture new clothing items.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
